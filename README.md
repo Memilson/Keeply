@@ -58,6 +58,120 @@ http://localhost:8080
 ./gradlew :agent:run
 ```
 
+## Rodando o agente headless (daemon)
+
+Execução local com config explícita:
+
+```bash
+./gradlew :agent:runDaemon -PdaemonArgs="--config /caminho/agent.yaml"
+```
+
+O daemon executa:
+
+1. Aguarda próximo horário de `schedule.cron` por padrão.
+2. Opcional: backup imediato no startup com `schedule.runOnStartup: true`.
+3. Sem concorrência entre execuções (tick sobreposto é ignorado e logado).
+4. A UI JavaFX mostra status/instruções e permite "tentar start local" manualmente (fallback para dev).
+5. O daemon segue ativo mesmo após fechar a UI.
+
+## Plano de proteção por device
+
+- No primeiro login do agente, o usuário deve escolher um plano (`DEFAULT` ou `CUSTOM`) antes de liberar backups.
+- O plano é persistido no backend e é a fonte de verdade para `backup.sources`.
+- O `agent.yaml` funciona como cache operacional local e é reconciliado a partir do backend.
+
+Endpoints autenticados:
+
+- `GET /api/devices/{deviceId}/plan` retorna `200` com plano ou `404` sem plano.
+- `PUT /api/devices/{deviceId}/plan` faz upsert do plano para o device.
+
+## Contrato de configuração YAML
+
+Linux default: `~/.config/keeply/agent.yaml`  
+Windows default: `%ProgramData%\Keeply\agent.yaml`  
+Override: `--config <path>`
+
+Exemplo:
+
+```yaml
+backend:
+  url: http://localhost:8080
+
+auth:
+  email: keeply@keeply.com
+  password: keeply123
+  # token: "<jwt-opcional>"
+
+device:
+  name: workstation-main
+
+backup:
+  sources:
+    - /home/user/Documents
+    - /home/user/Pictures
+
+schedule:
+  cron: "*/30 * * * *"
+  runOnStartup: false
+```
+
+Campos obrigatórios:
+
+- `backend.url`
+- `auth.token` ou `auth.email` + `auth.password`
+- `backup.sources` (lista não vazia de diretórios existentes)
+- `schedule.cron` (formato cron UNIX com 5 campos)
+
+## Linux (systemd)
+
+Arquivos:
+
+- `scripts/linux/keeply-agent.service`
+- `scripts/linux/install-systemd.sh`
+- `scripts/linux/start-daemon.sh` (execução manual em dev)
+
+Instalação:
+
+```bash
+./gradlew :agent:daemonStartScripts
+sudo scripts/linux/install-systemd.sh
+```
+
+O launcher é gerado em `agent/build/daemon/bin/keeply-agent-daemon` e deve ser publicado em `/opt/keeply/bin/keeply-agent-daemon`.
+
+Operação:
+
+```bash
+sudo systemctl enable --now keeply-agent
+sudo systemctl status keeply-agent
+journalctl -u keeply-agent -f
+```
+
+## Windows (Task Scheduler)
+
+Arquivo:
+
+- `scripts/windows/install-task.ps1`
+
+Criar/atualizar e iniciar:
+
+```powershell
+.\gradlew.bat :agent:daemonStartScripts
+powershell -ExecutionPolicy Bypass -File .\scripts\windows\install-task.ps1 `
+  -TaskName "KeeplyAgent" `
+  -KeeplyHome "C:\Keeply" `
+  -ConfigPath "$env:ProgramData\Keeply\agent.yaml" `
+  -LogPath "$env:ProgramData\Keeply\agent.log"
+```
+
+No Windows, publique `agent\build\daemon\bin\keeply-agent-daemon.bat` em `C:\Keeply\bin\keeply-agent-daemon.bat`.
+
+Consultar:
+
+```powershell
+schtasks /Query /TN KeeplyAgent /V /FO LIST
+```
+
 ## Fluxo mínimo de teste
 
 1. Suba PostgreSQL e MinIO.

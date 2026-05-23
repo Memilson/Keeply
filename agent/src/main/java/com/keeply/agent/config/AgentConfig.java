@@ -1,0 +1,22 @@
+package com.keeply.agent.config;
+
+import java.nio.file.Path;
+import java.util.List;
+
+public record AgentConfig(
+        Backend backend,
+        Auth auth,
+        Device device,
+        Backup backup,
+        Schedule schedule
+) {
+    public record Backend(String url) {}
+
+    public record Auth(String email, String password, String token) {}
+
+    public record Device(String name) {}
+
+    public record Backup(List<Path> sources) {}
+
+    public record Schedule(String cron, Boolean runOnStartup) {}
+}

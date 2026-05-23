@@ -1,3 +1,4 @@
+/* Interface para abstrair as operações básicas de armazenamento de objetos em um serviço provedor de storage. */
 package com.keeply.backend.service;
 
 public interface ObjectStorageService {

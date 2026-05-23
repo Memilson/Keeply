@@ -1,3 +1,7 @@
+/*
+ * Repositório para a entidade Snapshot.
+ * Fornece métodos para acessar e filtrar os snapshots de backup de usuários e dispositivos.
+ */
 package com.keeply.backend.repository;
 
 import com.keeply.backend.model.Snapshot;

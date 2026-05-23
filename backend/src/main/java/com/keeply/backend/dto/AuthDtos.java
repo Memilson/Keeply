@@ -1,3 +1,4 @@
+/* DTOs utilizados nas operações de registro, autenticação e resposta de login. */
 package com.keeply.backend.dto;
 
 import java.util.UUID;

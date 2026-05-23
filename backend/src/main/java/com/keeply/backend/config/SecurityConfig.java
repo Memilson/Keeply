@@ -1,3 +1,9 @@
+/*
+ * Classe principal de configuração de segurança do backend.
+ * Define a cadeia de filtros de segurança, desabilita CSRF, configura a política de sessão como stateless,
+ * define os endpoints públicos e adiciona o filtro JWT personalizado.
+ * Também fornece beans para codificação de senhas (BCrypt) e gerenciamento de autenticação.
+ */
 package com.keeply.backend.config;
 
 import com.keeply.backend.security.JwtAuthenticationFilter;
@@ -14,6 +20,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 
 @Configuration
 public class SecurityConfig {
+
     @Bean
     SecurityFilterChain securityFilterChain(HttpSecurity http, JwtAuthenticationFilter jwtFilter) throws Exception {
         return http

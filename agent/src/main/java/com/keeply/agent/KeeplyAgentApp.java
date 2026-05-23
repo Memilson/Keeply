@@ -1,11 +1,15 @@
 package com.keeply.agent;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import com.keeply.agent.api.BackendClient;
+import com.keeply.agent.config.PlanConfigSync;
 import com.keeply.agent.core.BackupEngine;
 import com.keeply.agent.core.LocalDatabase;
 import com.keeply.agent.core.RestoreEngine;
 import com.keeply.agent.core.RestoreEngine.OverwritePolicy;
+import com.keeply.agent.daemon.AgentPaths;
+import com.keeply.agent.model.ProtectionPlan;
 import com.keeply.agent.model.SnapshotSummary;
 import javafx.application.Application;
 import javafx.application.Platform;
@@ -20,11 +24,19 @@ import javafx.stage.Stage;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.net.InetAddress;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.Optional;
 
 public class KeeplyAgentApp extends Application {
     private BackendClient backend;
@@ -35,16 +47,27 @@ public class KeeplyAgentApp extends Application {
     private TextField backendUrl;
     private TextField email;
     private PasswordField password;
+    private TextArea backupSourcesConfig;
     private Label status;
+    private final PlanConfigSync planConfigSync = new PlanConfigSync();
 
     @Override
     public void start(Stage stage) {
-        db = new LocalDatabase("keeply_agent.db");
+        Path uiDbPath = AgentPaths.resolveDataDir().resolve("keeply_agent_ui.db");
+        try {
+            Files.createDirectories(uiDbPath.getParent());
+        } catch (Exception e) {
+            throw new IllegalStateException("Falha ao preparar diretório do banco local da UI", e);
+        }
+        db = new LocalDatabase(uiDbPath.toString());
         
         backendUrl = new TextField("http://localhost:8080");
         email = new TextField();
         password = new PasswordField();
         status = new Label("Desconectado");
+        backupSourcesConfig = new TextArea();
+        backupSourcesConfig.setPrefRowCount(4);
+        backupSourcesConfig.setPromptText("/home/angelo/Documentos\n/home/angelo/Imagens");
 
         logs.setEditable(false);
 
@@ -63,6 +86,8 @@ public class KeeplyAgentApp extends Application {
         stage.setTitle("Keeply Agent MVP");
         stage.setScene(scene);
         stage.show();
+
+        Thread.startVirtualThread(() -> DaemonProcessManager.ensureDaemonRunning(this::log));
     }
 
     private Pane loginView() {
@@ -79,6 +104,8 @@ public class KeeplyAgentApp extends Application {
 
             String hostname = InetAddress.getLocalHost().getHostName();
             deviceId = backend.registerDevice(hostname, hostname, System.getProperty("os.name"), "0.1.0");
+            synchronizePlanAfterLogin();
+            DaemonProcessManager.ensureDaemonRunning(this::log);
 
             ui(() -> status.setText("Conectado. Device: " + deviceId));
             log("Login OK. Device registrado: " + deviceId);
@@ -394,13 +421,307 @@ public class KeeplyAgentApp extends Application {
 
     private Pane configView() {
         VBox box = box();
+        box.setSpacing(12);
+
+        Label scheduleTitle = new Label("Agendamento automático");
+        scheduleTitle.setStyle("-fx-font-weight: bold;");
+
+        GridPane scheduleGrid = new GridPane();
+        scheduleGrid.setHgap(8);
+        scheduleGrid.setVgap(8);
+
+        Map<Integer, CheckBox> dayChecks = new LinkedHashMap<>();
+        dayChecks.put(1, new CheckBox("Seg"));
+        dayChecks.put(2, new CheckBox("Ter"));
+        dayChecks.put(3, new CheckBox("Qua"));
+        dayChecks.put(4, new CheckBox("Qui"));
+        dayChecks.put(5, new CheckBox("Sex"));
+        dayChecks.put(6, new CheckBox("Sáb"));
+        dayChecks.put(0, new CheckBox("Dom"));
+
+        int col = 0;
+        for (CheckBox day : dayChecks.values()) {
+            scheduleGrid.add(day, col++, 0);
+        }
+
+        TextField startTime = new TextField("02:00");
+        startTime.setPromptText("HH:mm");
+        startTime.setMaxWidth(100);
+
+        Label scheduleStatus = new Label();
+        Button saveSchedule = new Button("Salvar agendamento");
+        saveSchedule.setOnAction(e -> runAsync(() -> saveScheduleToYaml(dayChecks, startTime, scheduleStatus)));
+        Button startDaemonLocal = new Button("Tentar start local do daemon");
+        startDaemonLocal.setOnAction(e -> runAsync(() -> {
+            DaemonProcessManager.ensureDaemonRunning(this::log);
+            log("Solicitação de start local do daemon enviada.");
+        }));
+
+        HBox actions = new HBox(8, saveSchedule, startDaemonLocal);
+
         box.getChildren().addAll(
                 new Label("URL do backend:"),
                 backendUrl,
                 new Label("Device atual:"),
-                new Label(deviceId == null ? "Ainda não registrado" : deviceId.toString())
+                new Label(deviceId == null ? "Ainda não registrado" : deviceId.toString()),
+                new Label("Pastas de backup (uma por linha):"),
+                backupSourcesConfig,
+                new Separator(),
+                scheduleTitle,
+                new Label("Dias da semana:"),
+                scheduleGrid,
+                new Label("Hora de começo (HH:mm):"),
+                startTime,
+                actions,
+                scheduleStatus
         );
+        runAsync(() -> loadScheduleFromYaml(dayChecks, startTime, scheduleStatus));
         return box;
+    }
+
+    private void saveScheduleToYaml(Map<Integer, CheckBox> dayChecks, TextField startTime, Label statusLabel) throws Exception {
+        List<Integer> selectedDays = new ArrayList<>();
+        for (Map.Entry<Integer, CheckBox> entry : dayChecks.entrySet()) {
+            if (entry.getValue().isSelected()) {
+                selectedDays.add(entry.getKey());
+            }
+        }
+        if (selectedDays.isEmpty()) {
+            throw new IllegalStateException("Selecione pelo menos um dia.");
+        }
+
+        LocalTime parsedTime;
+        try {
+            parsedTime = LocalTime.parse(startTime.getText().trim(), DateTimeFormatter.ofPattern("HH:mm"));
+        } catch (DateTimeParseException e) {
+            throw new IllegalStateException("Hora inválida. Use HH:mm, ex: 02:00");
+        }
+
+        String dow = selectedDays.size() == 7
+                ? "*"
+                : selectedDays.stream().map(String::valueOf).reduce((a, b) -> a + "," + b).orElse("*");
+        String cron = "%d %d * * %s".formatted(parsedTime.getMinute(), parsedTime.getHour(), dow);
+
+        Path configPath = AgentPaths.resolveDefaultConfigPath();
+        Files.createDirectories(configPath.getParent());
+        ObjectMapper yaml = new ObjectMapper(new YAMLFactory());
+
+        Map<String, Object> root;
+        if (Files.exists(configPath)) {
+            root = yaml.readValue(Files.readString(configPath), Map.class);
+            if (root == null) root = new LinkedHashMap<>();
+        } else {
+            root = new LinkedHashMap<>();
+        }
+
+        String backendValue = backendUrl.getText() != null ? backendUrl.getText().trim() : "";
+        String emailValue = email.getText() != null ? email.getText().trim() : "";
+        String passwordValue = password.getText() != null ? password.getText() : "";
+        List<String> sources = parseSources(backupSourcesConfig.getText());
+
+        if (backendValue.isBlank()) {
+            throw new IllegalStateException("Backend URL é obrigatório.");
+        }
+        if (emailValue.isBlank() || passwordValue.isBlank()) {
+            throw new IllegalStateException("Email e senha são obrigatórios.");
+        }
+        if (sources.isEmpty()) {
+            throw new IllegalStateException("Informe pelo menos uma pasta em 'Pastas de backup'.");
+        }
+
+        Map<String, Object> backendSection = new LinkedHashMap<>();
+        backendSection.put("url", backendValue);
+        root.put("backend", backendSection);
+
+        Map<String, Object> authSection = new LinkedHashMap<>();
+        authSection.put("email", emailValue);
+        authSection.put("password", passwordValue);
+        root.put("auth", authSection);
+
+        Map<String, Object> backupSection = new LinkedHashMap<>();
+        backupSection.put("sources", sources);
+        root.put("backup", backupSection);
+
+        Map<String, Object> schedule = root.containsKey("schedule") && root.get("schedule") instanceof Map<?, ?> existing
+                ? new LinkedHashMap<>((Map<String, Object>) existing)
+                : new LinkedHashMap<>();
+        schedule.put("cron", cron);
+        root.put("schedule", schedule);
+
+        yaml.writeValue(configPath.toFile(), root);
+        ui(() -> statusLabel.setText("Agendamento salvo em " + configPath + " | cron=" + cron));
+        log("Agendamento salvo: " + cron);
+    }
+
+    private void synchronizePlanAfterLogin() {
+        Optional<ProtectionPlan> maybePlan = backend.getDevicePlan(deviceId);
+        ProtectionPlan plan = maybePlan.orElseGet(this::createPlanFromWizard);
+        planConfigSync.applyPlan(AgentPaths.resolveDefaultConfigPath(), plan);
+        ui(() -> backupSourcesConfig.setText(String.join("\n", plan.sources())));
+        log("Plano sincronizado do backend para agent.yaml.");
+    }
+
+    private ProtectionPlan createPlanFromWizard() {
+        ProtectionPlan.PlanType selectedType = selectPlanType();
+        List<String> sources;
+        if (selectedType == ProtectionPlan.PlanType.DEFAULT) {
+            sources = List.of(Path.of(System.getProperty("user.home")).toAbsolutePath().normalize().toString());
+        } else {
+            List<String> custom = askCustomSources();
+            if (custom.isEmpty()) {
+                throw new IllegalStateException("Plano CUSTOM requer ao menos uma pasta.");
+            }
+            sources = custom;
+        }
+        return backend.upsertDevicePlan(deviceId, selectedType, sources);
+    }
+
+    private ProtectionPlan.PlanType selectPlanType() {
+        java.util.concurrent.atomic.AtomicReference<ProtectionPlan.PlanType> choiceRef = new java.util.concurrent.atomic.AtomicReference<>();
+        java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
+        ui(() -> {
+            ChoiceDialog<String> dialog = new ChoiceDialog<>("DEFAULT", "DEFAULT", "CUSTOM");
+            dialog.setTitle("Plano de proteção obrigatório");
+            dialog.setHeaderText("Escolha o plano para este dispositivo");
+            dialog.setContentText("Tipo:");
+            String selected = dialog.showAndWait()
+                    .orElseThrow(() -> new IllegalStateException("Escolha do plano é obrigatória."));
+            choiceRef.set(ProtectionPlan.PlanType.valueOf(selected));
+            latch.countDown();
+        });
+        awaitLatch(latch);
+        return choiceRef.get();
+    }
+
+    private List<String> askCustomSources() {
+        java.util.concurrent.atomic.AtomicReference<String> valueRef = new java.util.concurrent.atomic.AtomicReference<>();
+        java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
+        ui(() -> {
+            Dialog<String> dialog = new Dialog<>();
+            dialog.setTitle("Plano CUSTOM");
+            dialog.setHeaderText("Informe pastas (uma por linha)");
+            ButtonType saveType = new ButtonType("Salvar", ButtonBar.ButtonData.OK_DONE);
+            dialog.getDialogPane().getButtonTypes().addAll(saveType, ButtonType.CANCEL);
+
+            TextArea area = new TextArea();
+            area.setPromptText("/home/usuario/Documentos\n/home/usuario/Imagens");
+            area.setPrefRowCount(6);
+            dialog.getDialogPane().setContent(area);
+            dialog.setResultConverter(button -> button == saveType ? area.getText() : null);
+
+            String value = dialog.showAndWait()
+                    .orElseThrow(() -> new IllegalStateException("Plano CUSTOM exige pastas."));
+            valueRef.set(value);
+            latch.countDown();
+        });
+        awaitLatch(latch);
+        return parseSources(valueRef.get());
+    }
+
+    private void awaitLatch(java.util.concurrent.CountDownLatch latch) {
+        try {
+            latch.await();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Operação interrompida", e);
+        }
+    }
+
+
+    private void loadScheduleFromYaml(Map<Integer, CheckBox> dayChecks, TextField startTime, Label statusLabel) throws Exception {
+        Path configPath = AgentPaths.resolveDefaultConfigPath();
+        if (!Files.exists(configPath)) {
+            ui(() -> {
+                dayChecks.values().forEach(cb -> cb.setSelected(true));
+                startTime.setText("02:00");
+                statusLabel.setText("Primeiro uso: clique em Salvar agendamento para criar " + configPath);
+            });
+            return;
+        }
+
+        ObjectMapper yaml = new ObjectMapper(new YAMLFactory());
+        Map<String, Object> root = yaml.readValue(Files.readString(configPath), Map.class);
+        if (root == null) {
+            ui(() -> statusLabel.setText("Config vazia em " + configPath));
+            return;
+        }
+
+        if (root.get("backend") instanceof Map<?, ?> backendSection && backendSection.get("url") != null) {
+            ui(() -> backendUrl.setText(backendSection.get("url").toString()));
+        }
+        if (root.get("auth") instanceof Map<?, ?> authSection) {
+            Object loadedEmail = authSection.get("email");
+            Object loadedPassword = authSection.get("password");
+            ui(() -> {
+                if (loadedEmail != null) email.setText(loadedEmail.toString());
+                if (loadedPassword != null) password.setText(loadedPassword.toString());
+            });
+        }
+        if (root.get("backup") instanceof Map<?, ?> backupSection && backupSection.get("sources") instanceof List<?> loadedSources) {
+            String sourcesText = loadedSources.stream().map(String::valueOf).reduce((a, b) -> a + "\n" + b).orElse("");
+            ui(() -> backupSourcesConfig.setText(sourcesText));
+        }
+
+        if (!(root.get("schedule") instanceof Map<?, ?> schedule)) {
+            ui(() -> statusLabel.setText("Seção schedule não encontrada em " + configPath));
+            return;
+        }
+
+        String cron = schedule.get("cron") != null ? schedule.get("cron").toString() : null;
+        if (cron == null || cron.isBlank()) {
+            ui(() -> statusLabel.setText("schedule.cron vazio em " + configPath));
+            return;
+        }
+
+        String[] parts = cron.trim().split("\\s+");
+        if (parts.length != 5) {
+            ui(() -> statusLabel.setText("Cron inválido no YAML: " + cron));
+            return;
+        }
+
+        String minutePart = parts[0];
+        String hourPart = parts[1];
+        String dow = parts[4];
+
+        ui(() -> {
+            try {
+                int minute = Integer.parseInt(minutePart);
+                int hour = Integer.parseInt(hourPart);
+                startTime.setText("%02d:%02d".formatted(hour, minute));
+            } catch (NumberFormatException e) {
+                // Se não for numérico (ex: *, */2), apenas limpa ou mantém padrão, 
+                // indicando que a UI não reflete cron complexo perfeitamente
+                startTime.setText("02:00"); 
+            }
+
+            Set<Integer> selectedDays = new HashSet<>();
+            if ("*".equals(dow)) {
+                selectedDays.addAll(dayChecks.keySet());
+            } else {
+                for (String token : dow.split(",")) {
+                    try {
+                        selectedDays.add(Integer.parseInt(token.trim()));
+                    } catch (NumberFormatException ignored) {}
+                }
+            }
+
+            dayChecks.forEach((idx, cb) -> cb.setSelected(selectedDays.contains(idx)));
+            statusLabel.setText("Agendamento carregado: " + cron);
+        });
+    }
+
+    private List<String> parseSources(String value) {
+        if (value == null || value.isBlank()) {
+            return List.of();
+        }
+        List<String> sources = new ArrayList<>();
+        for (String line : value.split("\\R")) {
+            String trimmed = line.trim();
+            if (!trimmed.isBlank()) {
+                sources.add(trimmed);
+            }
+        }
+        return sources;
     }
 
     private GridPane grid() {

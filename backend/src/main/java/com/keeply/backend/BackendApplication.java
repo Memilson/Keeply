@@ -1,3 +1,4 @@
+/* Ponto de entrada e classe principal de configuração da aplicação Spring Boot para o backend. */
 package com.keeply.backend;
 
 import org.springframework.boot.SpringApplication;

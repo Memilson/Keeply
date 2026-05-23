@@ -1,3 +1,4 @@
+/* Serviço responsável pela autenticação de usuários, incluindo operações de registro e login com validação de credenciais e geração de JWT. */
 package com.keeply.backend.service;
 
 import com.keeply.backend.dto.AuthDtos;

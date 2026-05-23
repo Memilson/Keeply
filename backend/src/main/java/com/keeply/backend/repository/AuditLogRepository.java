@@ -1,3 +1,7 @@
+/*
+ * Repositório para a entidade AuditLog.
+ * Fornece métodos de acesso a dados para operações de log de auditoria no banco de dados.
+ */
 package com.keeply.backend.repository;
 
 import com.keeply.backend.model.AuditLog;

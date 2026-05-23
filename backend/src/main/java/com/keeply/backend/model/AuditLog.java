@@ -1,3 +1,4 @@
+/* Entidade que representa os logs de auditoria do sistema, registrando eventos de usuários e dispositivos. */
 package com.keeply.backend.model;
 
 import jakarta.persistence.*;

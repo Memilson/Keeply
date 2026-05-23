@@ -1,3 +1,4 @@
+/* Representa um ponto no tempo de um backup (snapshot) dos dados de um dispositivo. */
 package com.keeply.backend.model;
 
 import jakarta.persistence.*;

@@ -1,3 +1,4 @@
+/* Controlador REST para gerenciar o ciclo de vida dos snapshots de backup, incluindo início, conclusão, falha, listagem e obtenção do manifesto. */
 package com.keeply.backend.controller;
 
 import com.keeply.backend.dto.SnapshotDtos;

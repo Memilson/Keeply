@@ -1,3 +1,4 @@
+/* Representa uma solicitação para restaurar dados de um snapshot específico para um dispositivo. */
 package com.keeply.backend.model;
 
 import jakarta.persistence.*;

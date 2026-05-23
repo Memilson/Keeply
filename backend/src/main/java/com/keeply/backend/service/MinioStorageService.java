@@ -1,3 +1,4 @@
+/* Implementação do serviço de armazenamento de objetos que utiliza a infraestrutura do MinIO para persistir dados. */
 package com.keeply.backend.service;
 
 import io.minio.*;

@@ -1,3 +1,4 @@
+/* Utilitário que fornece acesso às informações do usuário autenticado atual no contexto de segurança da aplicação. */
 package com.keeply.backend.util;
 
 import com.keeply.backend.security.JwtPrincipal;

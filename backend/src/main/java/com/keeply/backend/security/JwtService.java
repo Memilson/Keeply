@@ -1,3 +1,8 @@
+/*
+ * Serviço responsável pela geração e validação de tokens JWT (JSON Web Tokens).
+ * Lida com a criação de tokens para usuários autenticados, definindo data de expiração e assinatura,
+ * além de realizar a validação e extração das informações (principal) de tokens recebidos.
+ */
 package com.keeply.backend.security;
 
 import io.jsonwebtoken.Claims;
@@ -14,7 +19,9 @@ import java.util.UUID;
 
 @Service
 public class JwtService {
+
     private final SecretKey key;
+
     private final long expirationMinutes;
 
     public JwtService(
@@ -48,6 +55,7 @@ public class JwtService {
 
         UUID userId = UUID.fromString(claims.getSubject());
         String email = claims.get("email", String.class);
+        
         return new JwtPrincipal(userId, email);
     }
 }

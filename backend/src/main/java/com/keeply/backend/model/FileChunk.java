@@ -1,3 +1,4 @@
+/* Entidade de relacionamento que associa um arquivo de um snapshot aos seus respectivos pedaços (chunks). */
 package com.keeply.backend.model;
 
 import jakarta.persistence.*;

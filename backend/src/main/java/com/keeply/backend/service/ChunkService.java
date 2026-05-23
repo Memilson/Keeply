@@ -1,3 +1,4 @@
+/* Serviço que gerencia o processamento, armazenamento e recuperação de chunks de arquivos, integrando-se com o ObjectStorageService. */
 package com.keeply.backend.service;
 
 import com.keeply.backend.dto.ChunkDtos;

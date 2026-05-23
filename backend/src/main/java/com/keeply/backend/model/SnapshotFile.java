@@ -1,3 +1,4 @@
+/* Representa os metadados de um arquivo individual capturado em um snapshot de backup. */
 package com.keeply.backend.model;
 
 import jakarta.persistence.*;

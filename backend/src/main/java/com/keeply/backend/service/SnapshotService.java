@@ -1,3 +1,4 @@
+/* Serviço responsável pelo gerenciamento de snapshots, incluindo criação, finalização, processamento de metadados e persistência dos dados relativos aos arquivos. */
 package com.keeply.backend.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -84,13 +85,11 @@ public class SnapshotService {
     private void persistManifestMetadata(UUID userId, Snapshot snapshot, String manifestJson) throws Exception {
         ManifestParsingDtos.SnapshotManifest manifest = mapper.readValue(manifestJson, ManifestParsingDtos.SnapshotManifest.class);
 
-        // Coletar todos os hashes de chunks únicos no manifesto para busca otimizada
         Set<String> allHashes = manifest.files().stream()
                 .flatMap(f -> f.chunks().stream())
                 .map(ManifestParsingDtos.ManifestChunk::hash)
                 .collect(Collectors.toSet());
 
-        // Mapear hashes para IDs de entidades de chunk
         Map<String, UUID> chunkMap = chunkRepository.findByUserIdAndHashIn(userId, allHashes).stream()
                 .collect(Collectors.toMap(c -> c.hash, c -> c.id));
 

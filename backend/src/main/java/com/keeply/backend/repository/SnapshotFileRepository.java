@@ -1,3 +1,7 @@
+/*
+ * Repositório para a entidade SnapshotFile.
+ * Permite buscar e manipular arquivos associados a um snapshot específico.
+ */
 package com.keeply.backend.repository;
 
 import com.keeply.backend.model.SnapshotFile;

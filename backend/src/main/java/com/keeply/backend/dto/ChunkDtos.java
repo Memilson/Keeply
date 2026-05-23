@@ -1,3 +1,4 @@
+/* DTOs para comunicação de operações de verificação e upload de pedaços de arquivos (chunks). */
 package com.keeply.backend.dto;
 
 import java.util.List;

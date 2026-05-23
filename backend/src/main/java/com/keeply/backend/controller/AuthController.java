@@ -1,3 +1,4 @@
+/* Controlador REST responsável pelas rotas de autenticação, incluindo registro de novos usuários e login. */
 package com.keeply.backend.controller;
 
 import com.keeply.backend.dto.AuthDtos;

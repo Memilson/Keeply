@@ -1,3 +1,4 @@
+/* Entidade que representa uma conta de usuário, contendo informações de perfil e autenticação. */
 package com.keeply.backend.model;
 
 import jakarta.persistence.*;

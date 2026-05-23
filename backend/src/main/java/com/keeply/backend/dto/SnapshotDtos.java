@@ -1,3 +1,4 @@
+/* DTOs utilizados nas requisições e respostas do ciclo de vida dos snapshots (início, conclusão, falha). */
 package com.keeply.backend.dto;
 
 import com.keeply.backend.model.SnapshotStatus;

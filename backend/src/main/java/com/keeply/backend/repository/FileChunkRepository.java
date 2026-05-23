@@ -1,3 +1,7 @@
+/*
+ * Repositório para a entidade FileChunk.
+ * Permite a persistência e consulta do relacionamento entre os arquivos do snapshot e seus chunks.
+ */
 package com.keeply.backend.repository;
 
 import com.keeply.backend.model.FileChunk;

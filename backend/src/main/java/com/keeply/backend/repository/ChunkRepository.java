@@ -1,3 +1,8 @@
+/*
+ * Repositório para a entidade ChunkEntity.
+ * Fornece métodos de acesso a dados para buscar e gerenciar os chunks (pedaços) de dados,
+ * incluindo a busca por hash e identificação de chunks órfãos.
+ */
 package com.keeply.backend.repository;
 
 import com.keeply.backend.model.ChunkEntity;

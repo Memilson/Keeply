@@ -1,3 +1,4 @@
+/* DTOs utilizados para desserialização e processamento dos metadados e estrutura dos arquivos de manifestos de snapshots. */
 package com.keeply.backend.dto;
 
 import java.time.Instant;

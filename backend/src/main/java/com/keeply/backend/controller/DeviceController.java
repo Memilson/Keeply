@@ -1,6 +1,8 @@
+/* Controlador REST responsável pelo gerenciamento de dispositivos, permitindo o registro, listagem e envio de sinais de vitalidade (heartbeat). */
 package com.keeply.backend.controller;
 
 import com.keeply.backend.dto.DeviceDtos;
+import com.keeply.backend.service.ProtectionPlanService;
 import com.keeply.backend.service.DeviceService;
 import com.keeply.backend.util.CurrentUser;
 import org.springframework.web.bind.annotation.*;
@@ -12,9 +14,11 @@ import java.util.UUID;
 @RequestMapping("/api/devices")
 public class DeviceController {
     private final DeviceService devices;
+    private final ProtectionPlanService plans;
 
-    public DeviceController(DeviceService devices) {
+    public DeviceController(DeviceService devices, ProtectionPlanService plans) {
         this.devices = devices;
+        this.plans = plans;
     }
 
     @PostMapping("/register")
@@ -30,5 +34,15 @@ public class DeviceController {
     @PatchMapping("/{deviceId}/heartbeat")
     public void heartbeat(@PathVariable UUID deviceId) {
         devices.heartbeat(CurrentUser.get().userId(), deviceId);
+    }
+
+    @GetMapping("/{deviceId}/plan")
+    public DeviceDtos.PlanResponse getPlan(@PathVariable UUID deviceId) {
+        return plans.get(CurrentUser.get().userId(), deviceId);
+    }
+
+    @PutMapping("/{deviceId}/plan")
+    public DeviceDtos.PlanResponse upsertPlan(@PathVariable UUID deviceId, @RequestBody DeviceDtos.PlanRequest request) {
+        return plans.upsert(CurrentUser.get().userId(), deviceId, request);
     }
 }

@@ -1,3 +1,8 @@
+/*
+ * Classe de configuração do MinIO para armazenamento de objetos.
+ * Inicializa e configura o bean MinioClient utilizando propriedades de conexão,
+ * permitindo que o sistema interaja com o serviço MinIO ou S3 compatível.
+ */
 package com.keeply.backend.config;
 
 import io.minio.MinioClient;
@@ -7,6 +12,7 @@ import org.springframework.context.annotation.Configuration;
 
 @Configuration
 public class MinioConfig {
+
     @Bean
     MinioClient minioClient(
             @Value("${keeply.minio.endpoint}") String endpoint,

@@ -1,3 +1,4 @@
+/* Entidade que representa um pedaço de dado (chunk) armazenado, utilizado para deduplicação e controle de tamanho. */
 package com.keeply.backend.model;
 
 import jakarta.persistence.*;

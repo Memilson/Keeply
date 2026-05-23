@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.keeply.agent.model.ChunkPayload;
+import com.keeply.agent.model.ProtectionPlan;
 import com.keeply.agent.model.SnapshotSummary;
 
 import java.net.URI;
@@ -60,6 +61,33 @@ public class BackendClient {
             return UUID.fromString((String) json.get("id"));
         } catch (Exception e) {
             throw new IllegalStateException("Falha ao registrar device", e);
+        }
+    }
+
+    public Optional<ProtectionPlan> getDevicePlan(UUID deviceId) {
+        try {
+            HttpRequest request = authorized("/api/devices/" + deviceId + "/plan").GET().build();
+            HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() == 404) {
+                return Optional.empty();
+            }
+            require2xx(response);
+            return Optional.of(mapper.readValue(response.body(), ProtectionPlan.class));
+        } catch (Exception e) {
+            throw new IllegalStateException("Falha ao obter plano do device", e);
+        }
+    }
+
+    public ProtectionPlan upsertDevicePlan(UUID deviceId, ProtectionPlan.PlanType planType, List<String> sources) {
+        try {
+            String body = mapper.writeValueAsString(Map.of(
+                    "planType", planType,
+                    "sources", sources
+            ));
+            HttpResponse<String> response = sendJson("/api/devices/" + deviceId + "/plan", body, "PUT");
+            return mapper.readValue(response.body(), ProtectionPlan.class);
+        } catch (Exception e) {
+            throw new IllegalStateException("Falha ao salvar plano do device", e);
         }
     }
 
@@ -163,9 +191,13 @@ public class BackendClient {
     }
 
     private HttpResponse<String> sendJson(String path, String body) throws Exception {
+        return sendJson(path, body, "POST");
+    }
+
+    private HttpResponse<String> sendJson(String path, String body, String method) throws Exception {
         HttpRequest request = authorized(path)
                 .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(body))
+                .method(method, HttpRequest.BodyPublishers.ofString(body))
                 .build();
         HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
         require2xx(response);
