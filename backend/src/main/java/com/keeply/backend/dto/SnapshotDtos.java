@@ -3,6 +3,7 @@ package com.keeply.backend.dto;
 
 import com.keeply.backend.model.SnapshotStatus;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 public final class SnapshotDtos {
@@ -30,5 +31,22 @@ public final class SnapshotDtos {
             Instant startedAt,
             Instant completedAt,
             String errorMessage
+    ) {}
+
+    public record SnapshotFileItem(
+            String path,
+            long size,
+            Instant lastModified
+    ) {}
+
+    public record PageMetadata(
+            long totalElements,
+            int page,
+            int size
+    ) {}
+
+    public record SnapshotFileListResponse(
+            List<SnapshotFileItem> items,
+            PageMetadata pagination
     ) {}
 }

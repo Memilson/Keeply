@@ -17,7 +17,4 @@ import java.util.UUID;
 public interface ChunkRepository extends JpaRepository<ChunkEntity, UUID> {
     Optional<ChunkEntity> findByUserIdAndHash(UUID userId, String hash);
     List<ChunkEntity> findByUserIdAndHashIn(UUID userId, Collection<String> hashes);
-
-    @Query("select c from ChunkEntity c where c.userId = :userId and c.id not in (select fc.chunkId from FileChunk fc)")
-    List<ChunkEntity> findOrphanChunks(@Param("userId") UUID userId);
 }

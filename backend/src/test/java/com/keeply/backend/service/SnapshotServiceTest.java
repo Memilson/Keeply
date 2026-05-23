@@ -1,6 +1,5 @@
 package com.keeply.backend.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.keeply.backend.model.Snapshot;
 import com.keeply.backend.model.SnapshotStatus;
 import com.keeply.backend.repository.*;
@@ -9,8 +8,10 @@ import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
+import java.io.ByteArrayOutputStream;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.zip.GZIPOutputStream;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -20,19 +21,13 @@ class SnapshotServiceTest {
     @Mock private SnapshotRepository snapshots;
     @Mock private DeviceRepository devices;
     @Mock private ObjectStorageService storage;
-    @Mock private SnapshotFileRepository snapshotFileRepository;
-    @Mock private FileChunkRepository fileChunkRepository;
-    @Mock private ChunkRepository chunkRepository;
 
     private SnapshotService snapshotService;
-    private final ObjectMapper mapper = new ObjectMapper();
 
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
-        snapshotService = new SnapshotService(
-                snapshots, devices, storage, snapshotFileRepository, fileChunkRepository, chunkRepository, mapper
-        );
+        snapshotService = new SnapshotService(snapshots, devices, storage);
     }
 
     @Test
@@ -70,19 +65,25 @@ class SnapshotServiceTest {
     }
 
     @Test
-    void testManifestShouldAllowCompletedSnapshot() {
+    void testManifestShouldAllowCompletedSnapshot() throws Exception {
         UUID userId = UUID.randomUUID();
         UUID snapshotId = UUID.randomUUID();
         Snapshot s = new Snapshot();
         s.id = snapshotId;
         s.userId = userId;
         s.status = SnapshotStatus.COMPLETED;
-        s.manifestKey = "manifest.json";
+        s.manifestKey = "manifest.json.gz";
+
+        String json = "{\"test\":true}";
+        ByteArrayOutputStream bos = new ByteArrayOutputStream();
+        try (GZIPOutputStream gos = new GZIPOutputStream(bos)) {
+            gos.write(json.getBytes());
+        }
 
         when(snapshots.findByIdAndUserId(snapshotId, userId)).thenReturn(Optional.of(s));
-        when(storage.get("manifest.json")).thenReturn("{}".getBytes());
+        when(storage.get("manifest.json.gz")).thenReturn(bos.toByteArray());
 
         String manifest = snapshotService.manifest(userId, snapshotId);
-        assertEquals("{}", manifest);
+        assertEquals(json, manifest);
     }
 }
