@@ -28,8 +28,9 @@ docker compose -f infra/docker-compose.yml down -v
 echo "⚡ Subindo infraestrutura..."
 docker compose -f infra/docker-compose.yml up -d
 
-# 3. Remover banco local do agente
-echo "💾 Removendo banco SQLite local..."
+# 3. Remover banco local do agente e arquivos de dados
+echo "💾 Removendo banco SQLite local e arquivos de dados..."
+AGENT_DATA_DIR="/home/angelo/keeply"
 SQLITE_FILES=(
   "${PROJECT_ROOT}/keeply_agent.db"
   "${PROJECT_ROOT}/keeply_agent.db-wal"
@@ -37,6 +38,12 @@ SQLITE_FILES=(
   "${PROJECT_ROOT}/agent/keeply_agent.db"
   "${PROJECT_ROOT}/agent/keeply_agent.db-wal"
   "${PROJECT_ROOT}/agent/keeply_agent.db-shm"
+  "${AGENT_DATA_DIR}/agent.db"
+  "${AGENT_DATA_DIR}/agent.db-wal"
+  "${AGENT_DATA_DIR}/agent.db-shm"
+  "${AGENT_DATA_DIR}/keeply_agent_ui.db"
+  "${AGENT_DATA_DIR}/daemon.log"
+  "${AGENT_DATA_DIR}/device-auth.json"
 )
 for file in "${SQLITE_FILES[@]}"; do
     if [ -f "$file" ]; then
@@ -45,11 +52,11 @@ for file in "${SQLITE_FILES[@]}"; do
     fi
 done
 
-if [ -f "${PROJECT_ROOT}/keeply_agent.db" ] || [ -f "${PROJECT_ROOT}/agent/keeply_agent.db" ]; then
-    echo "❌ Erro: não foi possível remover todos os SQLite do agente"
+if [ -f "${AGENT_DATA_DIR}/agent.db" ]; then
+    echo "❌ Erro: não foi possível remover todos os SQLite do agente em $AGENT_DATA_DIR"
     exit 1
 fi
-echo "✅ SQLite local limpo."
+echo "✅ SQLite e logs locais limpos."
 
 echo "⚠️  AVISO: Por favor, inicie o backend agora (./gradlew :backend:bootRun) em outro terminal."
 echo "⏳ Aguardando backend (port 8080) ficar online para registrar o usuário..."

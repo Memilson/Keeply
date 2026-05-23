@@ -24,13 +24,13 @@ public class BackendClient {
     private final HttpClient http = HttpClient.newHttpClient();
     private final ObjectMapper mapper = new ObjectMapper().registerModule(new JavaTimeModule()).findAndRegisterModules();
     private final String baseUrl;
-    private DeviceSession session;
+    private volatile DeviceSession session;
 
     public BackendClient(String baseUrl) {
         this.baseUrl = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
     }
 
-    public DeviceSession loginDevice(String email, String password, String deviceInstallationId, String hostname, String osName, String agentVersion) {
+    public synchronized DeviceSession loginDevice(String email, String password, String deviceInstallationId, String hostname, String osName, String agentVersion) {
         try {
             String body = mapper.writeValueAsString(Map.of(
                     "email", email,
@@ -56,7 +56,7 @@ public class BackendClient {
         }
     }
 
-    public void setSession(DeviceSession session) {
+    public synchronized void setSession(DeviceSession session) {
         this.session = session;
     }
 
@@ -64,7 +64,7 @@ public class BackendClient {
         return session;
     }
 
-    public DeviceSession refreshSession() {
+    public synchronized DeviceSession refreshSession() {
         if (session == null || blank(session.refreshToken()) || blank(session.deviceInstallationId())) {
             throw new IllegalStateException("Sessão inválida para refresh");
         }
