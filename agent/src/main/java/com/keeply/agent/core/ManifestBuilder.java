@@ -2,7 +2,10 @@ package com.keeply.agent.core;
 
 import com.keeply.agent.model.*;
 
+import java.io.IOException;
+import java.nio.file.AccessDeniedException;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.*;
@@ -39,6 +42,13 @@ public class ManifestBuilder {
                 );
                 db.saveFileCache(relativePath, size, mtime, fm.sha256(), fm.chunks());
                 files.add(fm);
+            } catch (NoSuchFileException | AccessDeniedException e) {
+                // Arquivos temporários podem desaparecer/mudar permissão durante o scan.
+                // Nesses casos, ignoramos o arquivo e seguimos com o restante do backup.
+                continue;
+            } catch (IOException e) {
+                // Erros de IO transitórios em arquivos individuais não devem abortar o snapshot inteiro.
+                continue;
             } catch (Exception e) {
                 throw new IllegalStateException("Falha ao gerar manifesto do arquivo: " + file, e);
             }

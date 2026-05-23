@@ -10,13 +10,18 @@ public record AgentConfig(
         Backup backup,
         Schedule schedule
 ) {
-    public record Backend(String url) {}
+    public record Backend(String url) {
+    }
 
-    public record Auth(String email, String password, String token) {}
+    public record Auth(String email, String password) {
+    }
 
-    public record Device(String name) {}
+    public record Device(String name) {
+    }
 
-    public record Backup(List<Path> sources) {}
+    public record Backup(List<Path> sources) {
+    }
 
-    public record Schedule(String cron, Boolean runOnStartup) {}
+    public record Schedule(String cron, Boolean runOnStartup) {
+    }
 }

@@ -18,4 +18,10 @@ public final class AgentPaths {
                 .toAbsolutePath()
                 .normalize();
     }
+
+    public static Path resolveDeviceAuthPath() {
+        return resolveDataDir().resolve("device-auth.json")
+                .toAbsolutePath()
+                .normalize();
+    }
 }

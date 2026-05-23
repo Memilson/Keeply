@@ -42,14 +42,8 @@ public final class AgentConfigLoader {
             errors.add("backend.url é obrigatório");
         }
 
-        if (config.auth() == null) {
-            errors.add("auth é obrigatório");
-        } else {
-            boolean hasToken = !isBlank(config.auth().token());
-            boolean hasEmailPassword = !isBlank(config.auth().email()) && !isBlank(config.auth().password());
-            if (!hasToken && !hasEmailPassword) {
-                errors.add("auth.token ou auth.email + auth.password são obrigatórios");
-            }
+        if (config.auth() == null || isBlank(config.auth().email()) || isBlank(config.auth().password())) {
+            errors.add("auth.email + auth.password são obrigatórios");
         }
 
         if (config.backup() == null || config.backup().sources() == null || config.backup().sources().isEmpty()) {

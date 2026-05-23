@@ -1,13 +1,15 @@
-/* Entidade que representa um dispositivo cadastrado por um usuário para realização de backups e restaurações. */
 package com.keeply.backend.model;
 
 import jakarta.persistence.*;
+
 import java.time.Instant;
 import java.util.UUID;
 
 @Entity
-@Table(name = "devices",
-        uniqueConstraints = @UniqueConstraint(name = "uk_devices_user_hostname", columnNames = {"user_id", "hostname"}))
+@Table(
+        name = "devices",
+        uniqueConstraints = @UniqueConstraint(name = "uk_devices_user_installation", columnNames = {"user_id", "device_installation_id"})
+)
 public class Device {
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
@@ -21,7 +23,15 @@ public class Device {
 
     @Column(nullable = false)
     public String hostname;
-    public String os;
+
+    @Column(name = "os_name")
+    public String osName;
+
+    @Column(name = "device_installation_id", nullable = false)
+    public String deviceInstallationId;
+
+    @Column(name = "refresh_token_hash")
+    public String refreshTokenHash;
 
     @Column(name = "agent_version")
     public String agentVersion;
@@ -29,14 +39,25 @@ public class Device {
     @Column(name = "last_seen_at")
     public Instant lastSeenAt;
 
-    @Column(name = "created_at", nullable = false)
+    @Column(name = "created_at", nullable = false, updatable = false)
     public Instant createdAt;
 
-    public Device() {}
+    @Column(name = "updated_at", nullable = false)
+    public Instant updatedAt;
+
+    public Device() {
+    }
 
     @PrePersist
     void onCreate() {
-        createdAt = Instant.now();
-        lastSeenAt = createdAt;
+        Instant now = Instant.now();
+        createdAt = now;
+        updatedAt = now;
+        lastSeenAt = now;
+    }
+
+    @PreUpdate
+    void onUpdate() {
+        updatedAt = Instant.now();
     }
 }

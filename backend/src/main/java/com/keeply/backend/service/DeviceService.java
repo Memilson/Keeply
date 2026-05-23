@@ -1,4 +1,3 @@
-/* Serviço responsável pelo gerenciamento de dispositivos dos usuários, permitindo registrar, listar e atualizar o status online. */
 package com.keeply.backend.service;
 
 import com.keeply.backend.dto.DeviceDtos;
@@ -27,13 +26,14 @@ public class DeviceService {
         if (request.hostname() == null || request.hostname().isBlank()) {
             throw new IllegalArgumentException("hostname é obrigatório");
         }
-        List<Device> existing = devices.findAllByUserIdAndHostnameOrderByLastSeenAtDescCreatedAtDesc(userId, request.hostname().trim());
-        Device d = existing.isEmpty() ? new Device() : existing.get(0);
+
+        Device d = new Device();
         d.userId = userId;
-        d.name = request.name();
+        d.name = request.name() == null || request.name().isBlank() ? request.hostname().trim() : request.name().trim();
         d.hostname = request.hostname().trim();
-        d.os = request.os();
+        d.osName = request.osName();
         d.agentVersion = request.agentVersion();
+        d.deviceInstallationId = UUID.randomUUID().toString();
         d.lastSeenAt = Instant.now();
         devices.save(d);
         return toResponse(d);
@@ -52,6 +52,6 @@ public class DeviceService {
     }
 
     private DeviceDtos.DeviceResponse toResponse(Device d) {
-        return new DeviceDtos.DeviceResponse(d.id, d.name, d.hostname, d.os, d.agentVersion, d.lastSeenAt);
+        return new DeviceDtos.DeviceResponse(d.id, d.name, d.hostname, d.osName, d.agentVersion, d.lastSeenAt);
     }
 }

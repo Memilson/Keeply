@@ -1,9 +1,3 @@
-/*
- * Classe principal de configuração de segurança do backend.
- * Define a cadeia de filtros de segurança, desabilita CSRF, configura a política de sessão como stateless,
- * define os endpoints públicos e adiciona o filtro JWT personalizado.
- * Também fornece beans para codificação de senhas (BCrypt) e gerenciamento de autenticação.
- */
 package com.keeply.backend.config;
 
 import com.keeply.backend.security.JwtAuthenticationFilter;
@@ -27,7 +21,7 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/auth/register", "/api/auth/login", "/actuator/health").permitAll()
+                        .requestMatchers("/api/auth/register", "/api/auth/login", "/api/auth/login-device", "/api/auth/refresh", "/actuator/health").permitAll()
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class)

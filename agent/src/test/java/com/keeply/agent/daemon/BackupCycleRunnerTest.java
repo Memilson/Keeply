@@ -19,7 +19,7 @@ class BackupCycleRunnerTest {
 
         AgentConfig config = new AgentConfig(
                 new AgentConfig.Backend("http://localhost:8080"),
-                new AgentConfig.Auth(null, null, "token"),
+                new AgentConfig.Auth("u.com", "secret"),
                 new AgentConfig.Device("device"),
                 new AgentConfig.Backup(List.of(first, second)),
                 new AgentConfig.Schedule("*/5 * * * *", false)

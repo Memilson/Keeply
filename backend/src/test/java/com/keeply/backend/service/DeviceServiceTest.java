@@ -13,7 +13,10 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class DeviceServiceTest {
@@ -24,25 +27,22 @@ class DeviceServiceTest {
     private DeviceService deviceService;
 
     @Test
-    void registerReusesExistingDeviceByUserAndHostname() {
+    void registerCreatesDeviceWithInstallationId() {
         UUID userId = UUID.randomUUID();
-        UUID existingId = UUID.randomUUID();
-        Device existing = new Device();
-        existing.id = existingId;
-        existing.userId = userId;
-        existing.hostname = "host-1";
-
-        when(deviceRepository.findAllByUserIdAndHostnameOrderByLastSeenAtDescCreatedAtDesc(userId, "host-1"))
-                .thenReturn(java.util.List.of(existing));
-        when(deviceRepository.save(any(Device.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(deviceRepository.save(any(Device.class))).thenAnswer(inv -> {
+            Device d = inv.getArgument(0);
+            d.id = UUID.randomUUID();
+            return d;
+        });
 
         DeviceDtos.DeviceResponse response = deviceService.register(userId,
                 new DeviceDtos.RegisterDeviceRequest("Meu Device", "host-1", "Linux", "1.0.0"));
 
-        assertEquals(existingId, response.id());
+        assertNotNull(response.id());
         ArgumentCaptor<Device> captor = ArgumentCaptor.forClass(Device.class);
         verify(deviceRepository).save(captor.capture());
         assertEquals("Meu Device", captor.getValue().name);
-        assertEquals("Linux", captor.getValue().os);
+        assertEquals("Linux", captor.getValue().osName);
+        assertNotNull(captor.getValue().deviceInstallationId);
     }
 }

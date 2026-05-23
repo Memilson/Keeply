@@ -7,6 +7,14 @@ cd "$PROJECT_ROOT"
 
 echo "🚀 Iniciando reset do ambiente Keeply..."
 
+# A. Parar daemon do agente
+echo "🛑 Parando daemon do agente..."
+if [ -f "/home/angelo/keeply/daemon.pid" ]; then
+    kill "$(cat /home/angelo/keeply/daemon.pid)" || true
+fi
+pkill -f "com.keeply.agent.KeeplyAgentDaemonApp" || true
+rm -f "/home/angelo/keeply/daemon.pid"
+
 # 0. Matar o backend se estiver rodando (necessário para o Hibernate recriar as tabelas no novo volume)
 echo "🛑 Parando processo do backend (Java/Gradle)..."
 pkill -f "gradle-wrapper.jar :backend:bootRun" || true

@@ -1,10 +1,13 @@
 package com.keeply.agent.daemon;
 
 import com.keeply.agent.api.BackendClient;
+import com.keeply.agent.auth.DeviceAuthStore;
+import com.keeply.agent.auth.DeviceIdentity;
 import com.keeply.agent.config.AgentConfig;
 import com.keeply.agent.model.ProtectionPlan;
 import com.keeply.agent.core.BackupEngine;
 import com.keeply.agent.core.LocalDatabase;
+import com.keeply.agent.model.DeviceSession;
 
 import java.net.InetAddress;
 import java.nio.file.Path;
@@ -26,6 +29,7 @@ public final class BackupCycleRunner {
     private final BackendClient backend;
     private final LocalDatabase db;
     private final SourceBackupExecutor sourceBackupExecutor;
+    private final DeviceAuthStore authStore;
     private UUID deviceId;
 
     public BackupCycleRunner(AgentConfig config, Path databasePath, DaemonLogger logger) {
@@ -34,6 +38,7 @@ public final class BackupCycleRunner {
         this.backend = new BackendClient(config.backend().url());
         this.db = new LocalDatabase(databasePath.toAbsolutePath().toString());
         this.sourceBackupExecutor = (id, source) -> new BackupEngine(backend, db).backup(id, source, logger::info);
+        this.authStore = new DeviceAuthStore(AgentPaths.resolveDeviceAuthPath());
     }
 
     BackupCycleRunner(AgentConfig config, DaemonLogger logger, SourceBackupExecutor sourceBackupExecutor) {
@@ -42,6 +47,7 @@ public final class BackupCycleRunner {
         this.backend = new BackendClient(config.backend().url());
         this.db = null;
         this.sourceBackupExecutor = sourceBackupExecutor;
+        this.authStore = new DeviceAuthStore(AgentPaths.resolveDeviceAuthPath());
     }
 
     public void runCycle() {
@@ -51,7 +57,7 @@ public final class BackupCycleRunner {
         }
 
         try {
-            authenticate();
+            authenticate(false);
             ensureDeviceRegistered();
             backupAllSources(deviceId);
         } catch (Exception e) {
@@ -67,6 +73,7 @@ public final class BackupCycleRunner {
             logger.warn("Plano de proteção ausente para o device; ciclo cancelado.");
             return;
         }
+        logger.info("Executando ciclo com deviceId=" + currentDeviceId);
         List<Path> sources = maybePlan.get().sources().stream().map(Path::of).toList();
         backupAllSources(currentDeviceId, sources);
     }
@@ -78,31 +85,74 @@ public final class BackupCycleRunner {
                 UUID snapshotId = sourceBackupExecutor.run(currentDeviceId, source);
                 logger.info("Backup concluído para " + source.toAbsolutePath() + " snapshot=" + snapshotId);
             } catch (Exception e) {
-                logger.error("Falha no backup da origem " + source.toAbsolutePath(), e);
+                if (isInvalidDeviceError(e)) {
+                    logger.warn("Device inválido detectado; tentando re-registrar e repetir origem " + source.toAbsolutePath());
+                    try {
+                        deviceId = null;
+                        authenticate(true);
+                        ensureDeviceRegistered();
+                        UUID retriedSnapshotId = sourceBackupExecutor.run(deviceId, source);
+                        logger.info("Backup concluído após re-registro para " + source.toAbsolutePath() + " snapshot=" + retriedSnapshotId);
+                        continue;
+                    } catch (Exception retryError) {
+                        logger.error("Falha no retry após re-registro da origem " + source.toAbsolutePath(), retryError);
+                    }
+                } else {
+                    logger.error("Falha no backup da origem " + source.toAbsolutePath(), e);
+                }
             }
         }
     }
 
-    private void authenticate() {
-        if (config.auth() != null && config.auth().token() != null && !config.auth().token().isBlank()) {
-            backend.setToken(config.auth().token());
-            return;
+    private boolean isInvalidDeviceError(Throwable throwable) {
+        Throwable current = throwable;
+        while (current != null) {
+            String message = current.getMessage();
+            if (message != null && (message.contains("Device inválido") || message.contains("Falha ao iniciar snapshot"))) {
+                return true;
+            }
+            current = current.getCause();
         }
+        return false;
+    }
 
-        backend.login(config.auth().email(), config.auth().password());
+    private void authenticate(boolean forceLoginDevice) {
+        DeviceSession saved = authStore.load().orElse(null);
+        if (!forceLoginDevice && saved != null) {
+            backend.setSession(saved);
+            try {
+                DeviceSession refreshed = backend.refreshSession();
+                authStore.save(refreshed);
+                deviceId = refreshed.deviceId();
+                return;
+            } catch (Exception e) {
+                logger.warn("Sessão local inválida/revogada; novo login necessário.");
+            }
+        }
+        try {
+            String hostname = InetAddress.getLocalHost().getHostName();
+            String installationId = saved != null && saved.deviceInstallationId() != null && !saved.deviceInstallationId().isBlank()
+                    ? saved.deviceInstallationId()
+                    : DeviceIdentity.getOrCreate(authStore);
+            DeviceSession session = backend.loginDevice(
+                    config.auth().email(),
+                    config.auth().password(),
+                    installationId,
+                    hostname,
+                    System.getProperty("os.name"),
+                    "0.1.0-daemon"
+            );
+            authStore.save(session);
+            deviceId = session.deviceId();
+        } catch (Exception e) {
+            throw new IllegalStateException("Falha de autenticação do daemon. Abra a UI e faça login novamente.", e);
+        }
     }
 
     private void ensureDeviceRegistered() throws Exception {
         if (deviceId != null) {
             return;
         }
-
-        String hostname = InetAddress.getLocalHost().getHostName();
-        String deviceName = config.device() != null && config.device().name() != null && !config.device().name().isBlank()
-                ? config.device().name()
-                : hostname;
-
-        deviceId = backend.registerDevice(deviceName, hostname, System.getProperty("os.name"), "0.1.0-daemon");
-        logger.info("Device registrado: " + deviceId);
+        throw new IllegalStateException("Device não autenticado no ciclo atual.");
     }
 }

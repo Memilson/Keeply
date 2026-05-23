@@ -44,7 +44,8 @@ class AgentConfigLoaderTest {
                 backend:
                   url: http://localhost:8080
                 auth:
-                  token: abc
+                  email: keeply@keeply.com
+                  password: keeply123
                 backup:
                   sources:
                     - %s
@@ -65,7 +66,8 @@ class AgentConfigLoaderTest {
                 backend:
                   url: http://localhost:8080
                 auth:
-                  token: abc
+                  email: keeply@keeply.com
+                  password: keeply123
                 backup:
                   sources:
                     - /path/that/does/not/exist

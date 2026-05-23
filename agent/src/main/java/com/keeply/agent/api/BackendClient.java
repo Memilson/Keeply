@@ -4,70 +4,96 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.keeply.agent.model.ChunkPayload;
+import com.keeply.agent.model.DeviceSession;
 import com.keeply.agent.model.ProtectionPlan;
 import com.keeply.agent.model.SnapshotSummary;
 
 import java.net.URI;
-import java.net.http.*;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
-import java.util.*;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
 
 public class BackendClient {
     private final HttpClient http = HttpClient.newHttpClient();
-    private final ObjectMapper mapper = new ObjectMapper()
-            .registerModule(new JavaTimeModule())
-            .findAndRegisterModules();
+    private final ObjectMapper mapper = new ObjectMapper().registerModule(new JavaTimeModule()).findAndRegisterModules();
     private final String baseUrl;
-    private String token;
+    private DeviceSession session;
 
     public BackendClient(String baseUrl) {
         this.baseUrl = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
     }
 
-    public void setToken(String token) {
-        this.token = token;
-    }
-
-    public String login(String email, String password) {
+    public DeviceSession loginDevice(String email, String password, String deviceInstallationId, String hostname, String osName, String agentVersion) {
         try {
-            String body = mapper.writeValueAsString(Map.of("email", email, "password", password));
+            String body = mapper.writeValueAsString(Map.of(
+                    "email", email,
+                    "password", password,
+                    "deviceInstallationId", deviceInstallationId,
+                    "hostname", hostname,
+                    "osName", osName,
+                    "agentVersion", agentVersion
+            ));
             HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(baseUrl + "/api/auth/login"))
+                    .uri(URI.create(baseUrl + "/api/auth/login-device"))
                     .header("Content-Type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(body))
                     .build();
 
             HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
             require2xx(response);
-            Map<String, Object> json = mapper.readValue(response.body(), new TypeReference<>() {});
-            token = (String) json.get("accessToken");
-            return token;
+            DeviceSession deviceSession = parseAuthResponse(response.body(), deviceInstallationId);
+            this.session = deviceSession;
+            return deviceSession;
         } catch (Exception e) {
-            throw new IllegalStateException("Falha no login", e);
+            throw new IllegalStateException("Falha no login do device", e);
         }
     }
 
-    public UUID registerDevice(String name, String hostname, String os, String version) {
+    public void setSession(DeviceSession session) {
+        this.session = session;
+    }
+
+    public DeviceSession getSession() {
+        return session;
+    }
+
+    public DeviceSession refreshSession() {
+        if (session == null || blank(session.refreshToken()) || blank(session.deviceInstallationId())) {
+            throw new IllegalStateException("Sessão inválida para refresh");
+        }
+
         try {
             String body = mapper.writeValueAsString(Map.of(
-                    "name", name,
-                    "hostname", hostname,
-                    "os", os,
-                    "agentVersion", version
+                    "refreshToken", session.refreshToken(),
+                    "deviceInstallationId", session.deviceInstallationId()
             ));
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(baseUrl + "/api/auth/refresh"))
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(body))
+                    .build();
 
-            HttpResponse<String> response = sendJson("/api/devices/register", body);
-            Map<String, Object> json = mapper.readValue(response.body(), new TypeReference<>() {});
-            return UUID.fromString((String) json.get("id"));
+            HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
+            require2xx(response);
+            DeviceSession refreshed = parseAuthResponse(response.body(), session.deviceInstallationId());
+            this.session = refreshed;
+            return refreshed;
         } catch (Exception e) {
-            throw new IllegalStateException("Falha ao registrar device", e);
+            throw new IllegalStateException("Falha ao renovar sessão", e);
         }
     }
 
     public Optional<ProtectionPlan> getDevicePlan(UUID deviceId) {
         try {
             HttpRequest request = authorized("/api/devices/" + deviceId + "/plan").GET().build();
-            HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = sendWithRefreshRetry(request);
             if (response.statusCode() == 404) {
                 return Optional.empty();
             }
@@ -80,10 +106,7 @@ public class BackendClient {
 
     public ProtectionPlan upsertDevicePlan(UUID deviceId, ProtectionPlan.PlanType planType, List<String> sources) {
         try {
-            String body = mapper.writeValueAsString(Map.of(
-                    "planType", planType,
-                    "sources", sources
-            ));
+            String body = mapper.writeValueAsString(Map.of("planType", planType, "sources", sources));
             HttpResponse<String> response = sendJson("/api/devices/" + deviceId + "/plan", body, "PUT");
             return mapper.readValue(response.body(), ProtectionPlan.class);
         } catch (Exception e) {
@@ -93,10 +116,7 @@ public class BackendClient {
 
     public UUID startSnapshot(UUID deviceId, String sourcePath) {
         try {
-            String body = mapper.writeValueAsString(Map.of(
-                    "deviceId", deviceId.toString(),
-                    "sourcePath", sourcePath
-            ));
+            String body = mapper.writeValueAsString(Map.of("deviceId", deviceId.toString(), "sourcePath", sourcePath));
             HttpResponse<String> response = sendJson("/api/snapshots/start", body);
             Map<String, Object> json = mapper.readValue(response.body(), new TypeReference<>() {});
             return UUID.fromString((String) json.get("id"));
@@ -126,7 +146,7 @@ public class BackendClient {
                     .POST(HttpRequest.BodyPublishers.ofByteArray(body))
                     .build();
 
-            HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = sendWithRefreshRetry(request);
             require2xx(response);
         } catch (Exception e) {
             throw new IllegalStateException("Falha ao enviar chunk " + chunk.hash(), e);
@@ -158,7 +178,7 @@ public class BackendClient {
     public List<SnapshotSummary> listSnapshots() {
         try {
             HttpRequest request = authorized("/api/snapshots").GET().build();
-            HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = sendWithRefreshRetry(request);
             require2xx(response);
             return mapper.readValue(response.body(), new TypeReference<>() {});
         } catch (Exception e) {
@@ -169,7 +189,7 @@ public class BackendClient {
     public String downloadManifest(UUID snapshotId) {
         try {
             HttpRequest request = authorized("/api/snapshots/" + snapshotId + "/manifest").GET().build();
-            HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = sendWithRefreshRetry(request);
             require2xx(response);
             return response.body();
         } catch (Exception e) {
@@ -180,7 +200,7 @@ public class BackendClient {
     public byte[] downloadChunk(String hash) {
         try {
             HttpRequest request = authorized("/api/chunks/" + hash + "/download").GET().build();
-            HttpResponse<byte[]> response = http.send(request, HttpResponse.BodyHandlers.ofByteArray());
+            HttpResponse<byte[]> response = sendBytesWithRefreshRetry(request);
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
                 throw new IllegalStateException("HTTP " + response.statusCode());
             }
@@ -188,6 +208,16 @@ public class BackendClient {
         } catch (Exception e) {
             throw new IllegalStateException("Falha ao baixar chunk " + hash, e);
         }
+    }
+
+    private DeviceSession parseAuthResponse(String responseBody, String installationId) throws Exception {
+        Map<String, Object> json = mapper.readValue(responseBody, new TypeReference<>() {});
+        String accessToken = (String) json.get("accessToken");
+        String refreshToken = (String) json.get("refreshToken");
+        UUID userId = json.get("userId") == null ? null : UUID.fromString((String) json.get("userId"));
+        UUID deviceId = json.get("deviceId") == null ? null : UUID.fromString((String) json.get("deviceId"));
+        String email = (String) json.get("email");
+        return new DeviceSession(installationId, deviceId, accessToken, refreshToken, userId, email);
     }
 
     private HttpResponse<String> sendJson(String path, String body) throws Exception {
@@ -199,18 +229,59 @@ public class BackendClient {
                 .header("Content-Type", "application/json")
                 .method(method, HttpRequest.BodyPublishers.ofString(body))
                 .build();
-        HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> response = sendWithRefreshRetry(request);
         require2xx(response);
         return response;
     }
 
     private HttpRequest.Builder authorized(String path) {
-        HttpRequest.Builder builder = HttpRequest.newBuilder()
-                .uri(URI.create(baseUrl + path));
-        if (token != null) {
-            builder.header("Authorization", "Bearer " + token);
+        HttpRequest.Builder builder = HttpRequest.newBuilder().uri(URI.create(baseUrl + path));
+        if (session != null && !blank(session.accessToken())) {
+            builder.header("Authorization", "Bearer " + session.accessToken());
         }
         return builder;
+    }
+
+    private HttpResponse<String> sendWithRefreshRetry(HttpRequest request) throws Exception {
+        HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
+        if (response.statusCode() == 401 && session != null && !blank(session.refreshToken())) {
+            refreshSession();
+            HttpRequest retry = retryWithUpdatedAccessToken(request);
+            response = http.send(retry, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() == 401) {
+                throw new IllegalStateException("Sessão expirada ou revogada. Faça login novamente.");
+            }
+        }
+        return response;
+    }
+
+    private HttpResponse<byte[]> sendBytesWithRefreshRetry(HttpRequest request) throws Exception {
+        HttpResponse<byte[]> response = http.send(request, HttpResponse.BodyHandlers.ofByteArray());
+        if (response.statusCode() == 401 && session != null && !blank(session.refreshToken())) {
+            refreshSession();
+            HttpRequest retry = retryWithUpdatedAccessToken(request);
+            response = http.send(retry, HttpResponse.BodyHandlers.ofByteArray());
+            if (response.statusCode() == 401) {
+                throw new IllegalStateException("Sessão expirada ou revogada. Faça login novamente.");
+            }
+        }
+        return response;
+    }
+
+    private HttpRequest retryWithUpdatedAccessToken(HttpRequest original) {
+        HttpRequest.Builder builder = HttpRequest.newBuilder().uri(original.uri());
+        original.headers().map().forEach((k, values) -> {
+            if (!"authorization".equalsIgnoreCase(k)) {
+                for (String value : values) {
+                    builder.header(k, value);
+                }
+            }
+        });
+        if (session != null && !blank(session.accessToken())) {
+            builder.header("Authorization", "Bearer " + session.accessToken());
+        }
+        builder.method(original.method(), original.bodyPublisher().orElse(HttpRequest.BodyPublishers.noBody()));
+        return builder.build();
     }
 
     private void require2xx(HttpResponse<String> response) {
@@ -245,5 +316,9 @@ public class BackendClient {
         System.arraycopy(data, 0, out, h.length, data.length);
         System.arraycopy(f, 0, out, h.length + data.length, f.length);
         return out;
+    }
+
+    private boolean blank(String value) {
+        return value == null || value.isBlank();
     }
 }

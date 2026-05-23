@@ -1,8 +1,3 @@
-/*
- * Filtro de autenticação JWT responsável por interceptar requisições HTTP.
- * Verifica a presença do cabeçalho de autorização, extrai e valida o token JWT e,
- * se válido, configura o contexto de segurança com as informações do usuário.
- */
 package com.keeply.backend.security;
 
 import jakarta.servlet.FilterChain;
@@ -35,12 +30,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         if (header != null && header.startsWith("Bearer ")) {
             try {
                 String token = header.substring("Bearer ".length());
-                
-                JwtPrincipal principal = jwtService.parse(token);
-                
+                JwtPrincipal principal = jwtService.parseAccessToken(token);
+
                 var auth = new UsernamePasswordAuthenticationToken(principal, null, List.of());
                 auth.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
-                
                 SecurityContextHolder.getContext().setAuthentication(auth);
             } catch (Exception ignored) {
                 SecurityContextHolder.clearContext();

@@ -30,3 +30,5 @@
 
 - [ ] **Melhoria do Restore:** Investigar e implementar restore parcial/granular em vez de exigir o restore de todo o snapshot (dúvida identificada na versão inicial do documento).
 - [ ] *(Adicionar novos passos aqui conforme o andamento do projeto)*
+
+daemon implementando e testes testando bakcups 

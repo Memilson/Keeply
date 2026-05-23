@@ -3,12 +3,15 @@ package com.keeply.agent;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import com.keeply.agent.api.BackendClient;
+import com.keeply.agent.auth.DeviceAuthStore;
+import com.keeply.agent.auth.DeviceIdentity;
 import com.keeply.agent.config.PlanConfigSync;
 import com.keeply.agent.core.BackupEngine;
 import com.keeply.agent.core.LocalDatabase;
 import com.keeply.agent.core.RestoreEngine;
 import com.keeply.agent.core.RestoreEngine.OverwritePolicy;
 import com.keeply.agent.daemon.AgentPaths;
+import com.keeply.agent.model.DeviceSession;
 import com.keeply.agent.model.ProtectionPlan;
 import com.keeply.agent.model.SnapshotSummary;
 import javafx.application.Application;
@@ -24,6 +27,7 @@ import javafx.stage.Stage;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.net.InetAddress;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalTime;
@@ -37,11 +41,13 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicLong;
 
 public class KeeplyAgentApp extends Application {
     private BackendClient backend;
     private LocalDatabase db;
     private UUID deviceId;
+    private DeviceAuthStore deviceAuthStore;
     private final TextArea logs = new TextArea();
 
     private TextField backendUrl;
@@ -50,6 +56,8 @@ public class KeeplyAgentApp extends Application {
     private TextArea backupSourcesConfig;
     private Label status;
     private final PlanConfigSync planConfigSync = new PlanConfigSync();
+    private final Path daemonLogPath = AgentPaths.resolveDataDir().resolve("daemon.log");
+    private final AtomicLong daemonLogOffset = new AtomicLong(0L);
 
     @Override
     public void start(Stage stage) {
@@ -60,6 +68,7 @@ public class KeeplyAgentApp extends Application {
             throw new IllegalStateException("Falha ao preparar diretório do banco local da UI", e);
         }
         db = new LocalDatabase(uiDbPath.toString());
+        deviceAuthStore = new DeviceAuthStore(AgentPaths.resolveDeviceAuthPath());
         
         backendUrl = new TextField("http://localhost:8080");
         email = new TextField();
@@ -88,6 +97,7 @@ public class KeeplyAgentApp extends Application {
         stage.show();
 
         Thread.startVirtualThread(() -> DaemonProcessManager.ensureDaemonRunning(this::log));
+        Thread.startVirtualThread(this::streamDaemonLogs);
     }
 
     private Pane loginView() {
@@ -99,11 +109,12 @@ public class KeeplyAgentApp extends Application {
             String userPass = password.getText();
             
             log("Tentando login para: " + userEmail);
-            backend = new BackendClient(backendUrl.getText().trim());
-            backend.login(userEmail, userPass);
-
             String hostname = InetAddress.getLocalHost().getHostName();
-            deviceId = backend.registerDevice(hostname, hostname, System.getProperty("os.name"), "0.1.0");
+            backend = new BackendClient(backendUrl.getText().trim());
+            String installationId = DeviceIdentity.getOrCreate(deviceAuthStore);
+            DeviceSession session = backend.loginDevice(userEmail, userPass, installationId, hostname, System.getProperty("os.name"), "0.1.0");
+            deviceId = session.deviceId();
+            deviceAuthStore.save(session);
             synchronizePlanAfterLogin();
             DaemonProcessManager.ensureDaemonRunning(this::log);
 
@@ -522,9 +533,6 @@ public class KeeplyAgentApp extends Application {
         if (backendValue.isBlank()) {
             throw new IllegalStateException("Backend URL é obrigatório.");
         }
-        if (emailValue.isBlank() || passwordValue.isBlank()) {
-            throw new IllegalStateException("Email e senha são obrigatórios.");
-        }
         if (sources.isEmpty()) {
             throw new IllegalStateException("Informe pelo menos uma pasta em 'Pastas de backup'.");
         }
@@ -835,6 +843,37 @@ public class KeeplyAgentApp extends Application {
 
     private void log(String message) {
         ui(() -> logs.appendText(message + "\n"));
+    }
+
+    private void streamDaemonLogs() {
+        while (true) {
+            try {
+                if (Files.exists(daemonLogPath)) {
+                    long fileSize = Files.size(daemonLogPath);
+                    long offset = daemonLogOffset.get();
+                    if (fileSize < offset) {
+                        daemonLogOffset.set(0L);
+                        offset = 0L;
+                    }
+                    if (fileSize > offset) {
+                        byte[] full = Files.readAllBytes(daemonLogPath);
+                        String chunk = new String(full, (int) offset, (int) (fileSize - offset), StandardCharsets.UTF_8);
+                        daemonLogOffset.set(fileSize);
+                        for (String line : chunk.split("\\R")) {
+                            String trimmed = line.trim();
+                            if (!trimmed.isEmpty()) {
+                                log("[daemon] " + trimmed);
+                            }
+                        }
+                    }
+                }
+                Thread.sleep(2000);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            } catch (Exception ignored) {
+            }
+        }
     }
 
     private void ui(Runnable r) {
