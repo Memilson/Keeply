@@ -3,9 +3,9 @@ server:
 
 spring:
   datasource:
-    url: jdbc:postgresql://localhost:5432/keeply
-    username: keeply
-    password: keeply123
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/keeply}
+    username: ${SPRING_DATASOURCE_USERNAME:keeply}
+    password: ${SPRING_DATASOURCE_PASSWORD:keeply123}
   jpa:
     hibernate:
       ddl-auto: update
@@ -15,15 +15,15 @@ spring:
         format_sql: true
   servlet:
     multipart:
-      max-file-size: 10MB
-      max-request-size: 10MB
+      max-file-size: 50MB
+      max-request-size: 50MB
 
 keeply:
   jwt:
-    secret: "troque-esta-chave-por-uma-chave-com-mais-de-32-caracteres"
+    secret: ${KEEPLY_JWT_SECRET:troque-esta-chave-por-uma-chave-com-mais-de-32-caracteres}
     expiration-minutes: 120
   minio:
-    endpoint: "http://localhost:9000"
-    access-key: "keeply"
-    secret-key: "keeply123"
-    bucket: "keeply"
+    endpoint: ${KEEPLY_MINIO_ENDPOINT:http://localhost:9000}
+    access-key: ${KEEPLY_MINIO_ACCESS_KEY:keeply}
+    secret-key: ${KEEPLY_MINIO_SECRET_KEY:keeply123}
+    bucket: ${KEEPLY_MINIO_BUCKET:keeply}

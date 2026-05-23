@@ -3,26 +3,36 @@ services:
     image: postgres:16
     container_name: keeply-postgres
     environment:
-      POSTGRES_DB: keeply
-      POSTGRES_USER: keeply
-      POSTGRES_PASSWORD: keeply123
+      POSTGRES_DB: ${POSTGRES_DB:-keeply}
+      POSTGRES_USER: ${POSTGRES_USER:-keeply}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-keeply123}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - keeply_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-keeply}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   minio:
     image: minio/minio:latest
     container_name: keeply-minio
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: keeply
-      MINIO_ROOT_PASSWORD: keeply123
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-keeply}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-keeply123}
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
     volumes:
       - keeply_minio:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 volumes:
   keeply_postgres:

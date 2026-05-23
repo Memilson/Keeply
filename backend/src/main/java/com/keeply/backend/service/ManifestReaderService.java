@@ -75,7 +75,7 @@ public class ManifestReaderService {
             byte[] data = storage.get(key);
             try (GZIPInputStream gis = new GZIPInputStream(new ByteArrayInputStream(data))) {
                 ManifestParsingDtos.SnapshotManifest manifest = mapper.readValue(
-                        gis.readAllBytes(),
+                        gis,
                         ManifestParsingDtos.SnapshotManifest.class
                 );
                 // Ordenar por caminho para consistência na paginação

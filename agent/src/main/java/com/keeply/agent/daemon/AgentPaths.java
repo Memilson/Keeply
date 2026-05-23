@@ -24,4 +24,10 @@ public final class AgentPaths {
                 .toAbsolutePath()
                 .normalize();
     }
+
+    public static Path resolveDeviceIdPath() {
+        return resolveDataDir().resolve("device-id.txt")
+                .toAbsolutePath()
+                .normalize();
+    }
 }

@@ -128,7 +128,7 @@ public class KeeplyAgentApp extends Application {
                 log("Tentando login para: " + userEmail);
                 String hostname = InetAddress.getLocalHost().getHostName();
                 backend = new BackendClient(backendUrl.getText().trim());
-                String installationId = DeviceIdentity.getOrCreate(deviceAuthStore);
+                String installationId = DeviceIdentity.getOrCreate();
                 DeviceSession session = backend.loginDevice(userEmail, userPass, installationId, hostname, System.getProperty("os.name"), "0.1.0");
                 deviceId = session.deviceId();
                 deviceAuthStore.save(session);

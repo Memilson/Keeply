@@ -44,6 +44,7 @@ SQLITE_FILES=(
   "${AGENT_DATA_DIR}/keeply_agent_ui.db"
   "${AGENT_DATA_DIR}/daemon.log"
   "${AGENT_DATA_DIR}/device-auth.json"
+  "${AGENT_DATA_DIR}/device-id.txt"
 )
 for file in "${SQLITE_FILES[@]}"; do
     if [ -f "$file" ]; then

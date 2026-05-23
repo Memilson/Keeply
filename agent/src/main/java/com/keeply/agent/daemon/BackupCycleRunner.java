@@ -80,25 +80,26 @@ public final class BackupCycleRunner {
 
     void backupAllSources(UUID currentDeviceId, List<Path> sources) {
         for (Path source : sources) {
+            String sourceName = source.getFileName().toString();
             try {
-                logger.info("Iniciando backup de " + source.toAbsolutePath());
+                logger.info("Iniciando backup de " + sourceName);
                 UUID snapshotId = sourceBackupExecutor.run(currentDeviceId, source);
-                logger.info("Backup concluído para " + source.toAbsolutePath() + " snapshot=" + snapshotId);
+                logger.info("Backup concluído para " + sourceName + " snapshot=" + snapshotId);
             } catch (Exception e) {
                 if (isInvalidDeviceError(e)) {
-                    logger.warn("Device inválido detectado; tentando re-registrar e repetir origem " + source.toAbsolutePath());
+                    logger.warn("Device inválido detectado; tentando re-registrar e repetir origem " + sourceName);
                     try {
                         deviceId = null;
                         authenticate(true);
                         ensureDeviceRegistered();
                         UUID retriedSnapshotId = sourceBackupExecutor.run(deviceId, source);
-                        logger.info("Backup concluído após re-registro para " + source.toAbsolutePath() + " snapshot=" + retriedSnapshotId);
+                        logger.info("Backup concluído após re-registro para " + sourceName + " snapshot=" + retriedSnapshotId);
                         continue;
                     } catch (Exception retryError) {
-                        logger.error("Falha no retry após re-registro da origem " + source.toAbsolutePath(), retryError);
+                        logger.error("Falha no retry após re-registro da origem " + sourceName, retryError);
                     }
                 } else {
-                    logger.error("Falha no backup da origem " + source.toAbsolutePath(), e);
+                    logger.error("Falha no backup da origem " + sourceName, e);
                 }
             }
         }
@@ -133,7 +134,7 @@ public final class BackupCycleRunner {
             String hostname = InetAddress.getLocalHost().getHostName();
             String installationId = saved != null && saved.deviceInstallationId() != null && !saved.deviceInstallationId().isBlank()
                     ? saved.deviceInstallationId()
-                    : DeviceIdentity.getOrCreate(authStore);
+                    : DeviceIdentity.getOrCreate();
             DeviceSession session = backend.loginDevice(
                     config.auth().email(),
                     config.auth().password(),

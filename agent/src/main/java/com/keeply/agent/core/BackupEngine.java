@@ -153,7 +153,9 @@ public class BackupEngine {
                             chunksGenerated.addAndGet(fileChunks.size());
                         }
                     } catch (Exception e) {
-                        log.accept("Erro processando " + file + ": " + e.getMessage());
+                        // Mascara o caminho completo no log de erro também
+                        String errorFile = sourceRoot.relativize(file).toString();
+                        log.accept("Erro processando " + errorFile + ": " + e.getMessage());
                         throw new RuntimeException(e);
                     }
                 });
