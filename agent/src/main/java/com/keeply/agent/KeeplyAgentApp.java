@@ -6,7 +6,6 @@ import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import com.keeply.agent.api.BackendClient;
 import com.keeply.agent.auth.DeviceAuthStore;
 import com.keeply.agent.auth.DeviceIdentity;
-import com.keeply.agent.config.PlanConfigSync;
 import com.keeply.agent.core.BackupEngine;
 import com.keeply.agent.core.LocalDatabase;
 import com.keeply.agent.core.RestoreEngine;
@@ -56,7 +55,6 @@ public class KeeplyAgentApp extends Application {
     private PasswordField password;
     private TextArea backupSourcesConfig;
     private Label status;
-    private final PlanConfigSync planConfigSync = new PlanConfigSync();
     private final Path daemonLogPath = AgentPaths.resolveLogPath();
     private final AtomicLong daemonLogOffset = new AtomicLong(0L);
 
@@ -543,7 +541,7 @@ public class KeeplyAgentApp extends Application {
 
         Map<String, Object> root;
         if (Files.exists(configPath)) {
-            root = yaml.readValue(Files.readString(configPath), Map.class);
+            root = yaml.readValue(Files.readString(configPath), new TypeReference<LinkedHashMap<String, Object>>() {});
             if (root == null) root = new LinkedHashMap<>();
         } else {
             root = new LinkedHashMap<>();
@@ -574,7 +572,8 @@ public class KeeplyAgentApp extends Application {
         backupSection.put("sources", sources);
         root.put("backup", backupSection);
 
-        Map<String, Object> schedule = root.containsKey("schedule") && root.get("schedule") instanceof Map<?, ?> existing
+        @SuppressWarnings("unchecked")
+        Map<String, Object> schedule = root.get("schedule") instanceof Map<?, ?> existing
                 ? new LinkedHashMap<>((Map<String, Object>) existing)
                 : new LinkedHashMap<>();
         schedule.put("cron", cron);
@@ -588,9 +587,61 @@ public class KeeplyAgentApp extends Application {
     private void synchronizePlanAfterLogin() {
         Optional<ProtectionPlan> maybePlan = backend.getDevicePlan(deviceId);
         ProtectionPlan plan = maybePlan.orElseGet(this::createPlanFromWizard);
-        planConfigSync.applyPlan(AgentPaths.resolveDefaultConfigPath(), plan);
-        ui(() -> backupSourcesConfig.setText(String.join("\n", plan.sources())));
-        log("Plano sincronizado do backend para agent.yaml.");
+        
+        try {
+            saveFullConfigAfterLogin(plan);
+            ui(() -> backupSourcesConfig.setText(String.join("\n", plan.sources())));
+            log("Plano sincronizado e agent.yaml configurado com sucesso.");
+        } catch (Exception e) {
+            log("Erro ao salvar configuração após login: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    private void saveFullConfigAfterLogin(ProtectionPlan plan) throws Exception {
+        Path configPath = AgentPaths.resolveDefaultConfigPath();
+        Files.createDirectories(configPath.getParent());
+        ObjectMapper yaml = new ObjectMapper(new YAMLFactory());
+
+        Map<String, Object> root;
+        if (Files.exists(configPath)) {
+            root = yaml.readValue(Files.readString(configPath), new TypeReference<LinkedHashMap<String, Object>>() {});
+            if (root == null) root = new LinkedHashMap<>();
+        } else {
+            root = new LinkedHashMap<>();
+        }
+
+        // Backend
+        Map<String, Object> backendSection = root.get("backend") instanceof Map<?, ?> existing 
+                ? new LinkedHashMap<>((Map<String, Object>) existing) 
+                : new LinkedHashMap<>();
+        backendSection.put("url", backendUrl.getText().trim());
+        root.put("backend", backendSection);
+
+        // Auth
+        Map<String, Object> authSection = root.get("auth") instanceof Map<?, ?> existing 
+                ? new LinkedHashMap<>((Map<String, Object>) existing) 
+                : new LinkedHashMap<>();
+        authSection.put("email", email.getText().trim());
+        authSection.put("password", password.getText());
+        root.put("auth", authSection);
+
+        // Backup
+        Map<String, Object> backupSection = root.get("backup") instanceof Map<?, ?> existing 
+                ? new LinkedHashMap<>((Map<String, Object>) existing) 
+                : new LinkedHashMap<>();
+        backupSection.put("sources", new ArrayList<>(plan.sources()));
+        root.put("backup", backupSection);
+
+        // Schedule (Garante padrão se não existir)
+        if (!root.containsKey("schedule") || !(root.get("schedule") instanceof Map)) {
+            Map<String, Object> schedule = new LinkedHashMap<>();
+            schedule.put("cron", "0 2 * * *"); // 2 AM diário
+            schedule.put("runOnStartup", true);
+            root.put("schedule", schedule);
+        }
+
+        yaml.writeValue(configPath.toFile(), root);
     }
 
     private ProtectionPlan createPlanFromWizard() {
@@ -672,7 +723,7 @@ public class KeeplyAgentApp extends Application {
         }
 
         ObjectMapper yaml = new ObjectMapper(new YAMLFactory());
-        Map<String, Object> root = yaml.readValue(Files.readString(configPath), Map.class);
+        Map<String, Object> root = yaml.readValue(Files.readString(configPath), new TypeReference<LinkedHashMap<String, Object>>() {});
         if (root == null) {
             ui(() -> statusLabel.setText("Config vazia em " + configPath));
             return;
