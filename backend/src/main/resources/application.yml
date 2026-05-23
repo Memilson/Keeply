@@ -1,0 +1,25 @@
+server:
+  port: 8080
+
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/keeply
+    username: keeply
+    password: keeply
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+
+keeply:
+  jwt:
+    secret: "troque-esta-chave-por-uma-chave-com-mais-de-32-caracteres"
+    expiration-minutes: 120
+  minio:
+    endpoint: "http://localhost:9000"
+    access-key: "keeply"
+    secret-key: "keeply123"
+    bucket: "keeply"
