@@ -9,6 +9,11 @@ import java.util.*;
 
 public class ManifestBuilder {
     private final ContentDefinedChunker chunker = new ContentDefinedChunker();
+    private final LocalDatabase db;
+
+    public ManifestBuilder(LocalDatabase db) {
+        this.db = db;
+    }
 
     public BackupPlan build(String snapshotId, Path sourceRoot) {
         List<FileManifest> files = new ArrayList<>();
@@ -18,17 +23,21 @@ public class ManifestBuilder {
             try {
                 Path relative = sourceRoot.relativize(file);
                 String relativePath = relative.toString().replace("\\", "/");
-
+                
+                long size = Files.size(file);
+                long mtime = Files.getLastModifiedTime(file).toMillis();
+                
                 var chunkResult = chunker.chunk(file);
                 allChunks.addAll(chunkResult.payloads());
 
                 FileManifest fm = new FileManifest(
                         relativePath,
-                        Files.size(file),
-                        Files.getLastModifiedTime(file).toInstant(),
+                        size,
+                        Instant.ofEpochMilli(mtime),
                         Sha256Hasher.hashFile(file),
                         chunkResult.manifestChunks()
                 );
+                db.saveFileCache(relativePath, size, mtime, fm.sha256(), fm.chunks());
                 files.add(fm);
             } catch (Exception e) {
                 throw new IllegalStateException("Falha ao gerar manifesto do arquivo: " + file, e);

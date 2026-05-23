@@ -37,7 +37,7 @@ PostgreSQL:
 localhost:5432
 database: keeply
 user: keeply
-password: keeply
+password: keeply123
 ```
 
 ## Rodando o backend

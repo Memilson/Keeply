@@ -1,5 +1,6 @@
 package com.keeply.agent.model;
 
+import java.time.Instant;
 import java.util.UUID;
 
 public record SnapshotSummary(
@@ -9,5 +10,8 @@ public record SnapshotSummary(
         String sourcePath,
         long totalFiles,
         long totalOriginalSize,
-        long totalCompressedSize
+        long totalCompressedSize,
+        Instant startedAt,
+        Instant completedAt,
+        String errorMessage
 ) {}

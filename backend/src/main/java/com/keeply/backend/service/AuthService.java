@@ -4,12 +4,15 @@ import com.keeply.backend.dto.AuthDtos;
 import com.keeply.backend.model.UserAccount;
 import com.keeply.backend.repository.UserRepository;
 import com.keeply.backend.security.JwtService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class AuthService {
+    private static final Logger log = LoggerFactory.getLogger(AuthService.class);
     private final UserRepository users;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
@@ -38,10 +41,19 @@ public class AuthService {
 
     @Transactional(readOnly = true)
     public AuthDtos.AuthResponse login(AuthDtos.LoginRequest request) {
-        UserAccount user = users.findByEmail(request.email().toLowerCase().trim())
-                .orElseThrow(() -> new IllegalArgumentException("Credenciais inválidas"));
+        String email = request.email().toLowerCase().trim();
+        log.info("Tentativa de login para: '{}'", email);
+        
+        UserAccount user = users.findByEmail(email)
+                .orElseThrow(() -> {
+                    log.warn("Usuário não encontrado: '{}'", email);
+                    return new IllegalArgumentException("Credenciais inválidas");
+                });
 
-        if (!passwordEncoder.matches(request.password(), user.passwordHash)) {
+        boolean matches = passwordEncoder.matches(request.password(), user.passwordHash);
+        log.info("Password matches for '{}': {}", email, matches);
+
+        if (!matches) {
             throw new IllegalArgumentException("Credenciais inválidas");
         }
 

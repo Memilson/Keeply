@@ -2,6 +2,7 @@ package com.keeply.agent.api;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.keeply.agent.model.ChunkPayload;
 import com.keeply.agent.model.SnapshotSummary;
 
@@ -12,7 +13,9 @@ import java.util.*;
 
 public class BackendClient {
     private final HttpClient http = HttpClient.newHttpClient();
-    private final ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
+    private final ObjectMapper mapper = new ObjectMapper()
+            .registerModule(new JavaTimeModule())
+            .findAndRegisterModules();
     private final String baseUrl;
     private String token;
 
@@ -178,9 +181,20 @@ public class BackendClient {
         return builder;
     }
 
-    private static void require2xx(HttpResponse<String> response) {
+    private void require2xx(HttpResponse<String> response) {
         if (response.statusCode() < 200 || response.statusCode() >= 300) {
-            throw new IllegalStateException("HTTP " + response.statusCode() + ": " + response.body());
+            String message = "HTTP " + response.statusCode();
+            try {
+                Map<String, Object> errorMap = mapper.readValue(response.body(), new TypeReference<>() {});
+                if (errorMap.containsKey("error")) {
+                    message = errorMap.get("error").toString();
+                }
+            } catch (Exception ignored) {
+                if (response.body() != null && !response.body().isBlank()) {
+                    message += ": " + response.body();
+                }
+            }
+            throw new IllegalStateException(message);
         }
     }
 

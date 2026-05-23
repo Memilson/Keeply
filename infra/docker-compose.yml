@@ -5,7 +5,7 @@ services:
     environment:
       POSTGRES_DB: keeply
       POSTGRES_USER: keeply
-      POSTGRES_PASSWORD: keeply
+      POSTGRES_PASSWORD: keeply123
     ports:
       - "5432:5432"
     volumes:

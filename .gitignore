@@ -1,21 +1,41 @@
+# Gradle
 .gradle/
 build/
-!gradle/wrapper/gradle-wrapper.jar
-!**/src/main/resources/*.jar
-!**/src/test/resources/*.jar
+bin/
+/out/
 
-### IntelliJ IDEA ###
+# Manter o Wrapper (necessário para rodar o projeto)
+!gradle/wrapper/gradle-wrapper.jar
+!gradle/wrapper/gradle-wrapper.properties
+!gradlew
+!gradlew.bat
+
+# IntelliJ IDEA
 .idea/
 *.iws
 *.iml
 *.ipr
-out/
 
-### VS Code ###
+# VS Code
 .vscode/
-bin/
-obj/
+.history/
+*.code-workspace
 
-### OS files ###
+# Codex / AI Tools
+.codex
+.gemini
+.cursor
+
+# OS Files
 .DS_Store
 Thumbs.db
+*.swp
+
+# Logs
+*.log
+logs/
+
+# Database / Temp
+*.db
+*.sqlite
+tmp/
