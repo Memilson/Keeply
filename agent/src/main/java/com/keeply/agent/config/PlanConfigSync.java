@@ -19,15 +19,21 @@ public final class PlanConfigSync {
         try {
             Files.createDirectories(configPath.toAbsolutePath().getParent());
             Map<String, Object> root = Files.exists(configPath)
-                    ? yaml.readValue(Files.readString(configPath), new TypeReference<>() {})
+                    ? yaml.readValue(Files.readString(configPath), new TypeReference<LinkedHashMap<String, Object>>() {})
                     : new LinkedHashMap<>();
             if (root == null) {
                 root = new LinkedHashMap<>();
             }
 
-            Map<String, Object> backup = root.get("backup") instanceof Map<?, ?> existing
-                    ? new LinkedHashMap<>((Map<String, Object>) existing)
-                    : new LinkedHashMap<>();
+            Object backupObj = root.get("backup");
+            Map<String, Object> backup;
+            if (backupObj instanceof Map) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> existing = (Map<String, Object>) backupObj;
+                backup = new LinkedHashMap<>(existing);
+            } else {
+                backup = new LinkedHashMap<>();
+            }
             backup.put("sources", new ArrayList<>(plan.sources()));
             root.put("backup", backup);
 

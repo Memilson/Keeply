@@ -33,7 +33,7 @@ public final class KeeplyAgentDaemonApp {
             BackupCycleRunner runner = new BackupCycleRunner(config, dbPath, logger);
 
             logger.info("Iniciando daemon com config: " + configPath);
-            try (DaemonInstanceLock ignored = DaemonInstanceLock.acquire(lockPath)) {
+            try (DaemonInstanceLock lock = DaemonInstanceLock.acquire(lockPath)) {
                 if (Boolean.TRUE.equals(config.schedule().runOnStartup())) {
                     logger.info("runOnStartup=true, executando ciclo imediato.");
                     runner.runCycle();
