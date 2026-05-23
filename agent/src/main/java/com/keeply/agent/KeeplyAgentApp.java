@@ -300,7 +300,7 @@ public class KeeplyAgentApp extends Application {
     }
 
     private CheckBoxTreeItem<RestoreNode> buildFileTree(List<String> filePaths) {
-        CheckBoxTreeItem<RestoreNode> root = new CheckBoxTreeItem<>(new RestoreNode("root", null, false));
+        CheckBoxTreeItem<RestoreNode> root = new CheckBoxTreeItem<>(new RestoreNode("root", null));
         root.setIndependent(true);
         for (String path : filePaths) {
             String normalized = path == null ? "" : path.trim();
@@ -328,7 +328,7 @@ public class KeeplyAgentApp extends Application {
                 return child;
             }
         }
-        CheckBoxTreeItem<RestoreNode> created = new CheckBoxTreeItem<>(new RestoreNode(value, isLeaf ? fullPath : null, isLeaf));
+        CheckBoxTreeItem<RestoreNode> created = new CheckBoxTreeItem<>(new RestoreNode(value, isLeaf ? fullPath : null));
         created.setIndependent(true);
         parent.getChildren().add(created);
         return created;
@@ -367,12 +367,10 @@ public class KeeplyAgentApp extends Application {
     private static class RestoreNode {
         private final String label;
         private final String fullPath;
-        private final boolean file;
 
-        private RestoreNode(String label, String fullPath, boolean file) {
+        private RestoreNode(String label, String fullPath) {
             this.label = label;
             this.fullPath = fullPath;
-            this.file = file;
         }
 
         @Override
