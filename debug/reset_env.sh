@@ -7,13 +7,16 @@ cd "$PROJECT_ROOT"
 
 echo "🚀 Iniciando reset do ambiente Keeply..."
 
+KEEP_DATA_DIR="${HOME}/keeply"
+
 # A. Parar daemon do agente
 echo "🛑 Parando daemon do agente..."
-if [ -f "/home/angelo/keeply/daemon.pid" ]; then
-    kill "$(cat /home/angelo/keeply/daemon.pid)" || true
+AGENT_DATA_DIR="$HOME/keeply"
+if [ -f "$AGENT_DATA_DIR/daemon.pid" ]; then
+    kill "$(cat "$AGENT_DATA_DIR/daemon.pid")" || true
 fi
 pkill -f "com.keeply.agent.KeeplyAgentDaemonApp" || true
-rm -f "/home/angelo/keeply/daemon.pid"
+rm -f "$AGENT_DATA_DIR/daemon.pid"
 
 # 0. Matar o backend se estiver rodando (necessário para o Hibernate recriar as tabelas no novo volume)
 echo "🛑 Parando processo do backend (Java/Gradle)..."
@@ -30,7 +33,6 @@ docker compose -f infra/docker-compose.yml up -d
 
 # 3. Remover banco local do agente e arquivos de dados
 echo "💾 Removendo banco SQLite local e arquivos de dados..."
-AGENT_DATA_DIR="/home/angelo/keeply"
 SQLITE_FILES=(
   "${PROJECT_ROOT}/keeply_agent.db"
   "${PROJECT_ROOT}/keeply_agent.db-wal"

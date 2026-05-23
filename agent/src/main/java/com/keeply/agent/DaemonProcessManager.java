@@ -16,15 +16,14 @@ final class DaemonProcessManager {
 
     static void ensureDaemonRunning(Consumer<String> log) {
         try {
-            Path configPath = AgentPaths.resolveDefaultConfigPath();
-            Path dataDir = configPath.getParent();
-            if (dataDir == null) {
-                log.accept("Daemon: diretório de config inválido.");
-                return;
-            }
-            Files.createDirectories(dataDir);
+            Path configPath = AgentPaths.resolveConfigPath();
+            Path logPath = AgentPaths.resolveLogPath();
+            Path pidPath = AgentPaths.resolvePidPath();
 
-            Path pidPath = dataDir.resolve("daemon.pid");
+            Files.createDirectories(configPath.getParent());
+            Files.createDirectories(logPath.getParent());
+            Files.createDirectories(pidPath.getParent());
+            
             if (isDaemonAlive(pidPath)) {
                 log.accept("Daemon já está ativo.");
                 return;
@@ -35,7 +34,6 @@ final class DaemonProcessManager {
                 return;
             }
 
-            Path logPath = dataDir.resolve("daemon.log");
             ProcessBuilder pb = new ProcessBuilder(buildJavaCommand(configPath));
             pb.redirectOutput(ProcessBuilder.Redirect.appendTo(logPath.toFile()));
             pb.redirectError(ProcessBuilder.Redirect.appendTo(logPath.toFile()));
@@ -67,21 +65,31 @@ final class DaemonProcessManager {
     }
 
     private static boolean isDaemonAlive(Path pidPath) {
+        if (!Files.exists(pidPath)) {
+            return false;
+        }
+
+        try (java.nio.channels.FileChannel channel = java.nio.channels.FileChannel.open(pidPath, StandardOpenOption.WRITE);
+             java.nio.channels.FileLock lock = channel.tryLock()) {
+            
+            if (lock != null) {
+                // Se conseguimos o lock, significa que o daemon NÃO está rodando (ou morreu e o OS liberou o lock)
+                return false;
+            }
+            // Se não conseguimos o lock, o daemon está rodando e segurando o lock
+            return true;
+        } catch (Exception e) {
+            // Fallback para check de PID caso lock falhe por falta de permissão ou outro erro de IO
+            return checkPidFallback(pidPath);
+        }
+    }
+
+    private static boolean checkPidFallback(Path pidPath) {
         try {
-            if (!Files.exists(pidPath)) {
-                return false;
-            }
             String value = Files.readString(pidPath).trim();
-            if (value.isBlank()) {
-                return false;
-            }
+            if (value.isBlank()) return false;
             long pid = Long.parseLong(value);
-            Optional<ProcessHandle> handle = ProcessHandle.of(pid);
-            boolean alive = handle.isPresent() && handle.get().isAlive();
-            if (!alive) {
-                Files.writeString(pidPath, "", StandardOpenOption.TRUNCATE_EXISTING);
-            }
-            return alive;
+            return ProcessHandle.of(pid).map(ProcessHandle::isAlive).orElse(false);
         } catch (Exception ignored) {
             return false;
         }

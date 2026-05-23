@@ -1,7 +1,9 @@
 package com.keeply.agent.daemon;
 
 import com.keeply.agent.config.AgentConfig;
+import com.keeply.agent.auth.DeviceAuthStore;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -11,6 +13,9 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class BackupCycleRunnerTest {
+    @TempDir
+    Path tempDir;
+
     @Test
     void continuesWhenOneSourceFails() {
         List<Path> processed = new ArrayList<>();
@@ -25,7 +30,8 @@ class BackupCycleRunnerTest {
                 new AgentConfig.Schedule("*/5 * * * *", false)
         );
 
-        BackupCycleRunner runner = new BackupCycleRunner(config, new DaemonLogger(), (deviceId, source) -> {
+        DeviceAuthStore authStore = new DeviceAuthStore(tempDir.resolve("auth.json"));
+        BackupCycleRunner runner = new BackupCycleRunner(config, authStore, new DaemonLogger(), (deviceId, source) -> {
             processed.add(source);
             if (source.equals(first)) {
                 throw new IllegalStateException("boom");

@@ -74,24 +74,38 @@ O daemon executa:
 4. A UI JavaFX mostra status/instruções e permite "tentar start local" manualmente (fallback para dev).
 5. O daemon segue ativo mesmo após fechar a UI.
 
-## Plano de proteção por device
+## Configuração do Backend (.env)
 
-- No primeiro login do agente, o usuário deve escolher um plano (`DEFAULT` ou `CUSTOM`) antes de liberar backups.
-- O plano é persistido no backend e é a fonte de verdade para `backup.sources`.
-- O `agent.yaml` funciona como cache operacional local e é reconciliado a partir do backend.
+O backend utiliza variáveis de ambiente para configuração. Você pode criar um arquivo `.env` na raiz do projeto (ou no diretório `backend/`) baseando-se no `.env.example`:
 
-Endpoints autenticados:
+```bash
+cp .env.example .env
+```
 
-- `GET /api/devices/{deviceId}/plan` retorna `200` com plano ou `404` sem plano.
-- `PUT /api/devices/{deviceId}/plan` faz upsert do plano para o device.
+Principais variáveis:
+- `SPRING_DATASOURCE_URL`: URL de conexão com o PostgreSQL.
+- `KEEPLY_JWT_SECRET`: Chave secreta para assinatura dos tokens JWT.
+- `KEEPLY_MINIO_ENDPOINT`: URL da API do MinIO.
+- `KEEPLY_MINIO_ACCESS_KEY` / `KEEPLY_MINIO_SECRET_KEY`: Credenciais do MinIO.
 
 ## Contrato de configuração YAML
 
-Linux default: `~/.config/keeply/agent.yaml`  
-Windows default: `%ProgramData%\Keeply\agent.yaml`  
-Override: `--config <path>`
+O agente busca a configuração nos seguintes locais padrões:
 
-Exemplo:
+- **Linux:** `~/.config/keeply/agent.yaml`
+- **Windows:** `%APPDATA%\keeply\agent.yaml`
+- **Override:** `--config <path>`
+
+### Localização de Logs e Dados (Agente)
+
+| Tipo | Linux | Windows |
+| :--- | :--- | :--- |
+| **Configuração** | `~/.config/keeply/` | `%APPDATA%\keeply\` |
+| **Banco de Dados** | `~/.local/share/keeply/` | `%LOCALAPPDATA%\keeply\` |
+| **Logs** | `~/.local/state/keeply/` | `%LOCALAPPDATA%\keeply\` |
+| **PID/Runtime** | `/tmp/keeply/` | `%TEMP%\keeply\` |
+
+Exemplo de `agent.yaml`:
 
 ```yaml
 backend:

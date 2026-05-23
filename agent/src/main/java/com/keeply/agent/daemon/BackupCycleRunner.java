@@ -32,22 +32,22 @@ public final class BackupCycleRunner {
     private final DeviceAuthStore authStore;
     private UUID deviceId;
 
-    public BackupCycleRunner(AgentConfig config, Path databasePath, DaemonLogger logger) {
+    public BackupCycleRunner(AgentConfig config, LocalDatabase db, DeviceAuthStore authStore, DaemonLogger logger) {
         this.config = config;
         this.logger = logger;
         this.backend = new BackendClient(config.backend().url());
-        this.db = new LocalDatabase(databasePath.toAbsolutePath().toString());
+        this.db = db;
+        this.authStore = authStore;
         this.sourceBackupExecutor = (id, source) -> new BackupEngine(backend, db).backup(id, source, logger::info);
-        this.authStore = new DeviceAuthStore(AgentPaths.resolveDeviceAuthPath());
     }
 
-    BackupCycleRunner(AgentConfig config, DaemonLogger logger, SourceBackupExecutor sourceBackupExecutor) {
+    BackupCycleRunner(AgentConfig config, DeviceAuthStore authStore, DaemonLogger logger, SourceBackupExecutor sourceBackupExecutor) {
         this.config = config;
         this.logger = logger;
         this.backend = new BackendClient(config.backend().url());
         this.db = null;
+        this.authStore = authStore;
         this.sourceBackupExecutor = sourceBackupExecutor;
-        this.authStore = new DeviceAuthStore(AgentPaths.resolveDeviceAuthPath());
     }
 
     public void runCycle() {

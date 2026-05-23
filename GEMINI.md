@@ -27,7 +27,7 @@ Esta documentação serve como o guia mestre para qualquer agente (humano ou IA)
 
 -   **Reset Ambiente:** Use `./debug/reset_env.sh` para limpar banco, logs e volumes docker.
 -   **Build:** `./gradlew classes` (validação rápida) ou `./gradlew build` (full).
--   **Logs do Daemon:** Localizados em `~/keeply/daemon.log`.
+-   **Logs do Daemon:** Localizados em `~/.local/state/keeply/daemon.log` (Linux) ou `%LOCALAPPDATA%\keeply\daemon.log` (Windows). Veja o `README.md` para todos os caminhos.
 
 ---
 *Nota: Se você for um agente de IA, carregue estas instruções em todas as sessões para garantir que suas sugestões de código não quebrem a pipeline de streaming.*

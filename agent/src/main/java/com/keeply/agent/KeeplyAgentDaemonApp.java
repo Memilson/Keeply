@@ -1,7 +1,9 @@
 package com.keeply.agent;
 
+import com.keeply.agent.auth.DeviceAuthStore;
 import com.keeply.agent.config.AgentConfig;
 import com.keeply.agent.config.AgentConfigLoader;
+import com.keeply.agent.core.LocalDatabase;
 import com.keeply.agent.daemon.AgentPaths;
 import com.keeply.agent.daemon.BackupCycleRunner;
 import com.keeply.agent.daemon.CronScheduler;
@@ -21,16 +23,21 @@ public final class KeeplyAgentDaemonApp {
 
         try {
             Path configPath = resolveConfigPath(args);
-            Path dataDir = configPath.toAbsolutePath().getParent();
-            if (dataDir == null) {
-                throw new IllegalArgumentException("Não foi possível resolver diretório de dados para " + configPath);
-            }
-            Files.createDirectories(dataDir);
-            Path dbPath = dataDir.resolve("agent.db");
-            Path lockPath = dataDir.resolve("daemon.pid");
+            
+            // Garantir que todos os diretórios base existam
+            Files.createDirectories(AgentPaths.resolveConfigDir());
+            Files.createDirectories(AgentPaths.resolveDataDir());
+            Files.createDirectories(AgentPaths.resolveStateDir());
+            Files.createDirectories(AgentPaths.resolveRuntimeDir());
+            
+            Path dbPath = AgentPaths.resolveMainDbPath();
+            Path lockPath = AgentPaths.resolvePidPath();
+
+            LocalDatabase db = new LocalDatabase(dbPath.toAbsolutePath().toString());
+            DeviceAuthStore authStore = new DeviceAuthStore(AgentPaths.resolveDeviceAuthPath());
 
             AgentConfig config = new AgentConfigLoader().load(configPath);
-            BackupCycleRunner runner = new BackupCycleRunner(config, dbPath, logger);
+            BackupCycleRunner runner = new BackupCycleRunner(config, db, authStore, logger);
 
             logger.info("Iniciando daemon com config: " + configPath);
             try (DaemonInstanceLock lock = DaemonInstanceLock.acquire(lockPath)) {

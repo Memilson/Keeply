@@ -57,19 +57,22 @@ public class KeeplyAgentApp extends Application {
     private TextArea backupSourcesConfig;
     private Label status;
     private final PlanConfigSync planConfigSync = new PlanConfigSync();
-    private final Path daemonLogPath = AgentPaths.resolveDataDir().resolve("daemon.log");
+    private final Path daemonLogPath = AgentPaths.resolveLogPath();
     private final AtomicLong daemonLogOffset = new AtomicLong(0L);
 
     @Override
     public void start(Stage stage) {
-        Path uiDbPath = AgentPaths.resolveDataDir().resolve("keeply_agent_ui.db");
+        Path uiDbPath = AgentPaths.resolveUiDbPath();
         try {
             Files.createDirectories(uiDbPath.getParent());
+            Files.createDirectories(AgentPaths.resolveLogPath().getParent());
+            Files.createDirectories(AgentPaths.resolveConfigDir());
         } catch (Exception e) {
-            throw new IllegalStateException("Falha ao preparar diretório do banco local da UI", e);
+            throw new IllegalStateException("Falha ao preparar diretórios do agente", e);
         }
         db = new LocalDatabase(uiDbPath.toString());
         deviceAuthStore = new DeviceAuthStore(AgentPaths.resolveDeviceAuthPath());
+
         
         backendUrl = new TextField("http://localhost:8080");
         email = new TextField();
@@ -77,7 +80,7 @@ public class KeeplyAgentApp extends Application {
         status = new Label("Desconectado");
         backupSourcesConfig = new TextArea();
         backupSourcesConfig.setPrefRowCount(4);
-        backupSourcesConfig.setPromptText("/home/angelo/Documentos\n/home/angelo/Imagens");
+        backupSourcesConfig.setPromptText("Ex: /home/usuario/Documentos\n/home/usuario/Imagens");
 
         logs.setEditable(false);
 
