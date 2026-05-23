@@ -81,9 +81,11 @@ public class KeeplyAgentApp extends Application {
 
         logs.setEditable(false);
 
+        Tab loginTab = new Tab("Login", loginView());
+        Tab dashboardTab = new Tab("Dashboard", dashboardView());
         TabPane tabs = new TabPane(
-                new Tab("Login", loginView()),
-                new Tab("Dashboard", dashboardView()),
+                loginTab,
+                dashboardTab,
                 new Tab("Backup", backupView(stage)),
                 new Tab("Restore", restoreView(stage)),
                 new Tab("Configurações", configView()),
@@ -91,6 +93,18 @@ public class KeeplyAgentApp extends Application {
         );
 
         tabs.getTabs().forEach(t -> t.setClosable(false));
+
+        // Tenta auto-login
+        Optional<DeviceSession> saved = deviceAuthStore.load();
+        if (saved.isPresent()) {
+            DeviceSession session = saved.get();
+            backend = new BackendClient(backendUrl.getText().trim());
+            backend.setSession(session);
+            deviceId = session.deviceId();
+            status.setText("Conectado. Device: " + deviceId);
+            tabs.getTabs().remove(loginTab);
+            tabs.getSelectionModel().select(dashboardTab);
+        }
 
         Scene scene = new Scene(tabs, 900, 600);
         stage.setTitle("Keeply Agent MVP");
@@ -105,23 +119,29 @@ public class KeeplyAgentApp extends Application {
         GridPane grid = grid();
 
         Button loginBtn = new Button("Login");
-        loginBtn.setOnAction(e -> runAsync(() -> {
-            String userEmail = email.getText().trim();
-            String userPass = password.getText();
-            
-            log("Tentando login para: " + userEmail);
-            String hostname = InetAddress.getLocalHost().getHostName();
-            backend = new BackendClient(backendUrl.getText().trim());
-            String installationId = DeviceIdentity.getOrCreate(deviceAuthStore);
-            DeviceSession session = backend.loginDevice(userEmail, userPass, installationId, hostname, System.getProperty("os.name"), "0.1.0");
-            deviceId = session.deviceId();
-            deviceAuthStore.save(session);
-            synchronizePlanAfterLogin();
-            DaemonProcessManager.ensureDaemonRunning(this::log);
+        loginBtn.setOnAction(e -> {
+            TabPane tabPane = (TabPane) grid.getScene().getRoot();
+            runAsync(() -> {
+                String userEmail = email.getText().trim();
+                String userPass = password.getText();
+                
+                log("Tentando login para: " + userEmail);
+                String hostname = InetAddress.getLocalHost().getHostName();
+                backend = new BackendClient(backendUrl.getText().trim());
+                String installationId = DeviceIdentity.getOrCreate(deviceAuthStore);
+                DeviceSession session = backend.loginDevice(userEmail, userPass, installationId, hostname, System.getProperty("os.name"), "0.1.0");
+                deviceId = session.deviceId();
+                deviceAuthStore.save(session);
+                synchronizePlanAfterLogin();
+                DaemonProcessManager.ensureDaemonRunning(this::log);
 
-            ui(() -> status.setText("Conectado. Device: " + deviceId));
-            log("Login OK. Device registrado: " + deviceId);
-        }));
+                ui(() -> {
+                    status.setText("Conectado. Device: " + deviceId);
+                    tabPane.getTabs().removeIf(t -> t.getText().equals("Login"));
+                });
+                log("Login OK. Device registrado: " + deviceId);
+            });
+        });
 
         grid.addRow(0, new Label("Backend:"), backendUrl);
         grid.addRow(1, new Label("Email:"), email);

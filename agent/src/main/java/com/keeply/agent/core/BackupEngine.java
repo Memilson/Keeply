@@ -52,6 +52,8 @@ public class BackupEngine {
             AtomicInteger sentCount = new AtomicInteger(0);
             AtomicInteger totalFiles = new AtomicInteger(0);
             AtomicInteger filesCached = new AtomicInteger(0);
+            AtomicInteger chunksGenerated = new AtomicInteger(0);
+            AtomicInteger chunksReused = new AtomicInteger(0);
             AtomicLong totalOriginalSize = new AtomicLong(0);
             List<CompletableFuture<Void>> uploadFutures = new ArrayList<>();
             ContentDefinedChunker chunker = new ContentDefinedChunker();
@@ -73,7 +75,6 @@ public class BackupEngine {
 
                         LocalDatabase.CachedFile cached = db.getFileCache(relativePath);
                         
-                        // SÓ usamos o cache se TODOS os chunks dele estiverem conhecidos localmente
                         boolean cacheValid = cached != null && cached.size() == size && cached.lastModified() == mtime;
                         if (cacheValid) {
                             for (ManifestChunk c : cached.chunks()) {
@@ -86,9 +87,11 @@ public class BackupEngine {
 
                         if (cacheValid) {
                             filesCached.incrementAndGet();
+                            chunksReused.addAndGet(cached.chunks().size());
                             manifestFiles.add(new FileManifest(relativePath, size, Instant.ofEpochMilli(mtime), cached.hash(), cached.chunks()));
                         } else {
                             var chunkResult = chunker.chunk(file);
+                            chunksGenerated.addAndGet(chunkResult.payloads().size());
                             manifestFiles.add(new FileManifest(relativePath, size, Instant.ofEpochMilli(mtime), chunkResult.fileHash(), chunkResult.manifestChunks()));
                             db.saveFileCache(relativePath, size, mtime, chunkResult.fileHash(), chunkResult.manifestChunks());
 
@@ -99,6 +102,8 @@ public class BackupEngine {
                                         db.addKnownChunks(Set.of(payload.hash()));
                                         sentCount.incrementAndGet();
                                     }, executor));
+                                } else {
+                                    chunksReused.incrementAndGet();
                                 }
                             }
                         }
@@ -108,13 +113,17 @@ public class BackupEngine {
                 });
             }
             double processDuration = (System.nanoTime() - startProcessing) / 1_000_000_000.0;
-            log.accept(String.format("[PERF] processing.files=%d cached=%d changed=%d duration=%.2fs",
-                    totalFiles.get(), filesCached.get(), totalFiles.get() - filesCached.get(), processDuration));
-
+            
             if (!uploadFutures.isEmpty()) {
                 log.accept("Aguardando conclusão de " + uploadFutures.size() + " uploads...");
                 CompletableFuture.allOf(uploadFutures.toArray(new CompletableFuture[0])).join();
             }
+
+            log.accept(String.format("[PERF] files.total=%d files.cached=%d files.changed=%d",
+                    totalFiles.get(), filesCached.get(), totalFiles.get() - filesCached.get()));
+            log.accept(String.format("[PERF] chunks.generated=%d chunks.reused=%d chunks.uploaded=%d",
+                    chunksGenerated.get(), chunksReused.get(), sentCount.get()));
+            log.accept(String.format("[PERF] time.processing=%.2fs", processDuration));
 
             long startManifest = System.nanoTime();
             SnapshotManifest manifest = new SnapshotManifest(

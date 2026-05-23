@@ -12,7 +12,16 @@ public final class DaemonLogger {
     }
 
     public void error(String message, Throwable error) {
-        System.err.println(Instant.now() + " [ERROR] " + message + " -> " + error.getMessage());
-        error.printStackTrace(System.err);
+        // Para erros de estado/negócio (esperados), mostramos apenas a mensagem limpa.
+        // Para erros inesperados, mantemos o stack trace para depuração.
+        if (error instanceof IllegalStateException || error instanceof IllegalArgumentException) {
+            System.err.println(Instant.now() + " [ERROR] " + message + ": " + error.getMessage());
+            if (error.getCause() != null) {
+                System.err.println("        Causa: " + error.getCause().getMessage());
+            }
+        } else {
+            System.err.println(Instant.now() + " [ERROR] " + message + " -> " + error.getClass().getSimpleName() + ": " + error.getMessage());
+            error.printStackTrace(System.err);
+        }
     }
 }
