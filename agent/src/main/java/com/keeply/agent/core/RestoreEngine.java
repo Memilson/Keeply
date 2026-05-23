@@ -38,9 +38,14 @@ public class RestoreEngine {
                 if (selected != null && !selected.contains(file.path())) {
                     continue;
                 }
-                Path target = destinationRoot == null
-                        ? safeResolveOriginalRoot(originalRoot, file.path())
-                        : safeResolve(destinationRoot, file.path());
+                Path target;
+                if (selected != null && destinationRoot != null) {
+                    target = destinationRoot.resolve(Path.of(file.path()).getFileName().toString()).normalize();
+                } else {
+                    target = destinationRoot == null
+                            ? safeResolveOriginalRoot(originalRoot, file.path())
+                            : safeResolve(destinationRoot, file.path());
+                }
 
                 if (!shouldRestore(target, file.lastModified(), overwritePolicy)) {
                     log.accept("Ignorado pela política (" + overwritePolicy.label + "): " + file.path());
