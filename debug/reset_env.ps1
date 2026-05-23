@@ -1,27 +1,31 @@
 $ErrorActionPreference = "Stop"
 
-$ProjectRoot = (Get-Item $PSScriptRoot).Parent.FullName
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
+$ProjectRoot = Resolve-Path (Join-Path $ScriptDir "..")
 Set-Location $ProjectRoot
 
-Write-Host "🚀 Iniciando reset do ambiente Keeply (PowerShell)..." -ForegroundColor Cyan
+Write-Host "🚀 Iniciando reset do ambiente Keeply..." -ForegroundColor Cyan
 
-$KeepDataDir = Join-Path $HOME "keeply"
+# Resolver caminhos no Windows (AppData)
+$KeeplyConfig = Join-Path $env:APPDATA "keeply"
+$KeeplyData = Join-Path $env:LOCALAPPDATA "keeply"
+$KeeplyRuntime = Join-Path $env:TEMP "keeply"
 
 # A. Parar daemon do agente
 Write-Host "🛑 Parando daemon do agente..." -ForegroundColor Yellow
-$PidFile = Join-Path $KeepDataDir "daemon.pid"
+$PidFile = Join-Path $KeeplyRuntime "daemon.pid"
 if (Test-Path $PidFile) {
     $DaemonPid = Get-Content $PidFile
     try {
         Stop-Process -Id $DaemonPid -Force -ErrorAction SilentlyContinue
     } catch {}
-    Remove-Item $PidFile -Force
 }
-Get-Process | Where-Object { $_.ProcessName -like "*KeeplyAgentDaemonApp*" } | Stop-Process -Force -ErrorAction SilentlyContinue
+Get-Process | Where-Object { $_.CommandLine -like "*com.keeply.agent.KeeplyAgentDaemonApp*" } | Stop-Process -Force -ErrorAction SilentlyContinue
+if (Test-Path $PidFile) { Remove-Item $PidFile -Force -ErrorAction SilentlyContinue }
 
 # 0. Matar o backend se estiver rodando
-Write-Host "🛑 Parando processo do backend..." -ForegroundColor Yellow
-Get-Process | Where-Object { $_.CommandLine -like "*:backend:bootRun*" -or $_.ProcessName -like "*BackendApplication*" } | Stop-Process -Force -ErrorAction SilentlyContinue
+Write-Host "🛑 Parando processo do backend (Java/Gradle)..." -ForegroundColor Yellow
+Get-Process | Where-Object { $_.CommandLine -match "gradle-wrapper.jar.*:backend:bootRun|BackendApplication" } | Stop-Process -Force -ErrorAction SilentlyContinue
 
 # 1. Parar infra e remover volumes
 Write-Host "📦 Limpando volumes do Docker (Postgres e MinIO)..." -ForegroundColor Yellow
@@ -31,68 +35,51 @@ docker compose -f infra/docker-compose.yml down -v
 Write-Host "⚡ Subindo infraestrutura..." -ForegroundColor Yellow
 docker compose -f infra/docker-compose.yml up -d
 
-# 3. Remover banco local do agente e arquivos de dados
-Write-Host "💾 Removendo banco SQLite local e arquivos de dados..." -ForegroundColor Yellow
-$SqliteFiles = @(
-    Join-Path $ProjectRoot "keeply_agent.db",
-    Join-Path $ProjectRoot "keeply_agent.db-wal",
-    Join-Path $ProjectRoot "keeply_agent.db-shm",
-    Join-Path $ProjectRoot "agent/keeply_agent.db",
-    Join-Path $ProjectRoot "agent/keeply_agent.db-wal",
-    Join-Path $ProjectRoot "agent/keeply_agent.db-shm",
-    (Join-Path $KeepDataDir "agent.db"),
-    (Join-Path $KeepDataDir "agent.db-wal"),
-    (Join-Path $KeepDataDir "agent.db-shm"),
-    (Join-Path $KeepDataDir "keeply_agent_ui.db"),
-    (Join-Path $KeepDataDir "daemon.log"),
-    (Join-Path $KeepDataDir "device-auth.json"),
-    (Join-Path $KeepDataDir "device-id.txt")
-)
+# 3. Remover arquivos locais do agente
+Write-Host "💾 Removendo arquivos de configuração, estado e bancos do agente..." -ForegroundColor Yellow
 
-foreach ($File in $SqliteFiles) {
-    if (Test-Path $File) {
-        Remove-Item $File -Force
-        Write-Host "   removido: $File"
-    }
-}
+if (Test-Path $KeeplyConfig) { Remove-Item -Recurse -Force $KeeplyConfig }
+if (Test-Path $KeeplyData) { Remove-Item -Recurse -Force $KeeplyData }
+if (Test-Path $KeeplyRuntime) { Remove-Item -Recurse -Force $KeeplyRuntime }
 
-Write-Host "✅ SQLite e logs locais limpos." -ForegroundColor Green
+# Limpar eventuais arquivos de banco na raiz (durante testes)
+Get-ChildItem -Path $ProjectRoot -Filter "*keeply_agent*.db*" -Recurse -Depth 2 -File | Remove-Item -Force
+Get-ChildItem -Path $ProjectRoot -Filter "agent.db*" -Recurse -Depth 2 -File | Remove-Item -Force
 
-Write-Host "⚠️  AVISO: Por favor, inicie o backend agora (./gradlew :backend:bootRun) em outro terminal." -ForegroundColor Yellow
-Write-Host "⏳ Aguardando backend (port 8080) ficar online para registrar o usuário..." -ForegroundColor Yellow
+Write-Host "✅ Arquivos e diretórios locais limpos." -ForegroundColor Green
+
+Write-Host "⚠️  AVISO: Por favor, inicie o backend agora (./gradlew :backend:bootRun) em outro terminal." -ForegroundColor Magenta
+Write-Host "⏳ Aguardando backend (port 8080) ficar online para registrar o usuário..." -ForegroundColor Cyan
 
 # 4. Aguardar o backend estar pronto
 $MaxRetries = 60
 $Count = 0
-$BackendReady = $false
-while (-not $BackendReady -and $Count -lt $MaxRetries) {
+$BackendUp = $false
+
+while ($Count -lt $MaxRetries -and -not $BackendUp) {
     try {
-        $Response = Invoke-WebRequest -Uri "http://localhost:8080/actuator/health" -Method Get -ErrorAction SilentlyContinue
-        if ($Response.StatusCode -eq 200) {
-            $BackendReady = $true
-        }
-    } catch {}
-    
-    if (-not $BackendReady) {
+        $response = Invoke-WebRequest -Uri "http://localhost:8080/actuator/health" -UseBasicParsing -ErrorAction Stop
+        $BackendUp = $true
+    } catch {
         Start-Sleep -Seconds 2
         $Count++
         Write-Host "   Tentativa $Count/$MaxRetries..."
     }
 }
 
-if (-not $BackendReady) {
+if (-not $BackendUp) {
     Write-Host "❌ Erro: O backend não subiu a tempo ou não foi iniciado." -ForegroundColor Red
     exit 1
 }
 
 # 5. Criar usuário de teste
 Write-Host "👤 Criando usuário de teste (keeply@keeply.com)..." -ForegroundColor Yellow
-$RegisterBody = @{
+$body = @{
     name = "Keeply Test"
     email = "keeply@keeply.com"
     password = "keeply123"
 } | ConvertTo-Json
 
-Invoke-RestMethod -Uri "http://localhost:8080/api/auth/register" -Method Post -ContentType "application/json" -Body $RegisterBody
+Invoke-RestMethod -Uri "http://localhost:8080/api/auth/register" -Method Post -Body $body -ContentType "application/json" | Out-Null
 
 Write-Host "`n✅ Ambiente resetado e usuário criado com sucesso!" -ForegroundColor Green

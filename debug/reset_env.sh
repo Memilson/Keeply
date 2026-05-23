@@ -7,16 +7,19 @@ cd "$PROJECT_ROOT"
 
 echo "🚀 Iniciando reset do ambiente Keeply..."
 
-KEEP_DATA_DIR="${HOME}/keeply"
+# Resolver caminhos XDG dinamicamente
+KEEPLY_CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/keeply"
+KEEPLY_DATA="${XDG_DATA_HOME:-$HOME/.local/share}/keeply"
+KEEPLY_STATE="${XDG_STATE_HOME:-$HOME/.local/state}/keeply"
+KEEPLY_RUNTIME="${XDG_RUNTIME_DIR:-/tmp}/keeply"
 
 # A. Parar daemon do agente
 echo "🛑 Parando daemon do agente..."
-AGENT_DATA_DIR="$HOME/keeply"
-if [ -f "$AGENT_DATA_DIR/daemon.pid" ]; then
-    kill "$(cat "$AGENT_DATA_DIR/daemon.pid")" || true
+if [ -f "$KEEPLY_RUNTIME/daemon.pid" ]; then
+    kill "$(cat "$KEEPLY_RUNTIME/daemon.pid")" 2>/dev/null || true
 fi
 pkill -f "com.keeply.agent.KeeplyAgentDaemonApp" || true
-rm -f "$AGENT_DATA_DIR/daemon.pid"
+rm -f "$KEEPLY_RUNTIME/daemon.pid"
 
 # 0. Matar o backend se estiver rodando (necessário para o Hibernate recriar as tabelas no novo volume)
 echo "🛑 Parando processo do backend (Java/Gradle)..."
@@ -32,34 +35,20 @@ echo "⚡ Subindo infraestrutura..."
 docker compose -f infra/docker-compose.yml up -d
 
 # 3. Remover banco local do agente e arquivos de dados
-echo "💾 Removendo banco SQLite local e arquivos de dados..."
-SQLITE_FILES=(
-  "${PROJECT_ROOT}/keeply_agent.db"
-  "${PROJECT_ROOT}/keeply_agent.db-wal"
-  "${PROJECT_ROOT}/keeply_agent.db-shm"
-  "${PROJECT_ROOT}/agent/keeply_agent.db"
-  "${PROJECT_ROOT}/agent/keeply_agent.db-wal"
-  "${PROJECT_ROOT}/agent/keeply_agent.db-shm"
-  "${AGENT_DATA_DIR}/agent.db"
-  "${AGENT_DATA_DIR}/agent.db-wal"
-  "${AGENT_DATA_DIR}/agent.db-shm"
-  "${AGENT_DATA_DIR}/keeply_agent_ui.db"
-  "${AGENT_DATA_DIR}/daemon.log"
-  "${AGENT_DATA_DIR}/device-auth.json"
-  "${AGENT_DATA_DIR}/device-id.txt"
-)
-for file in "${SQLITE_FILES[@]}"; do
-    if [ -f "$file" ]; then
-        rm -f "$file"
-        echo "   removido: $file"
-    fi
-done
+echo "💾 Removendo arquivos de configuração, estado e bancos do agente..."
 
-if [ -f "${AGENT_DATA_DIR}/agent.db" ]; then
-    echo "❌ Erro: não foi possível remover todos os SQLite do agente em $AGENT_DATA_DIR"
-    exit 1
-fi
-echo "✅ SQLite e logs locais limpos."
+# Remover pastas completas do padrão XDG e legado
+rm -rf "$KEEPLY_CONFIG"
+rm -rf "$KEEPLY_DATA"
+rm -rf "$KEEPLY_STATE"
+rm -rf "$KEEPLY_RUNTIME"
+rm -rf "$HOME/keeply" # Legado
+
+# Limpar eventuais arquivos de banco corrompidos na raiz do projeto (durante testes)
+find "$PROJECT_ROOT" -maxdepth 2 -type f -name "*keeply_agent*.db*" -exec rm -f {} +
+find "$PROJECT_ROOT" -maxdepth 2 -type f -name "agent.db*" -exec rm -f {} +
+
+echo "✅ Arquivos e diretórios locais limpos."
 
 echo "⚠️  AVISO: Por favor, inicie o backend agora (./gradlew :backend:bootRun) em outro terminal."
 echo "⏳ Aguardando backend (port 8080) ficar online para registrar o usuário..."
