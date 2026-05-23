@@ -40,7 +40,9 @@ public class RestoreEngine {
                 }
                 Path target;
                 if (selected != null && destinationRoot != null) {
-                    target = destinationRoot.resolve(Path.of(file.path()).getFileName().toString()).normalize();
+                    // Se o usuário selecionou caminhos específicos, restauramos eles para a raiz do destino
+                    // mantendo o nome original do arquivo, mas passando pelo safeResolve por segurança.
+                    target = safeResolve(destinationRoot, Path.of(file.path()).getFileName().toString());
                 } else {
                     target = destinationRoot == null
                             ? safeResolveOriginalRoot(originalRoot, file.path())

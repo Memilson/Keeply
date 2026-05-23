@@ -1,15 +1,10 @@
 package com.keeply.agent.core;
 
-import com.keeply.agent.model.ChunkPayload;
-import com.keeply.agent.model.ManifestChunk;
-
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
-import java.util.ArrayList;
-import java.util.List;
 
 public class ContentDefinedChunker {
     public static final int MIN_SIZE = 512 * 1024;
@@ -18,15 +13,13 @@ public class ContentDefinedChunker {
 
     private static final int CUT_MASK = AVG_SIZE - 1;
 
-    public ChunkResult chunk(Path file) {
-        List<ManifestChunk> manifestChunks = new ArrayList<>();
-        List<ChunkPayload> payloads = new ArrayList<>();
-
+    public String process(Path file, ChunkConsumer consumer) {
         try (InputStream in = Files.newInputStream(file)) {
             MessageDigest fileDigest = MessageDigest.getInstance("SHA-256");
             ByteArrayOutputStream current = new ByteArrayOutputStream();
             int rolling = 0;
             int index = 0;
+            long offset = 0;
             byte[] buffer = new byte[64 * 1024];
             int bytesRead;
 
@@ -42,38 +35,25 @@ public class ContentDefinedChunker {
                     boolean mustCut = size >= MAX_SIZE;
 
                     if (canCut || mustCut) {
-                        index = flushChunk(index, current, manifestChunks, payloads);
+                        byte[] data = current.toByteArray();
+                        consumer.accept(new ChunkData(index, offset, data, data.length));
+                        offset += data.length;
+                        index++;
+                        current.reset();
                         rolling = 0;
                     }
                 }
             }
 
             if (current.size() > 0) {
-                flushChunk(index, current, manifestChunks, payloads);
+                byte[] data = current.toByteArray();
+                consumer.accept(new ChunkData(index, offset, data, data.length));
             }
 
-            String fileHash = hex(fileDigest.digest());
-            return new ChunkResult(fileHash, manifestChunks, payloads);
+            return hex(fileDigest.digest());
         } catch (Exception e) {
-            throw new IllegalStateException("Falha no chunking do arquivo: " + file, e);
+            throw new IllegalStateException("Falha no processamento (streaming) do arquivo: " + file, e);
         }
-    }
-
-    private int flushChunk(
-            int index,
-            ByteArrayOutputStream current,
-            List<ManifestChunk> manifestChunks,
-            List<ChunkPayload> payloads
-    ) {
-        byte[] original = current.toByteArray();
-        String hash = Sha256Hasher.hashBytes(original);
-        byte[] compressed = GzipCompressor.compress(original);
-
-        manifestChunks.add(new ManifestChunk(index, hash, original.length, compressed.length));
-        payloads.add(new ChunkPayload(hash, original.length, compressed.length, compressed));
-
-        current.reset();
-        return index + 1;
     }
 
     private String hex(byte[] bytes) {
@@ -83,6 +63,4 @@ public class ContentDefinedChunker {
         }
         return sb.toString();
     }
-
-    public record ChunkResult(String fileHash, List<ManifestChunk> manifestChunks, List<ChunkPayload> payloads) {}
 }

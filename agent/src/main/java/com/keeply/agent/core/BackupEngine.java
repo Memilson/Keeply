@@ -13,6 +13,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -45,9 +46,31 @@ public class BackupEngine {
         try (ExecutorService executor = Executors.newFixedThreadPool(4)) {
             log.accept("Snapshot iniciado: " + snapshotId);
 
+            Set<String> locallyKnown = db.getKnownChunks();
+            Set<String> verifiedRemote = ConcurrentHashMap.newKeySet();
+            
+            if (!locallyKnown.isEmpty()) {
+                log.accept("Verificando integridade de " + locallyKnown.size() + " chunks no servidor...");
+                List<String> hashes = new ArrayList<>(locallyKnown);
+                // Dividir em lotes de 1000 para evitar requests gigantes
+                for (int i = 0; i < hashes.size(); i += 1000) {
+                    List<String> batch = hashes.subList(i, Math.min(i + 1000, hashes.size()));
+                    Set<String> existing = backend.checkChunks(batch);
+                    verifiedRemote.addAll(existing);
+                }
+                log.accept("Integridade confirmada: " + verifiedRemote.size() + "/" + locallyKnown.size() + " chunks válidos.");
+                
+                // Limpar do banco local o que não existe mais no servidor
+                locallyKnown.removeAll(verifiedRemote);
+                if (!locallyKnown.isEmpty()) {
+                    log.accept("⚠️ Removendo " + locallyKnown.size() + " chunks órfãos do cache local.");
+                    db.removeKnownChunks(locallyKnown);
+                }
+            }
+
             List<FileManifest> manifestFiles = new ArrayList<>();
-            Set<String> knownLocally = ConcurrentHashMap.newKeySet();
-            knownLocally.addAll(db.getKnownChunks());
+            Set<String> knownInSession = ConcurrentHashMap.newKeySet();
+            knownInSession.addAll(verifiedRemote);
             
             AtomicInteger sentCount = new AtomicInteger(0);
             AtomicInteger totalFiles = new AtomicInteger(0);
@@ -57,6 +80,7 @@ public class BackupEngine {
             AtomicLong totalOriginalSize = new AtomicLong(0);
             List<CompletableFuture<Void>> uploadFutures = new ArrayList<>();
             ContentDefinedChunker chunker = new ContentDefinedChunker();
+            java.util.concurrent.Semaphore inFlightLimiter = new java.util.concurrent.Semaphore(8);
 
             long startProcessing = System.nanoTime();
             try (var stream = FileScanner.scan(sourceRoot)) {
@@ -78,7 +102,7 @@ public class BackupEngine {
                         boolean cacheValid = cached != null && cached.size() == size && cached.lastModified() == mtime;
                         if (cacheValid) {
                             for (ManifestChunk c : cached.chunks()) {
-                                if (!knownLocally.contains(c.hash())) {
+                                if (!knownInSession.contains(c.hash())) {
                                     cacheValid = false;
                                     break;
                                 }
@@ -90,25 +114,47 @@ public class BackupEngine {
                             chunksReused.addAndGet(cached.chunks().size());
                             manifestFiles.add(new FileManifest(relativePath, size, Instant.ofEpochMilli(mtime), cached.hash(), cached.chunks()));
                         } else {
-                            var chunkResult = chunker.chunk(file);
-                            chunksGenerated.addAndGet(chunkResult.payloads().size());
-                            manifestFiles.add(new FileManifest(relativePath, size, Instant.ofEpochMilli(mtime), chunkResult.fileHash(), chunkResult.manifestChunks()));
-                            db.saveFileCache(relativePath, size, mtime, chunkResult.fileHash(), chunkResult.manifestChunks());
-
-                            for (ChunkPayload payload : chunkResult.payloads()) {
-                                if (knownLocally.add(payload.hash())) {
+                            List<ManifestChunk> fileChunks = Collections.synchronizedList(new ArrayList<>());
+                            
+                            String fileHash = chunker.process(file, chunkData -> {
+                                byte[] raw = chunkData.data();
+                                String chunkHash = Sha256Hasher.hashBytes(raw);
+                                
+                                int originalSize = raw.length;
+                                
+                                if (knownInSession.add(chunkHash)) {
+                                    byte[] compressed = GzipCompressor.compress(raw);
+                                    ChunkPayload payload = new ChunkPayload(chunkHash, originalSize, compressed.length, compressed);
+                                    
+                                    inFlightLimiter.acquire();
                                     uploadFutures.add(CompletableFuture.runAsync(() -> {
-                                        backend.uploadChunk(payload);
-                                        db.addKnownChunks(Set.of(payload.hash()));
-                                        sentCount.incrementAndGet();
+                                        try {
+                                            backend.uploadChunk(payload);
+                                            db.addKnownChunks(Set.of(chunkHash));
+                                            sentCount.incrementAndGet();
+                                        } finally {
+                                            inFlightLimiter.release();
+                                        }
                                     }, executor));
+                                    
+                                    fileChunks.add(new ManifestChunk(chunkData.index(), chunkHash, originalSize, compressed.length));
                                 } else {
                                     chunksReused.incrementAndGet();
+                                    byte[] compressed = GzipCompressor.compress(raw);
+                                    fileChunks.add(new ManifestChunk(chunkData.index(), chunkHash, originalSize, compressed.length));
                                 }
-                            }
+                            });
+
+                            fileChunks.sort(java.util.Comparator.comparingInt(ManifestChunk::index));
+                            
+                            FileManifest fm = new FileManifest(relativePath, size, Instant.ofEpochMilli(mtime), fileHash, fileChunks);
+                            manifestFiles.add(fm);
+                            db.saveFileCache(relativePath, size, mtime, fileHash, fileChunks);
+                            chunksGenerated.addAndGet(fileChunks.size());
                         }
                     } catch (Exception e) {
                         log.accept("Erro processando " + file + ": " + e.getMessage());
+                        throw new RuntimeException(e);
                     }
                 });
             }

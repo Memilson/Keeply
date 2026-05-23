@@ -128,6 +128,27 @@ public class LocalDatabase implements AutoCloseable {
         }
     }
 
+    public synchronized void removeKnownChunks(Set<String> hashes) {
+        String sql = "DELETE FROM known_chunks WHERE hash = ?";
+        try {
+            Connection conn = connect();
+            boolean autoCommit = conn.getAutoCommit();
+            conn.setAutoCommit(false);
+            try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                for (String hash : hashes) {
+                    pstmt.setString(1, hash);
+                    pstmt.addBatch();
+                }
+                pstmt.executeBatch();
+                conn.commit();
+            } finally {
+                conn.setAutoCommit(autoCommit);
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+
     public synchronized Set<String> getKnownChunks() {
         Set<String> hashes = new HashSet<>();
         try (Statement stmt = connect().createStatement();
