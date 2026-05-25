@@ -1,5 +1,6 @@
 package com.keeply.agent.daemon;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
@@ -86,6 +87,10 @@ public final class AgentPaths {
     }
 
     public static Path resolveConfigPath() {
+        Path local = Paths.get("agent.yaml");
+        if (Files.exists(local)) {
+            return local.toAbsolutePath().normalize();
+        }
         return resolveConfigDir().resolve("agent.yaml");
     }
 

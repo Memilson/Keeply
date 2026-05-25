@@ -219,21 +219,52 @@ public class KeeplyAgentApp extends Application {
         fileTree.setPrefHeight(220);
         fileTree.setCellFactory(CheckBoxTreeCell.forTreeView());
 
+        Button restoreAll = new Button("📥 Restaurar Snapshot Completo");
+        Button restoreSelected = new Button("🗂️ Restaurar Arquivos Selecionados");
+        restoreAll.setDisable(true);
+        restoreSelected.setDisable(true);
+        Label warningLabel = new Label();
+        warningLabel.setStyle("-fx-text-fill: red;");
+
         snapshotList.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
             if (newVal != null) {
-                runAsync(() -> {
-                    try {
-                        String json = backend.downloadManifest(newVal.id());
-                        ObjectMapper localMapper = new ObjectMapper()
-                                .registerModule(new com.fasterxml.jackson.datatype.jsr310.JavaTimeModule())
-                                .findAndRegisterModules();
-                        com.keeply.agent.model.SnapshotManifest manifest = localMapper.readValue(json, com.keeply.agent.model.SnapshotManifest.class);
-                        List<String> files = manifest.files().stream().map(com.keeply.agent.model.FileManifest::path).toList();
-                        ui(() -> fileTree.setRoot(buildFileTree(files)));
-                    } catch (Exception ex) {
-                        log("Erro ao carregar arquivos: " + ex.getMessage());
-                    }
-                });
+                // Estado da UI (síncrono)
+                boolean isCompleted = "COMPLETED".equals(newVal.status());
+                boolean isProcessing = "PROCESSING".equals(newVal.status());
+                boolean canRestore = isCompleted;
+                boolean canDownloadManifest = isCompleted || isProcessing;
+
+                restoreAll.setDisable(!canRestore);
+                restoreSelected.setDisable(!canRestore);
+                if (!canRestore) {
+                    warningLabel.setText("⚠️ Apenas backups COMPLETED podem ser restaurados.");
+                } else {
+                    warningLabel.setText("");
+                }
+
+                // Carregamento de dados (assíncrono)
+                if (canDownloadManifest) {
+                    runAsync(() -> {
+                        try {
+                            String json = backend.downloadManifest(newVal.id());
+                            ObjectMapper localMapper = new ObjectMapper()
+                                    .registerModule(new com.fasterxml.jackson.datatype.jsr310.JavaTimeModule())
+                                    .findAndRegisterModules();
+                            com.keeply.agent.model.SnapshotManifest manifest = localMapper.readValue(json, com.keeply.agent.model.SnapshotManifest.class);
+                            List<String> files = manifest.files().stream().map(com.keeply.agent.model.FileManifest::path).toList();
+                            ui(() -> fileTree.setRoot(buildFileTree(files)));
+                        } catch (Exception ex) {
+                            log("Erro ao carregar arquivos: " + ex.getMessage());
+                        }
+                    });
+                } else {
+                    ui(() -> fileTree.setRoot(null));
+                }
+            } else {
+                restoreAll.setDisable(true);
+                restoreSelected.setDisable(true);
+                warningLabel.setText("");
+                ui(() -> fileTree.setRoot(null));
             }
         });
 
@@ -271,30 +302,6 @@ public class KeeplyAgentApp extends Application {
                 ui(() -> snapshotList.getItems().setAll(snapshots));
                 log("Lista de backups atualizada.");
             });
-        });
-
-        Button restoreAll = new Button("📥 Restaurar Snapshot Completo");
-        Button restoreSelected = new Button("🗂️ Restaurar Arquivos Selecionados");
-        restoreAll.setDisable(true);
-        restoreSelected.setDisable(true);
-        Label warningLabel = new Label();
-        warningLabel.setStyle("-fx-text-fill: red;");
-
-        snapshotList.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
-            if (newVal != null) {
-                boolean isCompleted = "COMPLETED".equals(newVal.status());
-                restoreAll.setDisable(!isCompleted);
-                restoreSelected.setDisable(!isCompleted);
-                if (!isCompleted) {
-                    warningLabel.setText("⚠️ Apenas backups COMPLETED podem ser restaurados.");
-                } else {
-                    warningLabel.setText("");
-                }
-            } else {
-                restoreAll.setDisable(true);
-                restoreSelected.setDisable(true);
-                warningLabel.setText("");
-            }
         });
 
         restoreAll.setOnAction(e -> {
@@ -549,7 +556,7 @@ public class KeeplyAgentApp extends Application {
 
         String backendValue = backendUrl.getText() != null ? backendUrl.getText().trim() : "";
         String emailValue = email.getText() != null ? email.getText().trim() : "";
-        String passwordValue = password.getText() != null ? password.getText() : "";
+        String passwordValue = ""; // Senha removida por segurança
         List<String> sources = parseSources(backupSourcesConfig.getText());
 
         if (backendValue.isBlank()) {
@@ -619,11 +626,11 @@ public class KeeplyAgentApp extends Application {
         root.put("backend", backendSection);
 
         // Auth
-        Map<String, Object> authSection = root.get("auth") instanceof Map<?, ?> existing 
-                ? new LinkedHashMap<>((Map<String, Object>) existing) 
+        Map<String, Object> authSection = root.get("auth") instanceof Map<?, ?> existingAuth 
+                ? new LinkedHashMap<>((Map<String, Object>) existingAuth) 
                 : new LinkedHashMap<>();
         authSection.put("email", email.getText().trim());
-        authSection.put("password", password.getText());
+        authSection.put("password", ""); // Senha removida por segurança
         root.put("auth", authSection);
 
         // Backup

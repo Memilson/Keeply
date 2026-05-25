@@ -8,35 +8,35 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.*;
-import java.util.zip.GZIPInputStream;
-import java.util.zip.GZIPOutputStream;
 
 @Service
 public class SnapshotService {
     private final SnapshotRepository snapshots;
     private final DeviceRepository devices;
     private final ObjectStorageService storage;
+    private final ManifestParserService manifestParser;
 
     public SnapshotService(SnapshotRepository snapshots,
                            DeviceRepository devices,
-                           ObjectStorageService storage) {
+                           ObjectStorageService storage,
+                           ManifestParserService manifestParser) {
         this.snapshots = snapshots;
         this.devices = devices;
         this.storage = storage;
+        this.manifestParser = manifestParser;
     }
 
     @Transactional
     public SnapshotDtos.SnapshotResponse start(UUID userId, SnapshotDtos.StartSnapshotRequest request) {
-        devices.findByIdAndUserId(request.deviceId(), userId)
+        Device device = devices.findByIdAndUserId(request.deviceId(), userId)
                 .orElseThrow(() -> new IllegalArgumentException("Device inválido"));
 
         Snapshot s = new Snapshot();
-        s.userId = userId;
-        s.deviceId = request.deviceId();
+        s.device = device;
         s.sourcePath = request.sourcePath();
         s.status = SnapshotStatus.IN_PROGRESS;
         s.startedAt = Instant.now();
@@ -54,8 +54,8 @@ public class SnapshotService {
         byte[] manifestData = request.manifestJson().getBytes(StandardCharsets.UTF_8);
         byte[] compressedManifest;
         try {
-            ByteArrayOutputStream bos = new ByteArrayOutputStream();
-            try (GZIPOutputStream gos = new GZIPOutputStream(bos)) {
+            java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+            try (java.util.zip.GZIPOutputStream gos = new java.util.zip.GZIPOutputStream(bos)) {
                 gos.write(manifestData);
             }
             compressedManifest = bos.toByteArray();
@@ -63,17 +63,19 @@ public class SnapshotService {
             throw new IllegalStateException("Falha ao comprimir manifesto", e);
         }
 
-        String key = "users/%s/manifests/%s.json.gz".formatted(userId, snapshotId);
-        storage.put(key, compressedManifest, "application/gzip");
+        String key = "users/%s/manifests/%s.json.gz".formatted(s.device.user.id, snapshotId);
+        storage.put(key, new java.io.ByteArrayInputStream(compressedManifest), compressedManifest.length, "application/gzip");
 
         s.totalFiles = request.totalFiles();
         s.totalOriginalSize = request.totalOriginalSize();
         s.totalCompressedSize = request.totalCompressedSize();
         s.manifestKey = key;
-        s.status = SnapshotStatus.COMPLETED;
+        s.status = SnapshotStatus.PROCESSING; // Novo estado: processando manifesto
         s.completedAt = Instant.now();
+        snapshots.save(s);
 
-        // No PostgreSQL-based file persistence anymore. MinIO manifest is the source of truth.
+        // Dispara o processamento assíncrono do manifesto para indexação no banco
+        manifestParser.parseAsync(s.id);
 
         return toResponse(s);
     }
@@ -89,7 +91,7 @@ public class SnapshotService {
 
     @Transactional(readOnly = true)
     public List<SnapshotDtos.SnapshotResponse> list(UUID userId) {
-        return snapshots.findByUserIdOrderByCreatedAtDesc(userId)
+        return snapshots.findByDeviceUserIdOrderByCreatedAtDesc(userId)
                 .stream()
                 .map(this::toResponse)
                 .toList();
@@ -98,12 +100,12 @@ public class SnapshotService {
     @Transactional(readOnly = true)
     public String manifest(UUID userId, UUID snapshotId) {
         Snapshot s = findOwned(userId, snapshotId);
-        if (s.status != SnapshotStatus.COMPLETED) {
-            throw new IllegalStateException("Somente snapshots COMPLETED podem ser restaurados");
+        if (s.status != SnapshotStatus.COMPLETED && s.status != SnapshotStatus.PROCESSING) {
+            throw new IllegalStateException("Somente snapshots concluídos ou em processamento podem ter o manifesto lido");
         }
         
-        byte[] data = storage.get(s.manifestKey);
-        try (GZIPInputStream gis = new GZIPInputStream(new ByteArrayInputStream(data))) {
+        try (InputStream is = storage.getStream(s.manifestKey);
+             java.util.zip.GZIPInputStream gis = new java.util.zip.GZIPInputStream(is)) {
             return new String(gis.readAllBytes(), StandardCharsets.UTF_8);
         } catch (Exception e) {
             throw new IllegalStateException("Falha ao descompactar manifesto para restore", e);
@@ -111,14 +113,14 @@ public class SnapshotService {
     }
 
     private Snapshot findOwned(UUID userId, UUID snapshotId) {
-        return snapshots.findByIdAndUserId(snapshotId, userId)
+        return snapshots.findByIdAndDeviceUserId(snapshotId, userId)
                 .orElseThrow(() -> new IllegalArgumentException("Snapshot não encontrado"));
     }
 
     private SnapshotDtos.SnapshotResponse toResponse(Snapshot s) {
         return new SnapshotDtos.SnapshotResponse(
                 s.id,
-                s.deviceId,
+                s.device.id,
                 s.status,
                 s.sourcePath,
                 s.totalFiles,

@@ -12,14 +12,9 @@ public class RestoreJob {
     @GeneratedValue(strategy = GenerationType.UUID)
     public UUID id;
 
-    @Column(name = "user_id", nullable = false)
-    public UUID userId;
-
-    @Column(name = "device_id", nullable = false)
-    public UUID deviceId;
-
-    @Column(name = "snapshot_id", nullable = false)
-    public UUID snapshotId;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "snapshot_id", nullable = false, foreignKey = @ForeignKey(name = "fk_restore_snapshot"))
+    public Snapshot snapshot;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)

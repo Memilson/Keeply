@@ -38,11 +38,11 @@ public class ProtectionPlanService {
 
     @Transactional
     public DeviceDtos.PlanResponse upsert(UUID userId, UUID deviceId, DeviceDtos.PlanRequest request) {
-        ensureOwnedDevice(userId, deviceId);
+        Device device = ensureOwnedDevice(userId, deviceId);
         validatePlanRequest(request);
 
         ProtectionPlan plan = plans.findByDeviceId(deviceId).orElseGet(ProtectionPlan::new);
-        plan.deviceId = deviceId;
+        plan.device = device;
         plan.planType = request.planType();
         plan.sources = normalizeSources(request.sources());
 
@@ -56,12 +56,11 @@ public class ProtectionPlanService {
         return toResponse(plan);
     }
 
-    private void ensureOwnedDevice(UUID userId, UUID deviceId) {
-        Device device = devices.findById(deviceId)
-                .orElseThrow(() -> new NotFoundException("Device não encontrado"));
-        if (!device.userId.equals(userId)) {
-            throw new ForbiddenException("Acesso negado para esse device");
-        }
+    private Device ensureOwnedDevice(UUID userId, UUID deviceId) {
+        // Usa o repositório para verificar a posse diretamente no banco, 
+        // evitando problemas de NullPointerException com Proxies do Hibernate (FetchType.LAZY)
+        return devices.findByIdAndUserId(deviceId, userId)
+                .orElseThrow(() -> new ForbiddenException("Acesso negado ou Device não encontrado"));
     }
 
     private void validatePlanRequest(DeviceDtos.PlanRequest request) {

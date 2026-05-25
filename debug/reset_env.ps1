@@ -11,8 +11,8 @@ $KeeplyConfig = Join-Path $env:APPDATA "keeply"
 $KeeplyData = Join-Path $env:LOCALAPPDATA "keeply"
 $KeeplyRuntime = Join-Path $env:TEMP "keeply"
 
-# A. Parar daemon do agente
-Write-Host "🛑 Parando daemon do agente..." -ForegroundColor Yellow
+# A. Parar todos os processos do agente (Daemon e UI)
+Write-Host "🛑 Parando processos do agente..." -ForegroundColor Yellow
 $PidFile = Join-Path $KeeplyRuntime "daemon.pid"
 if (Test-Path $PidFile) {
     $DaemonPid = Get-Content $PidFile
@@ -20,12 +20,17 @@ if (Test-Path $PidFile) {
         Stop-Process -Id $DaemonPid -Force -ErrorAction SilentlyContinue
     } catch {}
 }
-Get-Process | Where-Object { $_.CommandLine -like "*com.keeply.agent.KeeplyAgentDaemonApp*" } | Stop-Process -Force -ErrorAction SilentlyContinue
-if (Test-Path $PidFile) { Remove-Item $PidFile -Force -ErrorAction SilentlyContinue }
+
+# Mata processos por linha de comando ou nome
+Get-Process | Where-Object { $_.CommandLine -like "*com.keeply.agent*" -or $_.CommandLine -like "*:agent:run*" } | Stop-Process -Force -ErrorAction SilentlyContinue
+
+# Dá um tempo para os processos liberarem os arquivos
+Start-Sleep -Seconds 2
 
 # 0. Matar o backend se estiver rodando
 Write-Host "🛑 Parando processo do backend (Java/Gradle)..." -ForegroundColor Yellow
-Get-Process | Where-Object { $_.CommandLine -match "gradle-wrapper.jar.*:backend:bootRun|BackendApplication" } | Stop-Process -Force -ErrorAction SilentlyContinue
+Get-Process | Where-Object { $_.CommandLine -match "gradle-wrapper.jar.*:backend:bootRun|BackendApplication|com.keeply.backend" } | Stop-Process -Force -ErrorAction SilentlyContinue
+Start-Sleep -Seconds 1
 
 # 1. Parar infra e remover volumes
 Write-Host "📦 Limpando volumes do Docker (Postgres e MinIO)..." -ForegroundColor Yellow

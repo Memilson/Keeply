@@ -5,7 +5,7 @@ spring:
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/keeply}
     username: ${SPRING_DATASOURCE_USERNAME:keeply}
-    password: ${SPRING_DATASOURCE_PASSWORD:keeply123}
+    password: ${SPRING_DATASOURCE_PASSWORD}
   jpa:
     hibernate:
       ddl-auto: update
@@ -20,10 +20,10 @@ spring:
 
 keeply:
   jwt:
-    secret: ${KEEPLY_JWT_SECRET:troque-esta-chave-por-uma-chave-com-mais-de-32-caracteres}
+    secret: ${KEEPLY_JWT_SECRET}
     expiration-minutes: 120
   minio:
     endpoint: ${KEEPLY_MINIO_ENDPOINT:http://localhost:9000}
     access-key: ${KEEPLY_MINIO_ACCESS_KEY:keeply}
-    secret-key: ${KEEPLY_MINIO_SECRET_KEY:keeply123}
+    secret-key: ${KEEPLY_MINIO_SECRET_KEY}
     bucket: ${KEEPLY_MINIO_BUCKET:keeply}

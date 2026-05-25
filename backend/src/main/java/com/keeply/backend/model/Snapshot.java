@@ -12,12 +12,12 @@ public class Snapshot {
     @GeneratedValue(strategy = GenerationType.UUID)
     public UUID id;
 
-    @Column(name = "user_id", nullable = false)
-    public UUID userId;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "device_id", nullable = false, foreignKey = @ForeignKey(name = "fk_snapshot_device"))
+    public Device device;
 
-    @Column(name = "device_id", nullable = false)
-    public UUID deviceId;
-
+    // Removido o userId redundante, pois o snapshot já pertence a um device que pertence a um usuário
+    
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     public SnapshotStatus status;

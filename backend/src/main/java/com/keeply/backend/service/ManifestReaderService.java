@@ -1,54 +1,50 @@
 package com.keeply.backend.service;
 
-import com.github.benmanes.caffeine.cache.Cache;
-import com.github.benmanes.caffeine.cache.Caffeine;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.keeply.backend.dto.ManifestParsingDtos;
 import com.keeply.backend.dto.SnapshotDtos;
 import com.keeply.backend.model.Snapshot;
+import com.keeply.backend.model.SnapshotFile;
+import com.keeply.backend.model.SnapshotStatus;
+import com.keeply.backend.repository.SnapshotFileRepository;
 import com.keeply.backend.repository.SnapshotRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
-import java.io.ByteArrayInputStream;
-import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.TimeUnit;
-import java.util.zip.GZIPInputStream;
 
 @Service
 public class ManifestReaderService {
-    private final ObjectStorageService storage;
     private final SnapshotRepository snapshots;
-    private final ObjectMapper mapper;
+    private final SnapshotFileRepository snapshotFiles;
 
-    // Cache para armazenar a lista de arquivos de snapshots acessados recentemente
-    private final Cache<UUID, List<ManifestParsingDtos.FileManifest>> manifestCache = Caffeine.newBuilder()
-            .maximumSize(100)
-            .expireAfterAccess(5, TimeUnit.MINUTES)
-            .build();
-
-    public ManifestReaderService(ObjectStorageService storage, SnapshotRepository snapshots, ObjectMapper mapper) {
-        this.storage = storage;
+    public ManifestReaderService(SnapshotRepository snapshots, SnapshotFileRepository snapshotFiles) {
         this.snapshots = snapshots;
-        this.mapper = mapper;
+        this.snapshotFiles = snapshotFiles;
     }
 
+    @Transactional(readOnly = true)
     public SnapshotDtos.SnapshotFileListResponse listFiles(UUID userId, UUID snapshotId, int page, int size, String search) {
-        Snapshot snapshot = snapshots.findByIdAndUserId(snapshotId, userId)
+        Snapshot snapshot = snapshots.findByIdAndDeviceUserId(snapshotId, userId)
                 .orElseThrow(() -> new IllegalArgumentException("Snapshot não encontrado"));
 
-        if (!"COMPLETED".equals(snapshot.status.name())) {
-            throw new IllegalStateException("Snapshot ainda não concluído");
+        if (snapshot.status != SnapshotStatus.COMPLETED) {
+            throw new IllegalStateException("Snapshot ainda não concluído (Status: " + snapshot.status + ")");
         }
 
-        List<ManifestParsingDtos.FileManifest> allFiles = manifestCache.get(snapshotId, id -> loadManifest(snapshot.manifestKey));
+        // Recupera todos os arquivos do snapshot (ordenados por path por padrão se necessário, ou podemos adicionar sorting no repo)
+        // Nota: Para grandes volumes, o ideal seria implementar paginação diretamente no Repository (Pageable)
+        List<SnapshotFile> allFiles = snapshotFiles.findBySnapshotId(snapshotId);
 
         // Filtragem (search)
-        List<ManifestParsingDtos.FileManifest> filtered = (search == null || search.isBlank())
+        List<SnapshotFile> filtered = (search == null || search.isBlank())
                 ? allFiles
                 : allFiles.stream()
-                .filter(f -> f.path().toLowerCase().contains(search.toLowerCase()))
+                .filter(f -> f.path.toLowerCase().contains(search.toLowerCase()))
+                .toList();
+
+        // Ordenação por caminho para consistência na paginação
+        filtered = filtered.stream()
+                .sorted((f1, f2) -> f1.path.compareToIgnoreCase(f2.path))
                 .toList();
 
         // Paginação
@@ -58,9 +54,9 @@ public class ManifestReaderService {
 
         List<SnapshotDtos.SnapshotFileItem> items = filtered.subList(start, end).stream()
                 .map(f -> new SnapshotDtos.SnapshotFileItem(
-                        f.path(),
-                        f.size(),
-                        f.lastModified()
+                        f.path,
+                        f.size,
+                        f.lastModified
                 ))
                 .toList();
 
@@ -68,23 +64,5 @@ public class ManifestReaderService {
                 items,
                 new SnapshotDtos.PageMetadata(totalElements, page, size)
         );
-    }
-
-    private List<ManifestParsingDtos.FileManifest> loadManifest(String key) {
-        try {
-            byte[] data = storage.get(key);
-            try (GZIPInputStream gis = new GZIPInputStream(new ByteArrayInputStream(data))) {
-                ManifestParsingDtos.SnapshotManifest manifest = mapper.readValue(
-                        gis,
-                        ManifestParsingDtos.SnapshotManifest.class
-                );
-                // Ordenar por caminho para consistência na paginação
-                return manifest.files().stream()
-                        .sorted(Comparator.comparing(ManifestParsingDtos.FileManifest::path))
-                        .toList();
-            }
-        } catch (Exception e) {
-            throw new IllegalStateException("Falha ao ler manifesto do MinIO: " + key, e);
-        }
     }
 }

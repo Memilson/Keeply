@@ -15,8 +15,9 @@ public class Device {
     @GeneratedValue(strategy = GenerationType.UUID)
     public UUID id;
 
-    @Column(name = "user_id", nullable = false)
-    public UUID userId;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id", nullable = false, foreignKey = @ForeignKey(name = "fk_device_user"))
+    public UserAccount user;
 
     @Column(nullable = false)
     public String name;
