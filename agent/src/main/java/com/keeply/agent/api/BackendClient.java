@@ -21,7 +21,9 @@ import java.util.Set;
 import java.util.UUID;
 
 public class BackendClient {
-    private final HttpClient http = HttpClient.newHttpClient();
+    private final HttpClient http = HttpClient.newBuilder()
+            .connectTimeout(java.time.Duration.ofSeconds(15))
+            .build();
     private final ObjectMapper mapper = new ObjectMapper().registerModule(new JavaTimeModule()).findAndRegisterModules();
     private final String baseUrl;
     private volatile DeviceSession session;
@@ -42,6 +44,7 @@ public class BackendClient {
             ));
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(baseUrl + "/api/auth/login-device"))
+                    .timeout(java.time.Duration.ofSeconds(30))
                     .header("Content-Type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(body))
                     .build();
@@ -76,6 +79,7 @@ public class BackendClient {
             ));
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(baseUrl + "/api/auth/refresh"))
+                    .timeout(java.time.Duration.ofSeconds(30))
                     .header("Content-Type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(body))
                     .build();
@@ -193,7 +197,7 @@ public class BackendClient {
             require2xx(response);
             return response.body();
         } catch (Exception e) {
-            throw new IllegalStateException("Falha ao baixar manifesto", e);
+            throw new IllegalStateException("Falha ao baixar manifesto: " + e.getMessage(), e);
         }
     }
 
@@ -235,7 +239,9 @@ public class BackendClient {
     }
 
     private HttpRequest.Builder authorized(String path) {
-        HttpRequest.Builder builder = HttpRequest.newBuilder().uri(URI.create(baseUrl + path));
+        HttpRequest.Builder builder = HttpRequest.newBuilder()
+                .uri(URI.create(baseUrl + path))
+                .timeout(java.time.Duration.ofSeconds(60));
         if (session != null && !blank(session.accessToken())) {
             builder.header("Authorization", "Bearer " + session.accessToken());
         }

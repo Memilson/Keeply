@@ -13,18 +13,30 @@ KEEPLY_DATA="${XDG_DATA_HOME:-$HOME/.local/share}/keeply"
 KEEPLY_STATE="${XDG_STATE_HOME:-$HOME/.local/state}/keeply"
 KEEPLY_RUNTIME="${XDG_RUNTIME_DIR:-/tmp}/keeply"
 
-# A. Parar daemon do agente
-echo "🛑 Parando daemon do agente..."
+# A. Parar todos os processos do agente (Daemon e UI)
+echo "🛑 Parando processos do agente..."
 if [ -f "$KEEPLY_RUNTIME/daemon.pid" ]; then
-    kill "$(cat "$KEEPLY_RUNTIME/daemon.pid")" 2>/dev/null || true
+    DAEMON_PID=$(cat "$KEEPLY_RUNTIME/daemon.pid")
+    kill "$DAEMON_PID" 2>/dev/null || true
 fi
+
+# Mata por nome de classe principal para ser mais robusto
 pkill -f "com.keeply.agent.KeeplyAgentDaemonApp" || true
-rm -f "$KEEPLY_RUNTIME/daemon.pid"
+pkill -f "com.keeply.agent.KeeplyAgentApp" || true
+pkill -f "gradle-wrapper.jar :agent:run" || true
+
+# Dá um tempo para os processos liberarem os arquivos
+sleep 2
+
+# Força a parada se ainda restarem processos
+pkill -9 -f "com.keeply.agent" || true
 
 # 0. Matar o backend se estiver rodando (necessário para o Hibernate recriar as tabelas no novo volume)
 echo "🛑 Parando processo do backend (Java/Gradle)..."
 pkill -f "gradle-wrapper.jar :backend:bootRun" || true
 pkill -f "BackendApplication" || true
+sleep 1
+pkill -9 -f "com.keeply.backend" || true
 
 # 1. Parar infra e remover volumes
 echo "📦 Limpando volumes do Docker (Postgres e MinIO)..."

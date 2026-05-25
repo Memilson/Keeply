@@ -12,11 +12,13 @@ public class AuditLog {
     @GeneratedValue(strategy = GenerationType.UUID)
     public UUID id;
 
-    @Column(name = "user_id", nullable = false)
-    public UUID userId;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id", nullable = false, foreignKey = @ForeignKey(name = "fk_audit_user"))
+    public UserAccount user;
 
-    @Column(name = "device_id")
-    public UUID deviceId;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "device_id", foreignKey = @ForeignKey(name = "fk_audit_device"))
+    public Device device;
 
     @Column(name = "event_type", nullable = false)
     public String eventType;

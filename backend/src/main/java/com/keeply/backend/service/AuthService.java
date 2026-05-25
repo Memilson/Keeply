@@ -31,13 +31,14 @@ public class AuthService {
 
     @Transactional
     public AuthDtos.AuthResponse register(AuthDtos.RegisterRequest request) {
-        if (users.existsByEmail(request.email())) {
+        String email = normalizedEmail(request.email());
+        if (users.existsByEmail(email)) {
             throw new IllegalArgumentException("Email já cadastrado");
         }
 
         UserAccount user = new UserAccount();
-        user.name = request.name();
-        user.email = normalizedEmail(request.email());
+        user.name = nullableTrim(request.name());
+        user.email = email;
         user.passwordHash = passwordEncoder.encode(request.password());
         users.save(user);
 
@@ -67,7 +68,7 @@ public class AuthService {
         Device device = devices.findByUserIdAndDeviceInstallationId(user.id, installationId)
                 .orElseGet(Device::new);
 
-        device.userId = user.id;
+        device.user = user;
         device.deviceInstallationId = installationId;
         device.hostname = request.hostname().trim();
         device.name = request.hostname().trim();

@@ -25,23 +25,29 @@ public class ContentDefinedChunker {
 
             while ((bytesRead = in.read(buffer)) != -1) {
                 fileDigest.update(buffer, 0, bytesRead);
+                int lastCut = 0;
                 for (int i = 0; i < bytesRead; i++) {
                     int b = buffer[i] & 0xFF;
-                    current.write(b);
                     rolling = ((rolling << 1) + b) & 0x7fffffff;
 
-                    int size = current.size();
-                    boolean canCut = size >= MIN_SIZE && (rolling & CUT_MASK) == 0;
-                    boolean mustCut = size >= MAX_SIZE;
+                    int currentSize = current.size() + (i - lastCut + 1);
+                    boolean canCut = currentSize >= MIN_SIZE && (rolling & CUT_MASK) == 0;
+                    boolean mustCut = currentSize >= MAX_SIZE;
 
                     if (canCut || mustCut) {
+                        current.write(buffer, lastCut, i - lastCut + 1);
                         byte[] data = current.toByteArray();
                         consumer.accept(new ChunkData(index, offset, data, data.length));
+                        
                         offset += data.length;
                         index++;
                         current.reset();
                         rolling = 0;
+                        lastCut = i + 1;
                     }
+                }
+                if (lastCut < bytesRead) {
+                    current.write(buffer, lastCut, bytesRead - lastCut);
                 }
             }
 

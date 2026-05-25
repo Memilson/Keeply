@@ -13,9 +13,11 @@ import java.util.UUID;
 @Service
 public class DeviceService {
     private final DeviceRepository devices;
+    private final com.keeply.backend.repository.UserRepository users;
 
-    public DeviceService(DeviceRepository devices) {
+    public DeviceService(DeviceRepository devices, com.keeply.backend.repository.UserRepository users) {
         this.devices = devices;
+        this.users = users;
     }
 
     @Transactional
@@ -27,8 +29,11 @@ public class DeviceService {
             throw new IllegalArgumentException("hostname é obrigatório");
         }
 
+        com.keeply.backend.model.UserAccount user = users.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("Usuário não encontrado"));
+
         Device d = new Device();
-        d.userId = userId;
+        d.user = user;
         d.name = request.name() == null || request.name().isBlank() ? request.hostname().trim() : request.name().trim();
         d.hostname = request.hostname().trim();
         d.osName = request.osName();

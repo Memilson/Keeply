@@ -12,7 +12,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface SnapshotRepository extends JpaRepository<Snapshot, UUID> {
-    List<Snapshot> findByUserIdOrderByCreatedAtDesc(UUID userId);
-    List<Snapshot> findByUserIdAndDeviceIdAndStatusOrderByCreatedAtDesc(UUID userId, UUID deviceId, SnapshotStatus status);
-    Optional<Snapshot> findByIdAndUserId(UUID id, UUID userId);
+    List<Snapshot> findByDeviceUserIdOrderByCreatedAtDesc(UUID userId);
+    List<Snapshot> findByDeviceUserIdAndDeviceIdAndStatusOrderByCreatedAtDesc(UUID userId, UUID deviceId, SnapshotStatus status);
+    Optional<Snapshot> findByIdAndDeviceUserId(UUID id, UUID userId);
 }

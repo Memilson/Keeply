@@ -3,6 +3,7 @@ package com.keeply.backend.model;
 
 public enum SnapshotStatus {
     IN_PROGRESS,
+    PROCESSING,
     COMPLETED,
     FAILED
 }

@@ -31,12 +31,12 @@ public class MinioStorageService implements ObjectStorageService {
     }
 
     @Override
-    public void put(String key, byte[] data, String contentType) {
+    public void put(String key, java.io.InputStream data, long length, String contentType) {
         try {
             minio.putObject(PutObjectArgs.builder()
                     .bucket(bucket)
                     .object(key)
-                    .stream(new ByteArrayInputStream(data), data.length, -1)
+                    .stream(data, length, -1)
                     .contentType(contentType)
                     .build());
         } catch (Exception e) {
@@ -45,11 +45,11 @@ public class MinioStorageService implements ObjectStorageService {
     }
 
     @Override
-    public byte[] get(String key) {
-        try (var in = minio.getObject(GetObjectArgs.builder().bucket(bucket).object(key).build())) {
-            return in.readAllBytes();
+    public java.io.InputStream getStream(String key) {
+        try {
+            return minio.getObject(GetObjectArgs.builder().bucket(bucket).object(key).build());
         } catch (Exception e) {
-            throw new IllegalStateException("Falha ao ler objeto do MinIO: " + key, e);
+            throw new IllegalStateException("Falha ao abrir stream do objeto no MinIO: " + key, e);
         }
     }
 

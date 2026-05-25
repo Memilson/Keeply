@@ -13,14 +13,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
@@ -39,16 +35,17 @@ public class BackupEngine {
 
     public UUID backup(UUID deviceId, Path sourceRoot, Consumer<String> log) {
         long startTotal = System.nanoTime();
+        String sourcePath = sourceRoot.toAbsolutePath().normalize().toString();
         autoSyncCache(deviceId, sourceRoot, log);
 
-        UUID snapshotId = backend.startSnapshot(deviceId, sourceRoot.toAbsolutePath().toString());
+        UUID snapshotId = backend.startSnapshot(deviceId, sourcePath);
 
-        try (ExecutorService executor = Executors.newFixedThreadPool(4)) {
+        try {
             log.accept("Snapshot iniciado: " + snapshotId);
 
             Set<String> locallyKnown = db.getKnownChunks();
             Set<String> verifiedRemote = ConcurrentHashMap.newKeySet();
-            
+
             if (!locallyKnown.isEmpty()) {
                 log.accept("Verificando integridade de " + locallyKnown.size() + " chunks no servidor...");
                 List<String> hashes = new ArrayList<>(locallyKnown);
@@ -68,36 +65,50 @@ public class BackupEngine {
                 }
             }
 
-            List<FileManifest> manifestFiles = new ArrayList<>();
             Set<String> knownInSession = ConcurrentHashMap.newKeySet();
             knownInSession.addAll(verifiedRemote);
-            
+
+            // Controle de hashes únicos para cálculo do tamanho comprimido total
+            Set<String> uniqueHashesInManifest = ConcurrentHashMap.newKeySet();
+            AtomicLong totalCompressedSize = new AtomicLong(0);
+
             AtomicInteger sentCount = new AtomicInteger(0);
             AtomicInteger totalFiles = new AtomicInteger(0);
             AtomicInteger filesCached = new AtomicInteger(0);
             AtomicInteger chunksGenerated = new AtomicInteger(0);
             AtomicInteger chunksReused = new AtomicInteger(0);
             AtomicLong totalOriginalSize = new AtomicLong(0);
-            List<CompletableFuture<Void>> uploadFutures = new ArrayList<>();
             ContentDefinedChunker chunker = new ContentDefinedChunker();
-            java.util.concurrent.Semaphore inFlightLimiter = new java.util.concurrent.Semaphore(8);
+
+            // A fila do próprio executor também precisa ser limitada: cada tarefa retém um chunk bruto.
+            java.util.concurrent.ThreadPoolExecutor uploaderPool = new java.util.concurrent.ThreadPoolExecutor(
+                    4,
+                    4,
+                    0L,
+                    java.util.concurrent.TimeUnit.MILLISECONDS,
+                    new java.util.concurrent.ArrayBlockingQueue<>(4),
+                    new java.util.concurrent.ThreadPoolExecutor.CallerRunsPolicy()
+            );
+            java.util.concurrent.ConcurrentLinkedQueue<Exception> uploadErrors =
+                    new java.util.concurrent.ConcurrentLinkedQueue<>();
+
+            db.clearBackupManifest();
 
             long startProcessing = System.nanoTime();
             try (var stream = FileScanner.scan(sourceRoot)) {
                 stream.forEach(file -> {
+                    String relativePath = sourceRoot.relativize(file).toString().replace("\\", "/");
                     try {
                         int currentTotal = totalFiles.incrementAndGet();
                         if (currentTotal % 1000 == 0) {
                             log.accept(String.format("Progresso: %d arquivos escaneados...", currentTotal));
                         }
 
-                        Path relative = sourceRoot.relativize(file);
-                        String relativePath = relative.toString().replace("\\", "/");
                         long size = Files.size(file);
                         long mtime = Files.getLastModifiedTime(file).toMillis();
                         totalOriginalSize.addAndGet(size);
 
-                        LocalDatabase.CachedFile cached = db.getFileCache(relativePath);
+                        LocalDatabase.CachedFile cached = db.getFileCache(sourcePath, relativePath);
                         
                         boolean cacheValid = cached != null && cached.size() == size && cached.lastModified() == mtime;
                         if (cacheValid) {
@@ -112,60 +123,68 @@ public class BackupEngine {
                         if (cacheValid) {
                             filesCached.incrementAndGet();
                             chunksReused.addAndGet(cached.chunks().size());
-                            manifestFiles.add(new FileManifest(relativePath, size, Instant.ofEpochMilli(mtime), cached.hash(), cached.chunks()));
+                            db.addManifestFile(relativePath, size, mtime, cached.hash());
+                            for (ManifestChunk c : cached.chunks()) {
+                                db.addManifestChunk(relativePath, c.index(), c.hash(), c.originalSize(), c.compressedSize());
+                                if (uniqueHashesInManifest.add(c.hash())) {
+                                    totalCompressedSize.addAndGet(c.compressedSize());
+                                }
+                            }
                         } else {
-                            List<ManifestChunk> fileChunks = Collections.synchronizedList(new ArrayList<>());
-                            
                             String fileHash = chunker.process(file, chunkData -> {
                                 byte[] raw = chunkData.data();
                                 String chunkHash = Sha256Hasher.hashBytes(raw);
-                                
                                 int originalSize = raw.length;
                                 
                                 if (knownInSession.add(chunkHash)) {
-                                    byte[] compressed = GzipCompressor.compress(raw);
-                                    ChunkPayload payload = new ChunkPayload(chunkHash, originalSize, compressed.length, compressed);
-                                    
-                                    inFlightLimiter.acquire();
-                                    uploadFutures.add(CompletableFuture.runAsync(() -> {
+                                    uploaderPool.execute(() -> {
                                         try {
+                                            byte[] compressed = GzipCompressor.compress(raw);
+                                            ChunkPayload payload = new ChunkPayload(chunkHash, originalSize, compressed.length, compressed);
                                             backend.uploadChunk(payload);
                                             db.addKnownChunks(Set.of(chunkHash));
                                             sentCount.incrementAndGet();
-                                        } finally {
-                                            inFlightLimiter.release();
+                                            db.addManifestChunk(relativePath, chunkData.index(), chunkHash, originalSize, compressed.length);
+                                            if (uniqueHashesInManifest.add(chunkHash)) {
+                                                totalCompressedSize.addAndGet(compressed.length);
+                                            }
+                                        } catch (Exception e) {
+                                            uploadErrors.add(e);
+                                            log.accept("Erro no upload do chunk " + chunkHash + ": " + e.getMessage());
                                         }
-                                    }, executor));
-                                    
-                                    fileChunks.add(new ManifestChunk(chunkData.index(), chunkHash, originalSize, compressed.length));
+                                    });
                                 } else {
                                     chunksReused.incrementAndGet();
                                     byte[] compressed = GzipCompressor.compress(raw);
-                                    fileChunks.add(new ManifestChunk(chunkData.index(), chunkHash, originalSize, compressed.length));
+                                    db.addManifestChunk(relativePath, chunkData.index(), chunkHash, originalSize, compressed.length);
+                                    if (uniqueHashesInManifest.add(chunkHash)) {
+                                        totalCompressedSize.addAndGet(compressed.length);
+                                    }
                                 }
                             });
 
-                            fileChunks.sort(java.util.Comparator.comparingInt(ManifestChunk::index));
-                            
-                            FileManifest fm = new FileManifest(relativePath, size, Instant.ofEpochMilli(mtime), fileHash, fileChunks);
-                            manifestFiles.add(fm);
-                            db.saveFileCache(relativePath, size, mtime, fileHash, fileChunks);
-                            chunksGenerated.addAndGet(fileChunks.size());
+                            db.addManifestFile(relativePath, size, mtime, fileHash);
+                            db.saveFileCache(sourcePath, relativePath, size, mtime, fileHash, null); // Nota: chunks_json será preenchido no final se necessário, ou podemos mudar o cache para usar as novas tabelas
+                            chunksGenerated.incrementAndGet(); // Incrementamos por arquivo modificado
                         }
+                    } catch (java.nio.file.NoSuchFileException e) {
+                        log.accept("⚠️ Arquivo ignorado (removido durante o scan): " + relativePath);
                     } catch (Exception e) {
-                        // Mascara o caminho completo no log de erro também
-                        String errorFile = sourceRoot.relativize(file).toString();
-                        log.accept("Erro processando " + errorFile + ": " + e.getMessage());
-                        throw new RuntimeException(e);
+                        log.accept("❌ Erro ao processar arquivo " + relativePath + ": " + e.getMessage());
                     }
                 });
             }
-            double processDuration = (System.nanoTime() - startProcessing) / 1_000_000_000.0;
             
-            if (!uploadFutures.isEmpty()) {
-                log.accept("Aguardando conclusão de " + uploadFutures.size() + " uploads...");
-                CompletableFuture.allOf(uploadFutures.toArray(new CompletableFuture[0])).join();
+            // Finaliza o processamento em background
+            uploaderPool.shutdown();
+            while (!uploaderPool.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS)) {
+                log.accept("Aguardando finalização dos uploads pendentes...");
             }
+            if (!uploadErrors.isEmpty()) {
+                throw new IllegalStateException("Falha ao enviar um ou mais chunks", uploadErrors.peek());
+            }
+
+            double processDuration = (System.nanoTime() - startProcessing) / 1_000_000_000.0;
 
             log.accept(String.format("[PERF] files.total=%d files.cached=%d files.changed=%d",
                     totalFiles.get(), filesCached.get(), totalFiles.get() - filesCached.get()));
@@ -174,40 +193,46 @@ public class BackupEngine {
             log.accept(String.format("[PERF] time.processing=%.2fs", processDuration));
 
             long startManifest = System.nanoTime();
+
+            // Reconstruímos a lista apenas para a serialização final (JSON).
+            // Para 175k arquivos, isso ocupará memória temporariamente, mas é muito menos que manter
+            // os objetos durante todo o scan concorrente com o uploadQueue cheio.
+            List<FileManifest> finalManifestFiles;
+            try (var manifestStream = db.getManifestFilesStream()) {
+                finalManifestFiles = manifestStream.toList();
+            }
+
             SnapshotManifest manifest = new SnapshotManifest(
                     snapshotId.toString(),
-                    sourceRoot.toAbsolutePath().toString(),
+                    sourcePath,
                     Instant.now(),
                     "CONTENT_DEFINED_MIN_512KB_AVG_1MB_MAX_4MB",
                     "GZIP",
                     "SHA-256",
-                    manifestFiles
+                    finalManifestFiles
             );
 
             String manifestJson = mapper.writerWithDefaultPrettyPrinter().writeValueAsString(manifest);
-            
-            // Cálculo do tamanho comprimido total (apenas chunks únicos no manifesto)
-            Set<String> uniqueHashes = new java.util.HashSet<>();
-            long totalCompressedSize = 0;
-            for (FileManifest f : manifestFiles) {
-                for (ManifestChunk c : f.chunks()) {
-                    if (uniqueHashes.add(c.hash())) {
-                        totalCompressedSize += c.compressedSize();
-                    }
-                }
-            }
 
             backend.completeSnapshot(
                     snapshotId,
                     manifestJson,
                     totalFiles.get(),
                     totalOriginalSize.get(),
-                    totalCompressedSize
+                    totalCompressedSize.get()
             );
+
+            // Atualiza o cache de arquivos para o próximo backup incremental
+            for (FileManifest f : finalManifestFiles) {
+                db.saveFileCache(sourcePath, f.path(), f.size(), f.lastModified().toEpochMilli(), f.sha256(), f.chunks());
+            }
+
             double manifestDuration = (System.nanoTime() - startManifest) / 1_000_000_000.0;
             log.accept(String.format("[PERF] manifest.files=%d duration=%.2fs", totalFiles.get(), manifestDuration));
 
-            db.setLastSyncedSnapshot(deviceId, sourceRoot.toAbsolutePath().toString(), snapshotId.toString());
+            db.setLastSyncedSnapshot(deviceId, sourcePath, snapshotId.toString());
+            db.clearBackupManifest(); // Limpa as tabelas temporárias
+
             double totalDuration = (System.nanoTime() - startTotal) / 1_000_000_000.0;
             log.accept(String.format("[PERF] total.duration=%.2fs chunks.sent=%d", totalDuration, sentCount.get()));
 
@@ -221,7 +246,7 @@ public class BackupEngine {
 
     private void autoSyncCache(UUID deviceId, Path sourceRoot, Consumer<String> log) {
         try {
-            String pathStr = sourceRoot.toAbsolutePath().toString();
+            String pathStr = sourceRoot.toAbsolutePath().normalize().toString();
             List<SnapshotSummary> snapshots = backend.listSnapshots();
             
             List<SnapshotSummary> sourceSnapshots = snapshots.stream()
@@ -244,7 +269,7 @@ public class BackupEngine {
                 log.accept("☁️ Nova versão de backup detectada na nuvem. Sincronizando memória local...");
                 String json = backend.downloadManifest(latest.id());
                 com.keeply.agent.model.SnapshotManifest manifest = mapper.readValue(json, com.keeply.agent.model.SnapshotManifest.class);
-                db.reconstructIndex(manifest);
+                db.reconstructIndex(pathStr, manifest);
                 db.setLastSyncedSnapshot(deviceId, pathStr, latest.id().toString());
                 log.accept("✅ Memória local atualizada.");
             }

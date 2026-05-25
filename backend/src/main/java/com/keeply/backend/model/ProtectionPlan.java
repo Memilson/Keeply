@@ -14,8 +14,9 @@ public class ProtectionPlan {
     @GeneratedValue(strategy = GenerationType.UUID)
     public UUID id;
 
-    @Column(name = "device_id", nullable = false)
-    public UUID deviceId;
+    @OneToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "device_id", nullable = false, foreignKey = @ForeignKey(name = "fk_plan_device"))
+    public Device device;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "plan_type", nullable = false)

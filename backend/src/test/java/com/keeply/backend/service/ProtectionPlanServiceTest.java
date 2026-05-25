@@ -37,13 +37,12 @@ class ProtectionPlanServiceTest {
         UUID deviceId = UUID.randomUUID();
         Device d = new Device();
         d.id = deviceId;
-        d.userId = userId;
 
         ProtectionPlan existing = new ProtectionPlan();
         existing.id = UUID.randomUUID();
-        existing.deviceId = deviceId;
+        existing.device = d;
 
-        when(devices.findById(deviceId)).thenReturn(Optional.of(d));
+        when(devices.findByIdAndUserId(deviceId, userId)).thenReturn(Optional.of(d));
         when(plans.findByDeviceId(deviceId)).thenReturn(Optional.of(existing));
         when(plans.save(any(ProtectionPlan.class))).thenAnswer(inv -> inv.getArgument(0));
 
@@ -59,13 +58,9 @@ class ProtectionPlanServiceTest {
     @Test
     void blocksAccessToOtherUserDevice() {
         UUID userId = UUID.randomUUID();
-        UUID ownerId = UUID.randomUUID();
         UUID deviceId = UUID.randomUUID();
 
-        Device d = new Device();
-        d.id = deviceId;
-        d.userId = ownerId;
-        when(devices.findById(deviceId)).thenReturn(Optional.of(d));
+        when(devices.findByIdAndUserId(deviceId, userId)).thenReturn(Optional.empty());
 
         assertThrows(ForbiddenException.class, () ->
                 service.get(userId, deviceId));
@@ -77,8 +72,7 @@ class ProtectionPlanServiceTest {
         UUID deviceId = UUID.randomUUID();
         Device d = new Device();
         d.id = deviceId;
-        d.userId = userId;
-        when(devices.findById(deviceId)).thenReturn(Optional.of(d));
+        when(devices.findByIdAndUserId(deviceId, userId)).thenReturn(Optional.of(d));
 
         assertThrows(IllegalArgumentException.class,
                 () -> service.upsert(userId, deviceId, new DeviceDtos.PlanRequest(PlanType.CUSTOM, List.of(" "))));
