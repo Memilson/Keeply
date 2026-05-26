@@ -8,7 +8,6 @@ import jakarta.validation.Valid;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
 import java.io.InputStream;
@@ -27,20 +26,9 @@ public class ChunkController {
         return chunks.check(CurrentUser.get().userId(), request.hashes());
     }
 
-    @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ChunkDtos.ChunkUploadResponse upload(
-            @RequestParam String hash,
-            @RequestParam long originalSize,
-            @RequestParam long compressedSize,
-            @RequestPart("file") MultipartFile file
-    ) throws Exception {
-        boolean stored = chunks.upload(
-                CurrentUser.get().userId(),
-                hash,
-                originalSize,
-                compressedSize,
-                file.getInputStream());
-        return new ChunkDtos.ChunkUploadResponse(hash, stored);
+    @PostMapping("/upload-batch")
+    public ChunkDtos.ChunkUploadBatchResponse uploadBatch(@Valid @RequestBody ChunkDtos.ChunkUploadBatchRequest request) {
+        return chunks.uploadBatch(CurrentUser.get().userId(), request.items());
     }
 
     @GetMapping(value = "/{hash}/download", produces = "application/gzip")

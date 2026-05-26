@@ -8,11 +8,14 @@ import com.keeply.agent.model.DeviceSession;
 import com.keeply.agent.model.ProtectionPlan;
 import com.keeply.agent.model.SnapshotSummary;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -21,6 +24,9 @@ import java.util.Set;
 import java.util.UUID;
 
 public class BackendClient {
+    private static final Logger logger = LoggerFactory.getLogger(BackendClient.class);
+    private static final String TRACE_ID_HEADER = "X-Trace-Id";
+
     private final HttpClient http = HttpClient.newBuilder()
             .connectTimeout(java.time.Duration.ofSeconds(15))
             .build();
@@ -33,6 +39,7 @@ public class BackendClient {
     }
 
     public synchronized DeviceSession loginDevice(String email, String password, String deviceInstallationId, String hostname, String osName, String agentVersion) {
+        String traceId = UUID.randomUUID().toString();
         try {
             String body = mapper.writeValueAsString(Map.of(
                     "email", email,
@@ -46,16 +53,17 @@ public class BackendClient {
                     .uri(URI.create(baseUrl + "/api/auth/login-device"))
                     .timeout(java.time.Duration.ofSeconds(30))
                     .header("Content-Type", "application/json")
+                    .header(TRACE_ID_HEADER, traceId)
                     .POST(HttpRequest.BodyPublishers.ofString(body))
                     .build();
 
-            HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = sendAndLog(request, traceId);
             require2xx(response);
             DeviceSession deviceSession = parseAuthResponse(response.body(), deviceInstallationId);
             this.session = deviceSession;
             return deviceSession;
         } catch (Exception e) {
-            throw new IllegalStateException("Falha no login do device", e);
+            throw new IllegalStateException("Falha no login do device [Trace-ID: %s]".formatted(traceId), e);
         }
     }
 
@@ -72,6 +80,7 @@ public class BackendClient {
             throw new IllegalStateException("Sessão inválida para refresh");
         }
 
+        String traceId = UUID.randomUUID().toString();
         try {
             String body = mapper.writeValueAsString(Map.of(
                     "refreshToken", session.refreshToken(),
@@ -81,83 +90,114 @@ public class BackendClient {
                     .uri(URI.create(baseUrl + "/api/auth/refresh"))
                     .timeout(java.time.Duration.ofSeconds(30))
                     .header("Content-Type", "application/json")
+                    .header(TRACE_ID_HEADER, traceId)
                     .POST(HttpRequest.BodyPublishers.ofString(body))
                     .build();
 
-            HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = sendAndLog(request, traceId);
             require2xx(response);
             DeviceSession refreshed = parseAuthResponse(response.body(), session.deviceInstallationId());
             this.session = refreshed;
             return refreshed;
         } catch (Exception e) {
-            throw new IllegalStateException("Falha ao renovar sessão", e);
+            throw new IllegalStateException("Falha ao renovar sessão [Trace-ID: %s]".formatted(traceId), e);
         }
     }
 
     public Optional<ProtectionPlan> getDevicePlan(UUID deviceId) {
+        String traceId = UUID.randomUUID().toString();
         try {
-            HttpRequest request = authorized("/api/devices/" + deviceId + "/plan").GET().build();
-            HttpResponse<String> response = sendWithRefreshRetry(request);
+            HttpRequest request = authorized("/api/devices/" + deviceId + "/plan", traceId).GET().build();
+            HttpResponse<String> response = sendWithRefreshRetry(request, traceId);
             if (response.statusCode() == 404) {
                 return Optional.empty();
             }
             require2xx(response);
             return Optional.of(mapper.readValue(response.body(), ProtectionPlan.class));
         } catch (Exception e) {
-            throw new IllegalStateException("Falha ao obter plano do device", e);
+            throw new IllegalStateException("Falha ao obter plano do device [Trace-ID: %s]".formatted(traceId), e);
         }
     }
 
     public ProtectionPlan upsertDevicePlan(UUID deviceId, ProtectionPlan.PlanType planType, List<String> sources) {
+        String traceId = UUID.randomUUID().toString();
         try {
             String body = mapper.writeValueAsString(Map.of("planType", planType, "sources", sources));
-            HttpResponse<String> response = sendJson("/api/devices/" + deviceId + "/plan", body, "PUT");
+            HttpResponse<String> response = sendJson("/api/devices/" + deviceId + "/plan", body, "PUT", traceId);
             return mapper.readValue(response.body(), ProtectionPlan.class);
         } catch (Exception e) {
-            throw new IllegalStateException("Falha ao salvar plano do device", e);
+            throw new IllegalStateException("Falha ao salvar plano do device [Trace-ID: %s]".formatted(traceId), e);
         }
     }
 
     public UUID startSnapshot(UUID deviceId, String sourcePath) {
+        String traceId = UUID.randomUUID().toString();
         try {
             String body = mapper.writeValueAsString(Map.of("deviceId", deviceId.toString(), "sourcePath", sourcePath));
-            HttpResponse<String> response = sendJson("/api/snapshots/start", body);
+            HttpResponse<String> response = sendJson("/api/snapshots/start", body, "POST", traceId);
             Map<String, Object> json = mapper.readValue(response.body(), new TypeReference<>() {});
             return UUID.fromString((String) json.get("id"));
         } catch (Exception e) {
-            throw new IllegalStateException("Falha ao iniciar snapshot", e);
+            throw new IllegalStateException("Falha ao iniciar snapshot [Trace-ID: %s]".formatted(traceId), e);
         }
     }
 
     public Set<String> checkChunks(List<String> hashes) {
+        String traceId = UUID.randomUUID().toString();
         try {
             String body = mapper.writeValueAsString(Map.of("hashes", hashes));
-            HttpResponse<String> response = sendJson("/api/chunks/check", body);
+            HttpResponse<String> response = sendJson("/api/chunks/check", body, "POST", traceId);
             Map<String, List<String>> json = mapper.readValue(response.body(), new TypeReference<>() {});
             return new HashSet<>(json.getOrDefault("existing", List.of()));
         } catch (Exception e) {
-            throw new IllegalStateException("Falha ao verificar chunks", e);
+            throw new IllegalStateException("Falha ao verificar chunks [Trace-ID: %s]".formatted(traceId), e);
         }
     }
 
-    public void uploadChunk(ChunkPayload chunk) {
+    public BatchUploadStats uploadChunksBatch(List<ChunkPayload> chunks) {
+        if (chunks == null || chunks.isEmpty()) {
+            return new BatchUploadStats(0, 0, 0, 0);
+        }
+        String traceId = UUID.randomUUID().toString();
         try {
-            String boundary = "----keeply-" + UUID.randomUUID();
-            byte[] body = multipart(boundary, chunk);
-            HttpRequest request = authorized("/api/chunks/upload?hash=%s&originalSize=%d&compressedSize=%d"
-                    .formatted(chunk.hash(), chunk.originalSize(), chunk.compressedSize()))
-                    .header("Content-Type", "multipart/form-data; boundary=" + boundary)
-                    .POST(HttpRequest.BodyPublishers.ofByteArray(body))
-                    .build();
+            List<Map<String, Object>> items = chunks.stream().map(chunk -> {
+                Map<String, Object> item = new java.util.LinkedHashMap<>();
+                item.put("hash", chunk.hash());
+                item.put("originalSize", chunk.originalSize());
+                item.put("compressedSize", chunk.compressedSize());
+                item.put("compressedBytesBase64", Base64.getEncoder().encodeToString(chunk.compressedBytes()));
+                return item;
+            }).toList();
+            String body = mapper.writeValueAsString(Map.of("items", items));
+            HttpResponse<String> response = sendJson("/api/chunks/upload-batch", body, "POST", traceId);
+            Map<String, Object> json = mapper.readValue(response.body(), new TypeReference<>() {});
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> results = (List<Map<String, Object>>) json.getOrDefault("results", List.of());
 
-            HttpResponse<String> response = sendWithRefreshRetry(request);
-            require2xx(response);
+            int stored = 0;
+            int duplicates = 0;
+            int failed = 0;
+            for (Map<String, Object> result : results) {
+                boolean storedItem = Boolean.TRUE.equals(result.get("stored"));
+                String error = result.get("error") == null ? null : result.get("error").toString();
+                if (storedItem) {
+                    stored++;
+                } else if (error == null || error.isBlank()) {
+                    duplicates++;
+                } else {
+                    failed++;
+                    String hash = result.get("hash") == null ? "desconhecido" : result.get("hash").toString();
+                    throw new IllegalStateException("Falha no chunk %s: %s".formatted(hash, error));
+                }
+            }
+            return new BatchUploadStats(results.size(), stored, duplicates, failed);
         } catch (Exception e) {
-            throw new IllegalStateException("Falha ao enviar chunk " + chunk.hash(), e);
+            throw new IllegalStateException("Falha ao enviar lote de chunks [Trace-ID: %s]".formatted(traceId), e);
         }
     }
 
     public void completeSnapshot(UUID snapshotId, String manifestJson, long totalFiles, long totalOriginalSize, long totalCompressedSize) {
+        String traceId = UUID.randomUUID().toString();
         try {
             String body = mapper.writeValueAsString(Map.of(
                     "manifestJson", manifestJson,
@@ -165,52 +205,56 @@ public class BackendClient {
                     "totalOriginalSize", totalOriginalSize,
                     "totalCompressedSize", totalCompressedSize
             ));
-            sendJson("/api/snapshots/" + snapshotId + "/complete", body);
+            sendJson("/api/snapshots/" + snapshotId + "/complete", body, "POST", traceId);
         } catch (Exception e) {
-            throw new IllegalStateException("Falha ao concluir snapshot", e);
+            throw new IllegalStateException("Falha ao concluir snapshot %s [Trace-ID: %s]".formatted(snapshotId, traceId), e);
         }
     }
 
     public void failSnapshot(UUID snapshotId, String errorMessage) {
+        String traceId = UUID.randomUUID().toString();
         try {
             String body = mapper.writeValueAsString(Map.of("errorMessage", errorMessage));
-            sendJson("/api/snapshots/" + snapshotId + "/fail", body);
+            sendJson("/api/snapshots/" + snapshotId + "/fail", body, "POST", traceId);
         } catch (Exception ignored) {
         }
     }
 
     public List<SnapshotSummary> listSnapshots() {
+        String traceId = UUID.randomUUID().toString();
         try {
-            HttpRequest request = authorized("/api/snapshots").GET().build();
-            HttpResponse<String> response = sendWithRefreshRetry(request);
+            HttpRequest request = authorized("/api/snapshots", traceId).GET().build();
+            HttpResponse<String> response = sendWithRefreshRetry(request, traceId);
             require2xx(response);
             return mapper.readValue(response.body(), new TypeReference<>() {});
         } catch (Exception e) {
-            throw new IllegalStateException("Falha ao listar snapshots", e);
+            throw new IllegalStateException("Falha ao listar snapshots [Trace-ID: %s]".formatted(traceId), e);
         }
     }
 
     public String downloadManifest(UUID snapshotId) {
+        String traceId = UUID.randomUUID().toString();
         try {
-            HttpRequest request = authorized("/api/snapshots/" + snapshotId + "/manifest").GET().build();
-            HttpResponse<String> response = sendWithRefreshRetry(request);
+            HttpRequest request = authorized("/api/snapshots/" + snapshotId + "/manifest", traceId).GET().build();
+            HttpResponse<String> response = sendWithRefreshRetry(request, traceId);
             require2xx(response);
             return response.body();
         } catch (Exception e) {
-            throw new IllegalStateException("Falha ao baixar manifesto: " + e.getMessage(), e);
+            throw new IllegalStateException("Falha ao baixar manifesto [Trace-ID: %s]".formatted(traceId), e);
         }
     }
 
     public byte[] downloadChunk(String hash) {
+        String traceId = UUID.randomUUID().toString();
         try {
-            HttpRequest request = authorized("/api/chunks/" + hash + "/download").GET().build();
-            HttpResponse<byte[]> response = sendBytesWithRefreshRetry(request);
+            HttpRequest request = authorized("/api/chunks/" + hash + "/download", traceId).GET().build();
+            HttpResponse<byte[]> response = sendBytesWithRefreshRetry(request, traceId);
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
                 throw new IllegalStateException("HTTP " + response.statusCode());
             }
             return response.body();
         } catch (Exception e) {
-            throw new IllegalStateException("Falha ao baixar chunk " + hash, e);
+            throw new IllegalStateException("Falha ao baixar chunk %s [Trace-ID: %s]".formatted(hash, traceId), e);
         }
     }
 
@@ -224,23 +268,20 @@ public class BackendClient {
         return new DeviceSession(installationId, deviceId, accessToken, refreshToken, userId, email);
     }
 
-    private HttpResponse<String> sendJson(String path, String body) throws Exception {
-        return sendJson(path, body, "POST");
-    }
-
-    private HttpResponse<String> sendJson(String path, String body, String method) throws Exception {
-        HttpRequest request = authorized(path)
+    private HttpResponse<String> sendJson(String path, String body, String method, String traceId) throws Exception {
+        HttpRequest request = authorized(path, traceId)
                 .header("Content-Type", "application/json")
                 .method(method, HttpRequest.BodyPublishers.ofString(body))
                 .build();
-        HttpResponse<String> response = sendWithRefreshRetry(request);
+        HttpResponse<String> response = sendWithRefreshRetry(request, traceId);
         require2xx(response);
         return response;
     }
 
-    private HttpRequest.Builder authorized(String path) {
+    private HttpRequest.Builder authorized(String path, String traceId) {
         HttpRequest.Builder builder = HttpRequest.newBuilder()
                 .uri(URI.create(baseUrl + path))
+                .header(TRACE_ID_HEADER, traceId)
                 .timeout(java.time.Duration.ofSeconds(60));
         if (session != null && !blank(session.accessToken())) {
             builder.header("Authorization", "Bearer " + session.accessToken());
@@ -248,12 +289,13 @@ public class BackendClient {
         return builder;
     }
 
-    private HttpResponse<String> sendWithRefreshRetry(HttpRequest request) throws Exception {
-        HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
+    private HttpResponse<String> sendWithRefreshRetry(HttpRequest request, String traceId) throws Exception {
+        HttpResponse<String> response = sendAndLog(request, traceId);
         if (response.statusCode() == 401 && session != null && !blank(session.refreshToken())) {
+            logger.info("[{}] Recebido 401, tentando refresh session", traceId);
             refreshSession();
             HttpRequest retry = retryWithUpdatedAccessToken(request);
-            response = http.send(retry, HttpResponse.BodyHandlers.ofString());
+            response = sendAndLog(retry, traceId);
             if (response.statusCode() == 401) {
                 throw new IllegalStateException("Sessão expirada ou revogada. Faça login novamente.");
             }
@@ -261,16 +303,31 @@ public class BackendClient {
         return response;
     }
 
-    private HttpResponse<byte[]> sendBytesWithRefreshRetry(HttpRequest request) throws Exception {
-        HttpResponse<byte[]> response = http.send(request, HttpResponse.BodyHandlers.ofByteArray());
+    private HttpResponse<byte[]> sendBytesWithRefreshRetry(HttpRequest request, String traceId) throws Exception {
+        HttpResponse<byte[]> response = sendAndLogBytes(request, traceId);
         if (response.statusCode() == 401 && session != null && !blank(session.refreshToken())) {
+            logger.info("[{}] Recebido 401, tentando refresh session", traceId);
             refreshSession();
             HttpRequest retry = retryWithUpdatedAccessToken(request);
-            response = http.send(retry, HttpResponse.BodyHandlers.ofByteArray());
+            response = sendAndLogBytes(retry, traceId);
             if (response.statusCode() == 401) {
                 throw new IllegalStateException("Sessão expirada ou revogada. Faça login novamente.");
             }
         }
+        return response;
+    }
+
+    private HttpResponse<String> sendAndLog(HttpRequest request, String traceId) throws Exception {
+        logger.debug("[{}] Request: {} {}", traceId, request.method(), request.uri());
+        HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
+        logger.debug("[{}] Response: {} ({} bytes)", traceId, response.statusCode(), response.body().length());
+        return response;
+    }
+
+    private HttpResponse<byte[]> sendAndLogBytes(HttpRequest request, String traceId) throws Exception {
+        logger.debug("[{}] Request: {} {}", traceId, request.method(), request.uri());
+        HttpResponse<byte[]> response = http.send(request, HttpResponse.BodyHandlers.ofByteArray());
+        logger.debug("[{}] Response: {} ({} bytes)", traceId, response.statusCode(), response.body().length);
         return response;
     }
 
@@ -307,24 +364,9 @@ public class BackendClient {
         }
     }
 
-    private static byte[] multipart(String boundary, ChunkPayload chunk) {
-        String header = "--" + boundary + "\r\n"
-                + "Content-Disposition: form-data; name=\"file\"; filename=\"" + chunk.hash() + ".gz\"\r\n"
-                + "Content-Type: application/gzip\r\n\r\n";
-        String footer = "\r\n--" + boundary + "--\r\n";
-
-        byte[] h = header.getBytes(StandardCharsets.UTF_8);
-        byte[] f = footer.getBytes(StandardCharsets.UTF_8);
-        byte[] data = chunk.compressedBytes();
-
-        byte[] out = new byte[h.length + data.length + f.length];
-        System.arraycopy(h, 0, out, 0, h.length);
-        System.arraycopy(data, 0, out, h.length, data.length);
-        System.arraycopy(f, 0, out, h.length + data.length, f.length);
-        return out;
-    }
-
     private boolean blank(String value) {
         return value == null || value.isBlank();
     }
+
+    public record BatchUploadStats(int sent, int stored, int duplicate, int failed) {}
 }

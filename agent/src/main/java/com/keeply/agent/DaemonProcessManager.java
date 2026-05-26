@@ -25,12 +25,12 @@ final class DaemonProcessManager {
             Files.createDirectories(pidPath.getParent());
             
             if (isDaemonAlive(pidPath)) {
-                log.accept("Daemon já está ativo.");
+                log.accept("event=daemon.status status=already_running");
                 return;
             }
 
             if (!Files.exists(configPath)) {
-                log.accept("Daemon não iniciado: config não encontrada em " + configPath);
+                log.accept("event=daemon.start status=skipped reason=config_missing path=" + configPath);
                 return;
             }
 
@@ -41,13 +41,13 @@ final class DaemonProcessManager {
 
             Thread.sleep(700);
             if (!process.isAlive() && !isDaemonAlive(pidPath)) {
-                log.accept("Daemon falhou ao iniciar. Verifique: " + logPath);
+                log.accept("event=daemon.start status=failed log_path=" + logPath);
                 return;
             }
 
-            log.accept("Daemon iniciado em background. Logs: " + logPath);
+            log.accept("event=daemon.start status=ok mode=background log_path=" + logPath);
         } catch (Exception e) {
-            log.accept("Falha ao iniciar daemon automaticamente: " + e.getMessage());
+            log.accept("event=daemon.start status=error message=\"" + e.getMessage() + "\"");
         }
     }
 
@@ -56,6 +56,7 @@ final class DaemonProcessManager {
         String classpath = System.getProperty("java.class.path");
         List<String> command = new ArrayList<>();
         command.add(javaBin);
+        command.add("--enable-native-access=ALL-UNNAMED");
         command.add("-cp");
         command.add(classpath);
         command.add("com.keeply.agent.KeeplyAgentDaemonApp");

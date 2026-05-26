@@ -11,7 +11,7 @@ class CronSchedulerTest {
     @Test
     void computesPositiveDelayForValidCron() {
         ZonedDateTime now = ZonedDateTime.of(2026, 5, 23, 10, 2, 0, 0, ZoneId.of("UTC"));
-        CronScheduler scheduler = new CronScheduler("*/5 * * * *", () -> { }, new DaemonLogger(), () -> now);
+        CronScheduler scheduler = new CronScheduler("*/5 * * * *", () -> { }, () -> now);
 
         long delay = scheduler.delayToNextRunSeconds();
 

@@ -18,6 +18,12 @@ spring:
       max-file-size: 50MB
       max-request-size: 50MB
 
+logging:
+  level:
+    com.keeply: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+
 keeply:
   jwt:
     secret: ${KEEPLY_JWT_SECRET}

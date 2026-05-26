@@ -4,6 +4,8 @@ package com.keeply.backend.service;
 import com.keeply.backend.dto.SnapshotDtos;
 import com.keeply.backend.model.*;
 import com.keeply.backend.repository.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -15,6 +17,7 @@ import java.util.*;
 
 @Service
 public class SnapshotService {
+    private static final Logger log = LoggerFactory.getLogger(SnapshotService.class);
     private final SnapshotRepository snapshots;
     private final DeviceRepository devices;
     private final ObjectStorageService storage;
@@ -32,6 +35,7 @@ public class SnapshotService {
 
     @Transactional
     public SnapshotDtos.SnapshotResponse start(UUID userId, SnapshotDtos.StartSnapshotRequest request) {
+        log.info("Iniciando novo snapshot para o device: {} (User: {})", request.deviceId(), userId);
         Device device = devices.findByIdAndUserId(request.deviceId(), userId)
                 .orElseThrow(() -> new IllegalArgumentException("Device inválido"));
 
@@ -46,6 +50,7 @@ public class SnapshotService {
 
     @Transactional
     public SnapshotDtos.SnapshotResponse complete(UUID userId, UUID snapshotId, SnapshotDtos.CompleteSnapshotRequest request) {
+        log.info("Finalizando snapshot: {} (User: {})", snapshotId, userId);
         Snapshot s = findOwned(userId, snapshotId);
         if (s.status != SnapshotStatus.IN_PROGRESS) {
             throw new IllegalStateException("Snapshot não está em progresso");
@@ -63,7 +68,7 @@ public class SnapshotService {
             throw new IllegalStateException("Falha ao comprimir manifesto", e);
         }
 
-        String key = "users/%s/manifests/%s.json.gz".formatted(s.device.user.id, snapshotId);
+        String key = "users/%s/manifests/%s.json.gz".formatted(userId, snapshotId);
         storage.put(key, new java.io.ByteArrayInputStream(compressedManifest), compressedManifest.length, "application/gzip");
 
         s.totalFiles = request.totalFiles();
@@ -118,9 +123,18 @@ public class SnapshotService {
     }
 
     private SnapshotDtos.SnapshotResponse toResponse(Snapshot s) {
+        UUID deviceId = null;
+        if (s.device != null) {
+            // Se for proxy e tivermos só o ID na memória, Hibernate consegue pegar sem bater no banco dependendo do setup,
+            // Mas para evitar NullPointer se o objeto foi detachado incorretamente:
+            try {
+                deviceId = s.device.id;
+            } catch (Exception ignored) {}
+        }
+        
         return new SnapshotDtos.SnapshotResponse(
                 s.id,
-                s.device.id,
+                deviceId,
                 s.status,
                 s.sourcePath,
                 s.totalFiles,

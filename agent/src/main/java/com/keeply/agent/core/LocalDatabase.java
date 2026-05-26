@@ -121,33 +121,74 @@ public class LocalDatabase implements AutoCloseable {
     }
 
     /**
-     * Retorna um Stream de FileManifest reconstruído do banco.
+     * Retorna um Stream de FileManifest reconstruído do banco de forma eficiente via JOIN.
      * Importante: O chamador deve fechar o stream para fechar o ResultSet/Statement.
      */
     public java.util.stream.Stream<com.keeply.agent.model.FileManifest> getManifestFilesStream() {
         try {
             Connection conn = connect();
-            String sql = "SELECT path, size, last_modified, hash FROM backup_manifest_files";
+            String sql = "SELECT f.path, f.size, f.last_modified, f.hash, " +
+                         "c.chunk_index, c.chunk_hash, c.original_size, c.compressed_size " +
+                         "FROM backup_manifest_files f " +
+                         "LEFT JOIN backup_manifest_chunks c ON f.path = c.file_path " +
+                         "ORDER BY f.path, c.chunk_index";
             Statement stmt = conn.createStatement();
             ResultSet rs = stmt.executeQuery(sql);
 
             return java.util.stream.StreamSupport.stream(new java.util.Spliterators.AbstractSpliterator<com.keeply.agent.model.FileManifest>(Long.MAX_VALUE, 0) {
+                private String nextPath = null;
+                private boolean done = false;
+
                 @Override
                 public boolean tryAdvance(java.util.function.Consumer<? super com.keeply.agent.model.FileManifest> action) {
                     try {
-                        if (!rs.next()) {
-                            rs.close();
-                            stmt.close();
-                            return false;
+                        if (done) return false;
+
+                        String currentPath = nextPath;
+                        long size = 0, mtime = 0;
+                        String hash = null;
+                        java.util.List<ManifestChunk> chunks = new java.util.ArrayList<>();
+
+                        if (currentPath == null) {
+                            if (!rs.next()) {
+                                done = true;
+                                return false;
+                            }
+                            currentPath = rs.getString("path");
                         }
-                        String path = rs.getString("path");
-                        long size = rs.getLong("size");
-                        long mtime = rs.getLong("last_modified");
-                        String hash = rs.getString("hash");
-                        
-                        List<ManifestChunk> chunks = getManifestChunks(path);
-                        action.accept(new com.keeply.agent.model.FileManifest(path, size, java.time.Instant.ofEpochMilli(mtime), hash, chunks));
+
+                        size = rs.getLong("size");
+                        mtime = rs.getLong("last_modified");
+                        hash = rs.getString("hash");
+
+                        do {
+                            String rowPath = rs.getString("path");
+                            if (!rowPath.equals(currentPath)) {
+                                nextPath = rowPath;
+                                break;
+                            }
+
+                            String chunkHash = rs.getString("chunk_hash");
+                            if (chunkHash != null) {
+                                chunks.add(new ManifestChunk(
+                                    rs.getInt("chunk_index"),
+                                    chunkHash,
+                                    rs.getLong("original_size"),
+                                    rs.getLong("compressed_size")
+                                ));
+                            }
+
+                            if (!rs.next()) {
+                                done = true;
+                                nextPath = null;
+                                break;
+                            }
+                        } while (true);
+
+                        action.accept(new com.keeply.agent.model.FileManifest(
+                            currentPath, size, java.time.Instant.ofEpochMilli(mtime), hash, chunks));
                         return true;
+
                     } catch (SQLException e) {
                         throw new RuntimeException(e);
                     }
@@ -160,25 +201,6 @@ public class LocalDatabase implements AutoCloseable {
             });
         } catch (SQLException e) {
             throw new RuntimeException("Erro ao ler manifesto do banco", e);
-        }
-    }
-
-    private List<ManifestChunk> getManifestChunks(String filePath) throws SQLException {
-        String sql = "SELECT chunk_index, chunk_hash, original_size, compressed_size FROM backup_manifest_chunks WHERE file_path = ? ORDER BY chunk_index";
-        try (PreparedStatement pstmt = connect().prepareStatement(sql)) {
-            pstmt.setString(1, filePath);
-            try (ResultSet rs = pstmt.executeQuery()) {
-                java.util.List<ManifestChunk> chunks = new java.util.ArrayList<>();
-                while (rs.next()) {
-                    chunks.add(new ManifestChunk(
-                        rs.getInt("chunk_index"),
-                        rs.getString("chunk_hash"),
-                        rs.getLong("original_size"),
-                        rs.getLong("compressed_size")
-                    ));
-                }
-                return chunks;
-            }
         }
     }
 
