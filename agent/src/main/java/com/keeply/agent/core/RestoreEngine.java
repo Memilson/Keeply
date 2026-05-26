@@ -6,10 +6,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.keeply.agent.api.BackendClient;
 import com.keeply.agent.model.FileManifest;
 import com.keeply.agent.model.ManifestChunk;
+import com.keeply.agent.model.TransferCredentials;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.OutputStream;
+import java.io.InputStream;
+import java.security.DigestInputStream;
+import java.security.MessageDigest;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
@@ -18,14 +22,22 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.HexFormat;
+import java.util.zip.GZIPInputStream;
 
 public class RestoreEngine {
     private static final Logger log = LoggerFactory.getLogger(RestoreEngine.class);
     private final BackendClient backend;
     private final ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
+    private final StorageFactory storageFactory;
 
     public RestoreEngine(BackendClient backend) {
+        this(backend, DirectTransferStorage::new);
+    }
+
+    RestoreEngine(BackendClient backend, StorageFactory storageFactory) {
         this.backend = backend;
+        this.storageFactory = storageFactory;
     }
 
     public void restore(UUID snapshotId, Path destinationRoot) {
@@ -38,10 +50,14 @@ public class RestoreEngine {
         AtomicInteger skippedFiles = new AtomicInteger(0);
         AtomicLong totalRestoredSize = new AtomicLong(0);
 
+        TransferCredentials credentials = null;
         try {
             log.info("📥 Iniciando restauração do snapshot: {}", snapshotId);
             Set<String> selected = selectedPaths == null ? null : new HashSet<>(selectedPaths);
-            try (var stream = backend.openManifestStream(snapshotId);
+            credentials = backend.startRestoreSession(snapshotId);
+            TransferObjectClient storage = storageFactory.create(backend, credentials);
+            try (var compressedManifest = storage.openManifest(snapshotId);
+                 var stream = new GZIPInputStream(compressedManifest);
                  JsonParser parser = mapper.getFactory().createParser(stream)) {
                 Path originalRoot = null;
                 while (parser.nextToken() != null) {
@@ -53,7 +69,7 @@ public class RestoreEngine {
                     parser.nextToken();
                     while (parser.nextToken() != JsonToken.END_ARRAY) {
                         FileManifest file = mapper.readValue(parser, FileManifest.class);
-                        restoreFile(file, originalRoot, destinationRoot, selected, overwritePolicy,
+                        restoreFile(storage, file, originalRoot, destinationRoot, selected, overwritePolicy,
                                 totalFiles, skippedFiles, totalRestoredSize);
                     }
                 }
@@ -69,10 +85,18 @@ public class RestoreEngine {
         } catch (Exception e) {
             log.error("❌ Restore falhou: {}", e.getMessage(), e);
             throw new IllegalStateException("Restore falhou", e);
+        } finally {
+            if (credentials != null) {
+                try {
+                    backend.finishTransferSession(credentials.transferSessionId());
+                } catch (Exception e) {
+                    log.warn("event=restore.transfer_session status=finish_failed message={}", e.getMessage());
+                }
+            }
         }
     }
 
-    private void restoreFile(FileManifest file, Path originalRoot, Path destinationRoot, Set<String> selected,
+    private void restoreFile(TransferObjectClient storage, FileManifest file, Path originalRoot, Path destinationRoot, Set<String> selected,
                              OverwritePolicy overwritePolicy, AtomicInteger totalFiles,
                              AtomicInteger skippedFiles, AtomicLong totalRestoredSize) throws Exception {
                 if (selected != null && !selected.contains(file.path())) {
@@ -99,16 +123,18 @@ public class RestoreEngine {
 
                 try (OutputStream out = Files.newOutputStream(target)) {
                     for (ManifestChunk chunk : file.chunks()) {
-                        byte[] gzip = backend.downloadChunk(chunk.hash());
-                        byte[] original = GzipCompressor.decompress(gzip);
-
-                        String hash = Sha256Hasher.hashBytes(original);
-                        if (!hash.equals(chunk.hash())) {
+                        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+                        long size;
+                        try (InputStream compressed = storage.openChunk(chunk.hash());
+                             GZIPInputStream original = new GZIPInputStream(compressed);
+                             DigestInputStream validated = new DigestInputStream(original, digest)) {
+                            size = validated.transferTo(out);
+                        }
+                        String hash = HexFormat.of().formatHex(digest.digest());
+                        if (!hash.equals(chunk.hash()) || size != chunk.originalSize()) {
                             throw new IllegalStateException("Hash inválido no chunk " + chunk.hash());
                         }
-
-                        out.write(original);
-                        totalRestoredSize.addAndGet(original.length);
+                        totalRestoredSize.addAndGet(size);
                     }
                 }
 
@@ -185,5 +211,10 @@ public class RestoreEngine {
         public String toString() {
             return label;
         }
+    }
+
+    @FunctionalInterface
+    interface StorageFactory {
+        TransferObjectClient create(BackendClient backend, TransferCredentials credentials);
     }
 }

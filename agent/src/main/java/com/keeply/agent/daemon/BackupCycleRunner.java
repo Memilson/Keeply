@@ -64,7 +64,11 @@ public final class BackupCycleRunner {
             ensureDeviceRegistered();
             backupAllSources(deviceId);
         } catch (Exception e) {
-            LogUtils.logError(log, "event=backup.cycle status=failed stage=auth_or_registration", e);
+            if (isNetworkError(e)) {
+                log.warn("event=backup.cycle status=skipped reason=network_error message={}", e.getMessage());
+            } else {
+                LogUtils.logError(log, "event=backup.cycle status=failed stage=auth_or_registration", e);
+            }
         } finally {
             log.info("event=backup.cycle status=finished");
             running.set(false);
@@ -91,7 +95,7 @@ public final class BackupCycleRunner {
                 log.info("event=backup.source status=completed source={} snapshot_id={}", sourceName, snapshotId);
             } catch (Exception e) {
                 if (isInvalidDeviceError(e)) {
-                    log.warn("event=backup.source status=retrying source={} reason=invalid_device", sourceName);
+                    log.warn("event=backup.source status=retrying source={} reason=invalid_device message={}", sourceName, e.getMessage());
                     try {
                         deviceId = null;
                         authenticate(true);
@@ -100,10 +104,12 @@ public final class BackupCycleRunner {
                         log.info("event=backup.source status=completed_after_reregister source={} snapshot_id={}", sourceName, retriedSnapshotId);
                         continue;
                     } catch (Exception retryError) {
-                        log.error("event=backup.source status=failed_after_reregister source={} message={}", sourceName, retryError.getMessage());
+                        LogUtils.logError(log, "event=backup.source status=failed_after_reregister source=" + sourceName, retryError);
                     }
+                } else if (isNetworkError(e)) {
+                    log.warn("event=backup.source status=skipped source={} reason=network_error message={}", sourceName, e.getMessage());
                 } else {
-                    log.error("event=backup.source status=failed source={} message={}", sourceName, e.getMessage());
+                    LogUtils.logError(log, "event=backup.source status=failed source=" + sourceName, e);
                 }
             }
         }
@@ -113,7 +119,18 @@ public final class BackupCycleRunner {
         Throwable current = throwable;
         while (current != null) {
             String message = current.getMessage();
-            if (message != null && (message.contains("Device inválido") || message.contains("Falha ao iniciar snapshot"))) {
+            if (message != null && message.contains("Device inválido")) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
+    private boolean isNetworkError(Throwable throwable) {
+        Throwable current = throwable;
+        while (current != null) {
+            if (current instanceof java.io.IOException) {
                 return true;
             }
             current = current.getCause();
@@ -131,17 +148,28 @@ public final class BackupCycleRunner {
                 deviceId = refreshed.deviceId();
                 return;
             } catch (Exception e) {
-                log.warn("event=auth.session status=refresh_failed action=login_required");
+                if (isNetworkError(e)) {
+                    throw new IllegalStateException("Erro de rede ao tentar renovar sessão", e);
+                }
+                log.warn("event=auth.session status=refresh_failed action=login_required reason={}", e.getMessage());
             }
         }
+
+        String email = config.auth().email();
+        String password = config.auth().password();
+
+        if (password == null || password.isBlank()) {
+            throw new IllegalStateException("Senha não configurada. O daemon não pode renovar a sessão automaticamente sem uma senha salva.");
+        }
+
         try {
             String hostname = InetAddress.getLocalHost().getHostName();
             String installationId = saved != null && saved.deviceInstallationId() != null && !saved.deviceInstallationId().isBlank()
                     ? saved.deviceInstallationId()
                     : DeviceIdentity.getOrCreate();
             DeviceSession session = backend.loginDevice(
-                    config.auth().email(),
-                    config.auth().password(),
+                    email,
+                    password,
                     installationId,
                     hostname,
                     System.getProperty("os.name"),
@@ -150,7 +178,10 @@ public final class BackupCycleRunner {
             authStore.save(session);
             deviceId = session.deviceId();
         } catch (Exception e) {
-            throw new IllegalStateException("Falha de autenticação do daemon. Abra a UI e faça login novamente.", e);
+            if (isNetworkError(e)) {
+                throw new IllegalStateException("Erro de rede ao tentar realizar login", e);
+            }
+            throw new IllegalStateException("Falha de autenticação do daemon. Verifique se o login está correto na UI.", e);
         }
     }
 

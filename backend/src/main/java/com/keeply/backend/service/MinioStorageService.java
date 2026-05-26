@@ -77,4 +77,29 @@ public class MinioStorageService implements ObjectStorageService {
             throw new IllegalStateException("Falha ao verificar objeto no MinIO: " + key, e);
         }
     }
+
+    @Override
+    public void copy(String sourceKey, String destinationKey) {
+        try {
+            minio.copyObject(CopyObjectArgs.builder()
+                    .bucket(bucket)
+                    .object(destinationKey)
+                    .source(CopySource.builder().bucket(bucket).object(sourceKey).build())
+                    .build());
+        } catch (Exception e) {
+            throw new IllegalStateException("Falha ao promover objeto MinIO: " + sourceKey, e);
+        }
+    }
+
+    @Override
+    public void deletePrefix(String prefix) {
+        try {
+            for (Result<io.minio.messages.Item> result : minio.listObjects(
+                    ListObjectsArgs.builder().bucket(bucket).prefix(prefix).recursive(true).build())) {
+                minio.removeObject(RemoveObjectArgs.builder().bucket(bucket).object(result.get().objectName()).build());
+            }
+        } catch (Exception e) {
+            throw new IllegalStateException("Falha ao limpar staging MinIO: " + prefix, e);
+        }
+    }
 }

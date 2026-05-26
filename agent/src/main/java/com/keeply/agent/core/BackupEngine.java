@@ -2,6 +2,8 @@ package com.keeply.agent.core;
 
 import com.keeply.agent.api.BackendClient;
 import com.keeply.agent.model.SnapshotSummary;
+import com.keeply.agent.model.StartedSnapshot;
+import com.keeply.agent.model.TransferCredentials;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -12,6 +14,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.zip.GZIPInputStream;
 
 public class BackupEngine {
     private static final Logger log = LoggerFactory.getLogger(BackupEngine.class);
@@ -30,7 +33,9 @@ public class BackupEngine {
         String sourcePath = sourceRoot.toAbsolutePath().normalize().toString();
         autoSyncCache(deviceId, sourceRoot);
 
-        UUID snapshotId = backend.startSnapshot(deviceId, sourcePath);
+        StartedSnapshot started = backend.startSnapshot(deviceId, sourcePath);
+        UUID snapshotId = started.snapshot().id();
+        DirectTransferStorage transferStorage = new DirectTransferStorage(backend, started.transfer());
 
         try {
             log.info("event=backup.snapshot status=started snapshot_id={} source_path={}", snapshotId, sourcePath);
@@ -127,12 +132,12 @@ public class BackupEngine {
                                     uploaderPool.execute(() -> {
                                         try {
                                             long uploadStart = System.nanoTime();
-                                            BackendClient.ChunkUploadResult result = backend.uploadChunk(chunkHash, originalSize, uploadFile);
-                                            if (result.stored()) sentCount.incrementAndGet(); else duplicateCount.incrementAndGet();
+                                            transferStorage.uploadChunk(chunkHash, uploadFile);
+                                            sentCount.incrementAndGet();
                                             db.addKnownChunks(Set.of(chunkHash));
                                             long latencyMs = (System.nanoTime() - uploadStart) / 1_000_000;
                                             log.debug("event=chunk.upload hash={} compressed_bytes={} stored={} latency_ms={} in_flight={}",
-                                                    chunkHash, compressedSize, result.stored(), latencyMs,
+                                                    chunkHash, compressedSize, true, latencyMs,
                                                     uploaderPool.getActiveCount());
                                         } catch (Exception e) {
                                             failedBatchItems.incrementAndGet();
@@ -199,7 +204,8 @@ public class BackupEngine {
             Path manifestFile = Files.createTempFile("keeply-manifest-" + snapshotId, ".json.gz");
             try {
                 db.writeManifestGzip(manifestFile, snapshotId.toString(), sourcePath);
-                backend.completeSnapshot(snapshotId, manifestFile, totalFiles.get(), totalOriginalSize.get(), totalCompressedSize);
+                transferStorage.uploadManifest(manifestFile);
+                backend.completeSnapshot(snapshotId, transferStorage.sessionId(), totalFiles.get(), totalOriginalSize.get(), totalCompressedSize);
             } finally {
                 Files.deleteIfExists(manifestFile);
             }
@@ -221,6 +227,11 @@ public class BackupEngine {
 
             return snapshotId;
         } catch (Exception e) {
+            try {
+                backend.cancelTransferSession(transferStorage.sessionId());
+            } catch (Exception cancelError) {
+                log.warn("event=backup.transfer_session status=cancel_failed message={}", cancelError.getMessage());
+            }
             backend.failSnapshot(snapshotId, e.getMessage());
             throw new IllegalStateException("Backup falhou", e);
         }
@@ -252,8 +263,13 @@ public class BackupEngine {
             String lastSynced = db.getLastSyncedSnapshot(deviceId, pathStr);
             if (!latest.id().toString().equals(lastSynced)) {
                 log.info("event=backup.cache_sync status=started action=rebuild_local_index");
-                try (var manifestStream = backend.openManifestStream(latest.id())) {
+                TransferCredentials credentials = backend.startRestoreSession(latest.id());
+                DirectTransferStorage storage = new DirectTransferStorage(backend, credentials);
+                try (var gzipStream = storage.openManifest(latest.id());
+                     var manifestStream = new GZIPInputStream(gzipStream)) {
                     db.reconstructIndex(pathStr, manifestStream);
+                } finally {
+                    backend.finishTransferSession(credentials.transferSessionId());
                 }
                 db.setLastSyncedSnapshot(deviceId, pathStr, latest.id().toString());
                 log.info("event=backup.cache_sync status=completed");

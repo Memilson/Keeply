@@ -80,7 +80,7 @@ public class AuthService {
         device.refreshTokenHash = passwordEncoder.encode(normalizeRefreshToken(refreshToken));
         devices.save(device);
 
-        String accessToken = jwtService.generateAccessToken(user.id, user.email);
+        String accessToken = jwtService.generateDeviceAccessToken(user.id, user.email, device.id);
         return new AuthDtos.AuthResponse(accessToken, refreshToken, user.id, user.email, device.id);
     }
 
@@ -114,7 +114,7 @@ public class AuthService {
         device.lastSeenAt = Instant.now();
         devices.save(device);
 
-        String accessToken = jwtService.generateAccessToken(principal.userId(), principal.email());
+        String accessToken = jwtService.generateDeviceAccessToken(principal.userId(), principal.email(), device.id);
         return new AuthDtos.AuthResponse(accessToken, newRefreshToken, principal.userId(), principal.email(), device.id);
     }
 

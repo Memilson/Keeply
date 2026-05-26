@@ -8,4 +8,6 @@ public interface ObjectStorageService {
     InputStream getStream(String key);
     void delete(String key);
     boolean exists(String key);
+    void copy(String sourceKey, String destinationKey);
+    void deletePrefix(String prefix);
 }
