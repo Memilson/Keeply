@@ -16,14 +16,22 @@ import com.keeply.agent.model.ProtectionPlan;
 import com.keeply.agent.model.SnapshotSummary;
 import javafx.application.Application;
 import javafx.application.Platform;
+import javafx.collections.FXCollections;
 import javafx.geometry.Insets;
+import javafx.geometry.Pos;
 import javafx.scene.Scene;
+import javafx.scene.Node;
 import javafx.scene.control.*;
-import javafx.scene.control.cell.CheckBoxTreeCell;
 import javafx.scene.layout.*;
+import javafx.scene.shape.SVGPath;
 import javafx.stage.DirectoryChooser;
 import javafx.stage.Stage;
+import javafx.animation.KeyFrame;
+import javafx.animation.Timeline;
+import javafx.util.Duration;
 
+import java.io.OutputStream;
+import java.io.PrintStream;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.net.InetAddress;
@@ -42,8 +50,12 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicBoolean;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class KeeplyAgentApp extends Application {
+    private static final Logger log = LoggerFactory.getLogger(KeeplyAgentApp.class);
     private BackendClient backend;
     private LocalDatabase db;
     private UUID deviceId;
@@ -55,11 +67,20 @@ public class KeeplyAgentApp extends Application {
     private PasswordField password;
     private TextArea backupSourcesConfig;
     private Label status;
+    private BorderPane appShell;
+    private StackPane contentHost;
+    private Label shellPageLabel;
+    private final Map<String, Node> appViews = new LinkedHashMap<>();
+    private final Map<String, Button> navButtons = new LinkedHashMap<>();
+    private Runnable restoreRefresh = () -> {};
     private final Path daemonLogPath = AgentPaths.resolveLogPath();
     private final AtomicLong daemonLogOffset = new AtomicLong(0L);
 
     @Override
     public void start(Stage stage) {
+        redirectSystemErrToTextArea();
+        log.info("Iniciando Keeply Agent UI...");
+        
         Path uiDbPath = AgentPaths.resolveUiDbPath();
         try {
             Files.createDirectories(uiDbPath.getParent());
@@ -82,33 +103,31 @@ public class KeeplyAgentApp extends Application {
 
         logs.setEditable(false);
 
-        Tab loginTab = new Tab("Login", loginView());
-        Tab dashboardTab = new Tab("Dashboard", dashboardView());
-        TabPane tabs = new TabPane(
-                loginTab,
-                dashboardTab,
-                new Tab("Backup", backupView(stage)),
-                new Tab("Restore", restoreView(stage)),
-                new Tab("Configurações", configView()),
-                new Tab("Logs", logs)
-        );
-
-        tabs.getTabs().forEach(t -> t.setClosable(false));
+        appViews.put("Login", loginView());
+        appViews.put("Dashboard", dashboardView());
+        appViews.put("Backup", backupView(stage));
+        appViews.put("Restore", restoreView(stage));
+        appViews.put("Configurações", configView());
+        logs.getStyleClass().add("log-surface");
+        appViews.put("Logs", logs);
+        appShell = buildAppShell();
 
         // Tenta auto-login
         Optional<DeviceSession> saved = deviceAuthStore.load();
+        boolean authenticated = saved.isPresent();
         if (saved.isPresent()) {
             DeviceSession session = saved.get();
             backend = new BackendClient(backendUrl.getText().trim());
             backend.setSession(session);
             deviceId = session.deviceId();
             status.setText("Conectado. Device: " + deviceId);
-            tabs.getTabs().remove(loginTab);
-            tabs.getSelectionModel().select(dashboardTab);
         }
+        updateAuthenticationNavigation(authenticated);
+        showView(authenticated ? "Dashboard" : "Login");
 
-        Scene scene = new Scene(tabs, 900, 600);
-        stage.setTitle("Keeply Agent MVP");
+        Scene scene = new Scene(appShell, 1240, 760);
+        scene.getStylesheets().add(getClass().getResource("/keeply-theme.css").toExternalForm());
+        stage.setTitle("Keeply");
         stage.setScene(scene);
         stage.show();
 
@@ -117,133 +136,525 @@ public class KeeplyAgentApp extends Application {
     }
 
     private Pane loginView() {
-        GridPane grid = grid();
+        VBox box = box();
+        box.getStyleClass().add("screen-root");
+        box.setAlignment(Pos.CENTER);
+        box.setSpacing(20);
+        box.setPadding(new Insets(40));
 
-        Button loginBtn = new Button("Login");
+        Label title = new Label("Bem-vindo ao Keeply");
+        title.getStyleClass().add("page-title");
+
+        GridPane grid = grid();
+        grid.setAlignment(Pos.CENTER);
+        grid.setHgap(10);
+        grid.setVgap(15);
+
+        backendUrl.setPromptText("URL do Servidor");
+        email.setPromptText("Seu email");
+        password.setPromptText("Sua senha");
+
+        Button loginBtn = new Button("ENTRAR NA CONTA");
+        loginBtn.setMaxWidth(Double.MAX_VALUE);
+        loginBtn.getStyleClass().addAll("btn-primary", "btn-wide");
+        
         loginBtn.setOnAction(e -> {
-            TabPane tabPane = (TabPane) grid.getScene().getRoot();
             runAsync(() -> {
                 String userEmail = email.getText().trim();
                 String userPass = password.getText();
                 
-                log("Tentando login para: " + userEmail);
-                String hostname = InetAddress.getLocalHost().getHostName();
-                backend = new BackendClient(backendUrl.getText().trim());
-                String installationId = DeviceIdentity.getOrCreate();
-                DeviceSession session = backend.loginDevice(userEmail, userPass, installationId, hostname, System.getProperty("os.name"), "0.1.0");
-                deviceId = session.deviceId();
-                deviceAuthStore.save(session);
-                synchronizePlanAfterLogin();
-                DaemonProcessManager.ensureDaemonRunning(this::log);
+                log("event=ui.login status=started email=" + userEmail);
+                try {
+                    String hostname = InetAddress.getLocalHost().getHostName();
+                    backend = new BackendClient(backendUrl.getText().trim());
+                    String installationId = DeviceIdentity.getOrCreate();
+                    DeviceSession session = backend.loginDevice(userEmail, userPass, installationId, hostname, System.getProperty("os.name"), "0.1.0");
+                    deviceId = session.deviceId();
+                    deviceAuthStore.save(session);
+                    synchronizePlanAfterLogin();
+                    DaemonProcessManager.ensureDaemonRunning(this::log);
 
-                ui(() -> {
-                    status.setText("Conectado. Device: " + deviceId);
-                    tabPane.getTabs().removeIf(t -> t.getText().equals("Login"));
-                });
-                log("Login OK. Device registrado: " + deviceId);
+                    ui(() -> {
+                        status.setText("Conectado. Device: " + deviceId);
+                        updateAuthenticationNavigation(true);
+                        showView("Dashboard");
+                    });
+                    log("event=ui.login status=completed device_id=" + deviceId);
+                } catch (Exception ex) {
+                    log("Erro no login: " + ex.getMessage());
+                }
             });
         });
 
-        grid.addRow(0, new Label("Backend:"), backendUrl);
-        grid.addRow(1, new Label("Email:"), email);
+        grid.addRow(0, new Label("Servidor:"), backendUrl);
+        grid.addRow(1, new Label("E-mail:"), email);
         grid.addRow(2, new Label("Senha:"), password);
         grid.add(loginBtn, 1, 3);
 
-        return grid;
+        box.getChildren().addAll(title, new Label("Faça login para sincronizar seus backups com a nuvem."), grid);
+        return box;
+    }
+
+    private BorderPane buildAppShell() {
+        BorderPane shell = new BorderPane();
+        shell.getStyleClass().add("app-shell");
+
+        VBox sidebar = new VBox(18);
+        sidebar.getStyleClass().add("app-sidebar");
+        sidebar.setPrefWidth(204);
+
+        Label brandName = new Label("Keeply");
+        brandName.getStyleClass().add("shell-brand");
+        HBox brand = new HBox(9, createKeeplySparkIcon(), brandName);
+        brand.setAlignment(Pos.CENTER_LEFT);
+        brand.getStyleClass().add("shell-brand-box");
+
+        VBox navigation = new VBox(5);
+        navigation.getStyleClass().add("shell-navigation");
+        navigation.getChildren().addAll(
+                navigationButton("Login", "Login", "login"),
+                navigationButton("Dashboard", "Inicio", "home"),
+                navigationButton("Backup", "Backups", "backup"),
+                navigationButton("Restore", "Restaurar", "restore"),
+                navigationButton("Configurações", "Configuracoes", "settings"),
+                navigationButton("Logs", "Atividade", "activity")
+        );
+
+        Region navigationSpacer = new Region();
+        VBox.setVgrow(navigationSpacer, Priority.ALWAYS);
+        VBox storageCard = new VBox(7);
+        storageCard.getStyleClass().add("storage-card");
+        Label protectionTitle = new Label("Protecao ativa");
+        protectionTitle.getStyleClass().add("section-title");
+        Label protectionCopy = new Label("Backups e snapshots\nsob seu controle.");
+        protectionCopy.getStyleClass().add("item-muted");
+        storageCard.getChildren().addAll(protectionTitle, protectionCopy);
+        sidebar.getChildren().addAll(brand, navigation, navigationSpacer, storageCard);
+
+        BorderPane workspace = new BorderPane();
+        workspace.getStyleClass().add("workspace");
+        HBox header = new HBox(14);
+        header.setAlignment(Pos.CENTER_LEFT);
+        header.getStyleClass().add("app-header");
+        shellPageLabel = new Label();
+        shellPageLabel.getStyleClass().add("app-context");
+        Region headerSpacer = new Region();
+        HBox.setHgrow(headerSpacer, Priority.ALWAYS);
+        status.getStyleClass().add("status-pill");
+        header.getChildren().addAll(shellPageLabel, headerSpacer, status);
+
+        contentHost = new StackPane();
+        contentHost.getStyleClass().add("content-host");
+        workspace.setTop(header);
+        workspace.setCenter(contentHost);
+
+        shell.setLeft(sidebar);
+        shell.setCenter(workspace);
+        return shell;
+    }
+
+    private Button navigationButton(String view, String label, String iconName) {
+        Button button = new Button(label, createNavigationIcon(iconName));
+        button.getStyleClass().add("nav-button");
+        button.setMaxWidth(Double.MAX_VALUE);
+        button.setAlignment(Pos.CENTER_LEFT);
+        button.setOnAction(e -> showView(view));
+        navButtons.put(view, button);
+        return button;
+    }
+
+    private void showView(String view) {
+        Node content = appViews.get(view);
+        if (content == null || contentHost == null) return;
+        contentHost.getChildren().setAll(content);
+        shellPageLabel.setText(view.equals("Restore") ? "Restauracao" : view);
+        navButtons.forEach((name, button) -> button.pseudoClassStateChanged(
+                javafx.css.PseudoClass.getPseudoClass("selected"), name.equals(view)));
+        if ("Restore".equals(view)) {
+            restoreRefresh.run();
+        }
+    }
+
+    private void updateAuthenticationNavigation(boolean authenticated) {
+        navButtons.forEach((view, button) -> {
+            boolean shown = authenticated ? !"Login".equals(view) : "Login".equals(view);
+            button.setVisible(shown);
+            button.setManaged(shown);
+        });
     }
 
     private Pane dashboardView() {
-        VBox box = box();
-        Button refresh = new Button("Atualizar status");
+        BorderPane root = new BorderPane();
+        root.getStyleClass().add("dashboard-root");
+        root.setPadding(new Insets(16));
+
+        VBox content = new VBox(12);
+        HBox header = new HBox(12);
+        header.setAlignment(Pos.CENTER_LEFT);
+        Label title = new Label("Dashboard");
+        title.getStyleClass().add("page-title");
+        Label subtitle = new Label("Visão geral do agente e snapshots");
+        subtitle.getStyleClass().add("muted");
+        VBox heading = new VBox(2, title, subtitle);
+        Label connectionChip = new Label(deviceId == null ? "Nao conectado" : "Protegido");
+        connectionChip.getStyleClass().add("success-pill");
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+        Button refresh = new Button("Atualizar");
+        refresh.getStyleClass().add("btn-primary");
+        header.getChildren().addAll(heading, spacer, connectionChip, refresh);
+
+        GridPane cards = new GridPane();
+        cards.setHgap(12);
+        cards.setVgap(12);
+        Label connValue = new Label("Desconectado");
+        Label backupValue = new Label("Sem dados");
+        Label countValue = new Label("0");
+        Label filesValue = new Label("0");
+        cards.add(metricCard("Conexão", connValue), 0, 0);
+        cards.add(metricCard("Último status", backupValue), 1, 0);
+        cards.add(metricCard("Snapshots", countValue), 2, 0);
+        cards.add(metricCard("Arquivos protegidos", filesValue), 3, 0);
+
+        HBox lower = new HBox(12);
+        VBox recentSnapshots = panelWithTitle("Snapshots recentes");
+        ListView<String> snapshotsList = new ListView<>(FXCollections.observableArrayList("Sem dados"));
+        snapshotsList.getStyleClass().add("snapshot-list");
+        VBox.setVgrow(snapshotsList, Priority.ALWAYS);
+        recentSnapshots.getChildren().add(snapshotsList);
+
+        VBox activity = panelWithTitle("Atividade recente");
+        ListView<String> activityList = new ListView<>(FXCollections.observableArrayList("Aguardando atualização"));
+        activityList.getStyleClass().add("snapshot-list");
+        VBox.setVgrow(activityList, Priority.ALWAYS);
+        activity.getChildren().add(activityList);
+
+        HBox.setHgrow(recentSnapshots, Priority.ALWAYS);
+        HBox.setHgrow(activity, Priority.ALWAYS);
+        lower.getChildren().addAll(recentSnapshots, activity);
+        VBox.setVgrow(lower, Priority.ALWAYS);
+
+        Label footer = new Label("Status: pronto");
+        footer.getStyleClass().add("footer-status");
+
         refresh.setOnAction(e -> {
-            if (backend == null) {
-                log("Faça login primeiro.");
+            if (!ready()) {
                 return;
             }
             runAsync(() -> {
                 List<SnapshotSummary> snapshots = backend.listSnapshots();
-                log("Snapshots encontrados: " + snapshots.size());
+                long totalFiles = snapshots.stream().mapToLong(SnapshotSummary::totalFiles).sum();
+                String currentConnection = deviceId == null ? "Desconectado" : "Conectado";
+                String latestStatus = snapshots.isEmpty() ? "Sem snapshots" : snapshots.getFirst().status();
+                List<String> snapshotLines = snapshots.stream()
+                        .limit(8)
+                        .map(s -> s.id().toString().substring(0, 8) + " • " + s.status() + " • " + s.totalFiles() + " arqs")
+                        .toList();
+                List<String> activityLines = snapshots.stream()
+                        .limit(8)
+                        .map(s -> "Origem: " + s.sourcePath())
+                        .toList();
+
+                ui(() -> {
+                    connValue.setText(currentConnection);
+                    backupValue.setText(latestStatus);
+                    countValue.setText(String.valueOf(snapshots.size()));
+                    filesValue.setText(String.valueOf(totalFiles));
+                    snapshotsList.getItems().setAll(snapshotLines.isEmpty() ? List.of("Sem snapshots") : snapshotLines);
+                    activityList.getItems().setAll(activityLines.isEmpty() ? List.of("Nenhuma atividade recente") : activityLines);
+                    connectionChip.setText(deviceId == null ? "Nao conectado" : "Tudo protegido");
+                    footer.setText("Status: sincronizado");
+                });
             });
         });
 
-        box.getChildren().addAll(new Label("Status do agente:"), status, refresh);
-        return box;
+        content.getChildren().addAll(header, cards, lower, footer);
+        root.setCenter(content);
+        return root;
     }
 
     private Pane backupView(Stage stage) {
-        VBox box = box();
-        TextField folder = new TextField();
-        folder.setPromptText("Escolha uma pasta");
+        BorderPane layout = new BorderPane();
+        layout.getStyleClass().add("screen-root");
+        layout.setPadding(new Insets(20));
 
-        Button choose = new Button("Selecionar pasta");
+        VBox center = new VBox(20);
+        center.setAlignment(Pos.TOP_LEFT);
+
+        Label title = new Label("Proteger nova pasta");
+        title.getStyleClass().add("page-title");
+        
+        VBox form = new VBox(10);
+        Label label = new Label("Escolha o diretório que você deseja sincronizar com a nuvem Keeply:");
+        label.setWrapText(true);
+
+        HBox selector = new HBox(10);
+        TextField folder = new TextField();
+        folder.setPromptText("Caminho da pasta (ex: /home/documentos)");
+        HBox.setHgrow(folder, Priority.ALWAYS);
+
+        Button choose = new Button("Selecionar pasta", createBootstrapFileIcon(true));
+        choose.getStyleClass().add("btn-secondary");
         choose.setOnAction(e -> {
             DirectoryChooser chooser = new DirectoryChooser();
             var dir = chooser.showDialog(stage);
             if (dir != null) folder.setText(dir.toPath().toString());
         });
+        selector.getChildren().addAll(folder, choose);
 
-        Button backup = new Button("Fazer backup agora");
+        VBox infoBox = new VBox(8);
+        infoBox.getStyleClass().add("info-box");
+        infoBox.getChildren().addAll(
+            new Label("O que acontece agora?"),
+            new Label("O Keeply analisara todos os arquivos da pasta."),
+            new Label("Apenas mudancas serao enviadas com deduplicacao."),
+            new Label("Seus dados serao comprimidos e protegidos.")
+        );
+
+        Button backup = new Button("Iniciar backup agora");
+        backup.setMaxWidth(Double.MAX_VALUE);
+        backup.getStyleClass().addAll("btn-success", "btn-wide");
         backup.setOnAction(e -> {
             if (!ready()) return;
-            Path source = Path.of(folder.getText());
+            String pathStr = folder.getText();
+            if (pathStr == null || pathStr.isBlank()) {
+                log("Selecione uma pasta primeiro.");
+                return;
+            }
+            Path source = Path.of(pathStr);
             runAsync(() -> {
-                UUID snapshotId = new BackupEngine(backend, db).backup(deviceId, source, this::log);
-                log("Snapshot final: " + snapshotId);
+                UUID snapshotId = new BackupEngine(backend, db).backup(deviceId, source);
+                log("event=ui.backup status=completed snapshot_id=" + snapshotId);
             });
         });
 
-        box.getChildren().addAll(new Label("Pasta de origem:"), folder, choose, backup);
-        return box;
+        form.getChildren().addAll(label, selector, infoBox, backup);
+        center.getChildren().addAll(title, new Separator(), form);
+        
+        layout.setCenter(center);
+        return layout;
     }
 
     private Pane restoreView(Stage stage) {
-        VBox mainBox = box();
+        BorderPane layout = new BorderPane();
+        layout.getStyleClass().add("screen-root");
+        layout.getStyleClass().add("restore-shell");
+        layout.setPadding(new Insets(12));
 
+        HBox topBar = new HBox(10);
+        topBar.setAlignment(Pos.CENTER_LEFT);
+        topBar.getStyleClass().add("restore-toolbar");
+
+        Label title = new Label("Explorar snapshot");
+        title.getStyleClass().add("restore-title");
+
+        Button restoreAll = new Button("Restaurar Tudo");
+        restoreAll.getStyleClass().add("btn-secondary");
+        restoreAll.setDisable(true);
+
+        Button restoreSelected = new Button("Restaurar Selecionados");
+        restoreSelected.getStyleClass().add("btn-success");
+        restoreSelected.setDisable(true);
+
+        Region topSpacer = new Region();
+        HBox.setHgrow(topSpacer, Priority.ALWAYS);
+        topBar.getChildren().addAll(title, topSpacer, restoreAll, restoreSelected);
+
+        Label currentPathLabel = new Label("Backup");
+        currentPathLabel.getStyleClass().add("item-muted");
+        HBox addressBar = new HBox(8, currentPathLabel);
+        addressBar.getStyleClass().add("restore-address");
+        Region addressSpacer = new Region();
+        HBox.setHgrow(addressSpacer, Priority.ALWAYS);
+        addressBar.getChildren().add(addressSpacer);
+
+        VBox topArea = new VBox(8, topBar, addressBar);
+        layout.setTop(topArea);
+
+        SplitPane splitPane = new SplitPane();
+        splitPane.getStyleClass().add("restore-split");
+
+        VBox sidebar = new VBox(10);
+        sidebar.getStyleClass().add("restore-sidebar");
+        Label sidebarTitle = new Label("PONTOS DE RESTAURACAO");
+        sidebarTitle.getStyleClass().add("section-title");
         ListView<SnapshotSummary> snapshotList = new ListView<>();
-        snapshotList.setPrefHeight(150);
+        snapshotList.getStyleClass().add("explorer-list");
+        VBox.setVgrow(snapshotList, Priority.ALWAYS);
         snapshotList.setCellFactory(param -> new ListCell<>() {
             @Override
             protected void updateItem(SnapshotSummary item, boolean empty) {
                 super.updateItem(item, empty);
                 if (empty || item == null) {
                     setText(null);
+                    setGraphic(null);
                 } else {
-                    setText(String.format("Snapshot: %s...\nOrigem: %s\nArquivos: %d | Status: %s",
-                            item.id().toString().substring(0, 8), item.sourcePath(), item.totalFiles(), item.status()));
+                    Label deviceIcon = new Label();
+                    deviceIcon.setGraphic(createBootstrapPcIcon());
+                    VBox cellBox = new VBox(3);
+                    cellBox.getStyleClass().add("snapshot-item");
+                    Label idLabel = new Label(item.id().toString().substring(0, 8));
+                    idLabel.getStyleClass().add("snapshot-item-title");
+                    Label detailsLabel = new Label(item.sourcePath() + "\n" + item.totalFiles() + " arquivos");
+                    detailsLabel.getStyleClass().add("item-muted");
+                    Label stateLabel = new Label(item.status());
+                    stateLabel.getStyleClass().add("snapshot-badge");
+                    Button quickRestore = new Button("Restaurar");
+                    quickRestore.getStyleClass().add("btn-success");
+                    quickRestore.setOnAction(e -> {
+                        snapshotList.getSelectionModel().select(item);
+                        restoreAll.fire();
+                    });
+                    Button quickDelete = new Button("Excluir");
+                    quickDelete.getStyleClass().add("btn-secondary");
+                    quickDelete.setOnAction(e -> log("Exclusão de snapshot ainda não disponível no backend."));
+                    HBox actions = new HBox(6, quickRestore, quickDelete);
+                    cellBox.getChildren().addAll(idLabel, detailsLabel, stateLabel, actions);
+                    HBox row = new HBox(8, deviceIcon, cellBox);
+                    row.setAlignment(Pos.TOP_LEFT);
+                    setGraphic(row);
                 }
             }
         });
+        sidebar.getChildren().addAll(sidebarTitle, snapshotList);
+        sidebar.setMinWidth(220);
 
-        TreeView<RestoreNode> fileTree = new TreeView<>();
-        fileTree.setShowRoot(false);
-        fileTree.setPrefHeight(220);
-        fileTree.setCellFactory(CheckBoxTreeCell.forTreeView());
+        VBox explorer = new VBox(0);
+        explorer.getStyleClass().add("explorer-surface");
 
-        Button restoreAll = new Button("📥 Restaurar Snapshot Completo");
-        Button restoreSelected = new Button("🗂️ Restaurar Arquivos Selecionados");
-        restoreAll.setDisable(true);
-        restoreSelected.setDisable(true);
+        TreeView<RestoreNode> folderTree = new TreeView<>();
+        folderTree.getStyleClass().add("explorer-tree");
+        folderTree.setMinWidth(260);
+        folderTree.setCellFactory(param -> new TreeCell<>() {
+            @Override
+            protected void updateItem(RestoreNode item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    setText(null);
+                    setGraphic(null);
+                    return;
+                }
+                CheckBox checkBox = new CheckBox();
+                if (getTreeItem() instanceof CheckBoxTreeItem<?> cbItem) {
+                    @SuppressWarnings("unchecked")
+                    CheckBoxTreeItem<RestoreNode> typedItem = (CheckBoxTreeItem<RestoreNode>) cbItem;
+                    checkBox.selectedProperty().unbindBidirectional(typedItem.selectedProperty());
+                    checkBox.selectedProperty().bindBidirectional(typedItem.selectedProperty());
+                    checkBox.setAllowIndeterminate(false);
+                }
+                Label text = new Label(item.label);
+                HBox row = new HBox(6, checkBox, createBootstrapFileIcon(item.isDirectory), text);
+                row.setAlignment(Pos.CENTER_LEFT);
+                setGraphic(row);
+                setText(null);
+            }
+        });
+        RestoreNode[] currentFolderRef = new RestoreNode[1];
+        VBox[] actionPanelRef = new VBox[1];
+        VBox.setVgrow(folderTree, Priority.ALWAYS);
+
+        folderTree.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
+            VBox panel = actionPanelRef[0];
+            if (newVal == null || newVal.getValue() == null) {
+                return;
+            }
+            currentFolderRef[0] = newVal.getValue();
+            currentPathLabel.setText("Backup > " + currentFolderRef[0].displayPath());
+        });
+
+        currentPathLabel.setOnMouseClicked(e -> {
+            TreeItem<RestoreNode> rootTree = folderTree.getRoot();
+            RestoreNode rootNode = rootTree == null ? null : rootTree.getValue();
+            if (rootNode != null) {
+                currentFolderRef[0] = rootNode;
+                currentPathLabel.setText("Backup > " + rootNode.displayPath());
+                folderTree.getSelectionModel().select(rootTree);
+            }
+        });
+
+        explorer.getChildren().add(folderTree);
+
+        splitPane.getItems().addAll(sidebar, explorer);
+        splitPane.setDividerPositions(0.28);
+        layout.setCenter(splitPane);
+
+        VBox actionPanel = new VBox(12);
+        actionPanel.setPadding(new Insets(12));
+        actionPanel.setPrefWidth(280);
+        actionPanel.getStyleClass().add("restore-actions");
+        actionPanel.setVisible(false);
+        actionPanel.setManaged(false);
+        actionPanelRef[0] = actionPanel;
+
+        Label actionTitle = new Label("PAINEL DE RESTAURACAO");
+        actionTitle.getStyleClass().add("section-title");
+        Label summaryLabel = new Label("Selecione um snapshot para carregar os arquivos.");
+        summaryLabel.getStyleClass().add("item-muted");
+        summaryLabel.setWrapText(true);
+
+        Label destLabel = new Label("Destino:");
+        ToggleGroup destinationModeGroup = new ToggleGroup();
+        RadioButton restoreOriginal = new RadioButton("Original");
+        restoreOriginal.setToggleGroup(destinationModeGroup);
+        RadioButton restoreCustom = new RadioButton("Personalizado");
+        restoreCustom.setToggleGroup(destinationModeGroup);
+        restoreCustom.setSelected(true);
+
+        TextField destination = new TextField();
+        destination.setPromptText("Pasta de destino...");
+        Button chooseDest = new Button("Selecionar...");
+        chooseDest.setMaxWidth(Double.MAX_VALUE);
+
+        destination.disableProperty().bind(restoreOriginal.selectedProperty());
+        chooseDest.disableProperty().bind(restoreOriginal.selectedProperty());
+
+        ComboBox<OverwritePolicy> overwritePolicy = new ComboBox<>();
+        overwritePolicy.getItems().setAll(OverwritePolicy.values());
+        overwritePolicy.setValue(OverwritePolicy.ALWAYS);
+        overwritePolicy.setMaxWidth(Double.MAX_VALUE);
+
         Label warningLabel = new Label();
-        warningLabel.setStyle("-fx-text-fill: red;");
+        warningLabel.setWrapText(true);
+        warningLabel.getStyleClass().add("warning-text");
+
+        actionPanel.getChildren().addAll(
+            actionTitle, 
+            summaryLabel,
+            new Separator(),
+            destLabel, restoreOriginal, restoreCustom, destination, chooseDest,
+            new Label("Sobrescrita:"), overwritePolicy,
+            warningLabel
+        );
+        layout.setRight(actionPanel);
+
+        // --- LOGIC ---
+        Runnable refreshSnapshots = () -> {
+            if (backend == null) {
+                return;
+            }
+            runAsync(() -> {
+                List<SnapshotSummary> snapshots = backend.listSnapshots();
+                ui(() -> snapshotList.getItems().setAll(snapshots));
+            });
+        };
+
+        Timeline autoRefresh = new Timeline(new KeyFrame(Duration.seconds(30), e -> refreshSnapshots.run()));
+        autoRefresh.setCycleCount(Timeline.INDEFINITE);
+        autoRefresh.play();
+        restoreRefresh = refreshSnapshots;
 
         snapshotList.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
             if (newVal != null) {
-                // Estado da UI (síncrono)
                 boolean isCompleted = "COMPLETED".equals(newVal.status());
                 boolean isProcessing = "PROCESSING".equals(newVal.status());
                 boolean canRestore = isCompleted;
-                boolean canDownloadManifest = isCompleted || isProcessing;
 
                 restoreAll.setDisable(!canRestore);
                 restoreSelected.setDisable(!canRestore);
-                if (!canRestore) {
-                    warningLabel.setText("⚠️ Apenas backups COMPLETED podem ser restaurados.");
-                } else {
-                    warningLabel.setText("");
-                }
+                warningLabel.setText(canRestore ? "" : "⚠️ Apenas backups COMPLETED podem ser restaurados.");
+                summaryLabel.setText("Snapshot: " + newVal.id().toString().substring(0, 8) + "\nStatus: " + newVal.status());
 
-                // Carregamento de dados (assíncrono)
-                if (canDownloadManifest) {
+                if (isCompleted || isProcessing) {
                     runAsync(() -> {
                         try {
                             String json = backend.downloadManifest(newVal.id());
@@ -251,198 +662,243 @@ public class KeeplyAgentApp extends Application {
                                     .registerModule(new com.fasterxml.jackson.datatype.jsr310.JavaTimeModule())
                                     .findAndRegisterModules();
                             com.keeply.agent.model.SnapshotManifest manifest = localMapper.readValue(json, com.keeply.agent.model.SnapshotManifest.class);
-                            List<String> files = manifest.files().stream().map(com.keeply.agent.model.FileManifest::path).toList();
-                            ui(() -> fileTree.setRoot(buildFileTree(files)));
+                            RestoreNode restoreRoot = buildRestoreTree(manifest.sourcePath(), manifest.files());
+                            ui(() -> {
+                                CheckBoxTreeItem<RestoreNode> rootItem = buildFolderTreeItem(restoreRoot);
+                                folderTree.setRoot(rootItem);
+                                folderTree.setShowRoot(true);
+                                if (restoreRoot != null) {
+                                    rootItem.setExpanded(true);
+                                    bindCheckboxListeners(rootItem, () -> updateActionPanelVisibility(actionPanel, rootItem));
+                                    currentPathLabel.setText("Backup > " + restoreRoot.displayPath());
+                                    actionPanel.setVisible(false);
+                                    actionPanel.setManaged(false);
+                                } else {
+                                    currentPathLabel.setText("Backup");
+                                    actionPanel.setVisible(false);
+                                    actionPanel.setManaged(false);
+                                }
+                            });
                         } catch (Exception ex) {
                             log("Erro ao carregar arquivos: " + ex.getMessage());
                         }
                     });
                 } else {
-                    ui(() -> fileTree.setRoot(null));
+                    ui(() -> {
+                        folderTree.setRoot(null);
+                        currentFolderRef[0] = null;
+                        currentPathLabel.setText("Backup");
+                        actionPanel.setVisible(false);
+                        actionPanel.setManaged(false);
+                    });
                 }
             } else {
                 restoreAll.setDisable(true);
                 restoreSelected.setDisable(true);
                 warningLabel.setText("");
-                ui(() -> fileTree.setRoot(null));
+                summaryLabel.setText("Selecione um snapshot para carregar os arquivos.");
+                ui(() -> {
+                    folderTree.setRoot(null);
+                    currentFolderRef[0] = null;
+                    currentPathLabel.setText("Backup");
+                    actionPanel.setVisible(false);
+                    actionPanel.setManaged(false);
+                });
             }
         });
 
-        TextField destination = new TextField();
-        destination.setPromptText("Pasta de destino");
-
-        ToggleGroup destinationModeGroup = new ToggleGroup();
-        RadioButton restoreOriginal = new RadioButton("Restaurar no local original");
-        restoreOriginal.setToggleGroup(destinationModeGroup);
-        RadioButton restoreCustom = new RadioButton("Restaurar em pasta específica");
-        restoreCustom.setToggleGroup(destinationModeGroup);
-        restoreCustom.setSelected(true);
-
-        Button choose = new Button("Selecionar destino");
-        choose.setOnAction(e -> {
+        chooseDest.setOnAction(e -> {
             DirectoryChooser chooser = new DirectoryChooser();
             var dir = chooser.showDialog(stage);
             if (dir != null) destination.setText(dir.toPath().toString());
         });
-        destination.disableProperty().bind(restoreOriginal.selectedProperty());
-        choose.disableProperty().bind(restoreOriginal.selectedProperty());
-
-        ComboBox<OverwritePolicy> overwritePolicy = new ComboBox<>();
-        overwritePolicy.getItems().setAll(OverwritePolicy.values());
-        overwritePolicy.setValue(OverwritePolicy.ALWAYS);
-
-        Button refresh = new Button("🔄 Atualizar Lista de Backups");
-        refresh.setOnAction(e -> {
-            if (backend == null) {
-                log("Faça login primeiro.");
-                return;
-            }
-            runAsync(() -> {
-                List<SnapshotSummary> snapshots = backend.listSnapshots();
-                ui(() -> snapshotList.getItems().setAll(snapshots));
-                log("Lista de backups atualizada.");
-            });
-        });
 
         restoreAll.setOnAction(e -> {
             SnapshotSummary selected = snapshotList.getSelectionModel().getSelectedItem();
-            if (selected == null) {
-                log("Selecione um backup.");
-                return;
-            }
+            if (selected == null) return;
             Path destinationRoot = restoreOriginal.isSelected() ? null : parseDestinationPath(destination.getText());
             if (!restoreOriginal.isSelected() && destinationRoot == null) return;
-            runAsync(() -> new RestoreEngine(backend).restore(
-                    selected.id(),
-                    destinationRoot,
-                    null,
-                    overwritePolicy.getValue(),
-                    this::log
-            ));
+            runAsync(() -> new RestoreEngine(backend).restore(selected.id(), destinationRoot, null, overwritePolicy.getValue()));
         });
 
         restoreSelected.setOnAction(e -> {
             SnapshotSummary selected = snapshotList.getSelectionModel().getSelectedItem();
-            if (selected == null) {
-                log("Selecione um backup.");
-                return;
-            }
+            if (selected == null) return;
             Path destinationRoot = restoreOriginal.isSelected() ? null : parseDestinationPath(destination.getText());
             if (!restoreOriginal.isSelected() && destinationRoot == null) return;
-            Set<String> selectedFiles = collectCheckedFilePaths(fileTree.getRoot());
+            Set<String> selectedFiles = collectCheckedFilePathsFromTree(folderTree.getRoot());
             if (selectedFiles.isEmpty()) {
-                log("Selecione pelo menos um arquivo na árvore.");
+                log("Selecione pelo menos um arquivo.");
                 return;
             }
-            runAsync(() -> new RestoreEngine(backend).restore(
-                    selected.id(),
-                    destinationRoot,
-                    selectedFiles,
-                    overwritePolicy.getValue(),
-                    this::log
-            ));
+            runAsync(() -> new RestoreEngine(backend).restore(selected.id(), destinationRoot, selectedFiles, overwritePolicy.getValue()));
         });
 
-        mainBox.getChildren().addAll(
-                new Label("1. Selecione o Backup:"),
-                refresh,
-                snapshotList,
-                new Label("Arquivos contidos neste backup:"),
-                fileTree,
-                new Label("2. Tipo de restauração:"),
-                restoreAll,
-                restoreSelected,
-                new Label("3. Destino:"),
-                restoreOriginal,
-                restoreCustom,
-                new Label("2. Escolha o destino da restauração:"),
-                destination,
-                choose,
-                new Label("4. Política de sobrescrita:"),
-                overwritePolicy,
-                warningLabel,
-                new Label("Dica: em restauração parcial, apenas arquivos marcados serão restaurados.")
-        );
-        return mainBox;
+        return layout;
     }
 
-    private CheckBoxTreeItem<RestoreNode> buildFileTree(List<String> filePaths) {
-        CheckBoxTreeItem<RestoreNode> root = new CheckBoxTreeItem<>(new RestoreNode("root", null));
-        root.setIndependent(true);
-        for (String path : filePaths) {
-            String normalized = path == null ? "" : path.trim();
-            if (normalized.isEmpty()) continue;
-
-            String[] parts = normalized.split("/");
-            CheckBoxTreeItem<RestoreNode> current = root;
-            StringBuilder currentPath = new StringBuilder();
-            for (String part : parts) {
-                if (part.isBlank()) continue;
-                if (currentPath.length() > 0) currentPath.append("/");
-                currentPath.append(part);
-                boolean isLeaf = part.equals(parts[parts.length - 1]);
-                current = getOrCreateChild(current, part, currentPath.toString(), isLeaf);
-            }
-        }
-        expandAll(root);
-        return root;
-    }
-
-    private CheckBoxTreeItem<RestoreNode> getOrCreateChild(CheckBoxTreeItem<RestoreNode> parent, String value, String fullPath, boolean isLeaf) {
-        for (TreeItem<RestoreNode> rawChild : parent.getChildren()) {
-            CheckBoxTreeItem<RestoreNode> child = (CheckBoxTreeItem<RestoreNode>) rawChild;
-            if (value.equals(child.getValue().label)) {
-                return child;
-            }
-        }
-        CheckBoxTreeItem<RestoreNode> created = new CheckBoxTreeItem<>(new RestoreNode(value, isLeaf ? fullPath : null));
-        created.setIndependent(true);
-        parent.getChildren().add(created);
-        return created;
-    }
-
-    private void expandAll(TreeItem<?> node) {
-        if (node == null) return;
-        node.setExpanded(true);
-        for (TreeItem<?> child : node.getChildren()) {
-            expandAll(child);
-        }
-    }
-
-    private Set<String> collectCheckedFilePaths(TreeItem<RestoreNode> root) {
+    private Set<String> collectCheckedFilePathsFromTree(TreeItem<RestoreNode> root) {
         Set<String> selected = new HashSet<>();
-        collectCheckedFilePathsRec(root, selected);
+        collectCheckedRec(root, selected);
         return selected;
     }
 
-    private void collectCheckedFilePathsRec(TreeItem<RestoreNode> node, Set<String> out) {
+    private void updateActionPanelVisibility(VBox actionPanel, TreeItem<RestoreNode> root) {
+        boolean hasChecked = !collectCheckedFilePathsFromTree(root).isEmpty();
+        actionPanel.setVisible(hasChecked);
+        actionPanel.setManaged(hasChecked);
+    }
+
+    private void bindCheckboxListeners(CheckBoxTreeItem<RestoreNode> node, Runnable onChange) {
         if (node == null) return;
-        if (node instanceof CheckBoxTreeItem<RestoreNode> cbNode) {
-            boolean isLeaf = cbNode.getChildren().isEmpty();
-            if (isLeaf && cbNode.isSelected()) {
-                RestoreNode value = cbNode.getValue();
-                if (value != null && value.fullPath != null && !value.fullPath.isBlank()) {
-                    out.add(value.fullPath);
-                }
+        node.selectedProperty().addListener((obs, oldVal, newVal) -> onChange.run());
+        for (TreeItem<RestoreNode> child : node.getChildren()) {
+            if (child instanceof CheckBoxTreeItem<?> cbChild) {
+                @SuppressWarnings("unchecked")
+                CheckBoxTreeItem<RestoreNode> typed = (CheckBoxTreeItem<RestoreNode>) cbChild;
+                bindCheckboxListeners(typed, onChange);
+            }
+        }
+    }
+
+    private void collectCheckedRec(TreeItem<RestoreNode> node, Set<String> out) {
+        if (node == null || node.getValue() == null) return;
+        if (node instanceof CheckBoxTreeItem<?> cbNode) {
+            @SuppressWarnings("unchecked")
+            CheckBoxTreeItem<RestoreNode> typedNode = (CheckBoxTreeItem<RestoreNode>) cbNode;
+            RestoreNode value = typedNode.getValue();
+            if (typedNode.isSelected() && value != null && !value.isDirectory && value.fullPath != null && !value.fullPath.isBlank()) {
+                out.add(value.fullPath);
             }
         }
         for (TreeItem<RestoreNode> child : node.getChildren()) {
-            collectCheckedFilePathsRec(child, out);
+            collectCheckedRec(child, out);
         }
+    }
+
+    private CheckBoxTreeItem<RestoreNode> buildFolderTreeItem(RestoreNode root) {
+        if (root == null) return null;
+        CheckBoxTreeItem<RestoreNode> item = new CheckBoxTreeItem<>(root);
+        item.setIndependent(false);
+        for (RestoreNode child : root.children) {
+            item.getChildren().add(buildFolderTreeItem(child));
+        }
+        return item;
+    }
+
+    private Node createBootstrapFileIcon(boolean directory) {
+        SVGPath icon = new SVGPath();
+        if (directory) {
+            icon.setContent("M.5 3a2 2 0 0 1 2-2h2.586a1 1 0 0 1 .707.293L7.414 3H13.5a2 2 0 0 1 2 2v1H.5zM.5 7h15v6a2 2 0 0 1-2 2h-11a2 2 0 0 1-2-2z");
+            icon.setStyle("-fx-fill: #F0BC3E;");
+        } else {
+            icon.setContent("M9.293 0H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V4.707A1 1 0 0 0 13.707 4L10 .293A1 1 0 0 0 9.293 0M9.5 3.5v-2l3 3h-2a1 1 0 0 1-1-1M4.5 9a.5.5 0 0 1 0-1h7a.5.5 0 0 1 0 1zM4 10.5a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 0 1h-7a.5.5 0 0 1-.5-.5m.5 2.5a.5.5 0 0 1 0-1h4a.5.5 0 0 1 0 1z");
+            icon.setStyle("-fx-fill: #6B7280;");
+        }
+        icon.setScaleX(0.95);
+        icon.setScaleY(0.95);
+        StackPane wrapper = new StackPane(icon);
+        wrapper.setPrefSize(16, 16);
+        wrapper.setMinSize(16, 16);
+        wrapper.setMaxSize(16, 16);
+        return wrapper;
+    }
+
+    private Node createNavigationIcon(String name) {
+        SVGPath icon = new SVGPath();
+        icon.setContent(switch (name) {
+            case "home" -> "M8 .5 15.5 7v8.5h-5v-5h-5v5h-5V7z";
+            case "backup" -> "M8 1 15 4.5V11L8 15 1 11V4.5z M8 2.5v11 M2 5l6 3 6-3";
+            case "restore" -> "M8 2a6 6 0 1 1-5.7 4H.5L3.4 2.8 6.2 6H3.8A4.5 4.5 0 1 0 8 3.5z";
+            case "settings" -> "M6.8 1h2.4l.4 2a5 5 0 0 1 1.2.5l1.7-1.1 1.7 1.7-1.1 1.7q.4.6.5 1.2l2 .4v2.4l-2 .4q-.1.6-.5 1.2l1.1 1.7-1.7 1.7-1.7-1.1q-.6.4-1.2.5l-.4 2H6.8l-.4-2a5 5 0 0 1-1.2-.5l-1.7 1.1-1.7-1.7 1.1-1.7a5 5 0 0 1-.5-1.2l-2-.4V7.2l2-.4q.1-.6.5-1.2L1.8 3.9l1.7-1.7 1.7 1.1q.6-.4 1.2-.5z M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5";
+            case "activity" -> "M1 8h3l2-4 3.2 7L11 8h4";
+            default -> "M8 1a4 4 0 1 1 0 8 4 4 0 0 1 0-8 M2 15a6 6 0 0 1 12 0";
+        });
+        icon.getStyleClass().add("nav-icon");
+        StackPane wrapper = new StackPane(icon);
+        wrapper.setPrefSize(17, 17);
+        wrapper.setMinSize(17, 17);
+        wrapper.setMaxSize(17, 17);
+        return wrapper;
+    }
+
+    private Node createKeeplySparkIcon() {
+        SVGPath icon = new SVGPath();
+        icon.setContent("M8 0l1.8 4.2L14 6l-4.2 1.8L8 12 6.2 7.8 2 6l4.2-1.8z");
+        icon.setStyle("-fx-fill: #5D4FFF;");
+        StackPane wrapper = new StackPane(icon);
+        wrapper.setPrefSize(18, 18);
+        wrapper.setMinSize(18, 18);
+        wrapper.setMaxSize(18, 18);
+        return wrapper;
+    }
+
+    private Node createBootstrapPcIcon() {
+        SVGPath icon = new SVGPath();
+        icon.setContent("M0 4a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-4.5a.5.5 0 0 0-.5.5V15h1a.5.5 0 0 1 0 1H6a.5.5 0 0 1 0-1h1v-1.5a.5.5 0 0 0-.5-.5H2a2 2 0 0 1-2-2zm1.5 0a.5.5 0 0 0-.5.5V10h14V4.5a.5.5 0 0 0-.5-.5z");
+        icon.setStyle("-fx-fill: #4f49c9;");
+        StackPane wrapper = new StackPane(icon);
+        wrapper.setPrefSize(16, 16);
+        wrapper.setMinSize(16, 16);
+        wrapper.setMaxSize(16, 16);
+        return wrapper;
+    }
+
+    private RestoreNode buildRestoreTree(String sourcePath, List<com.keeply.agent.model.FileManifest> files) {
+        String rootLabel = sourcePath == null || sourcePath.isBlank() ? "Backup" : Path.of(sourcePath).getFileName().toString();
+        if (rootLabel == null || rootLabel.isBlank()) rootLabel = sourcePath;
+        if (rootLabel == null || rootLabel.isBlank()) rootLabel = "Backup";
+        RestoreNode root = new RestoreNode(rootLabel, "", true, 0L, null);
+        if (files == null) return root;
+        for (com.keeply.agent.model.FileManifest file : files) {
+            if (file == null || file.path() == null || file.path().isBlank()) continue;
+            String[] parts = file.path().split("/");
+            RestoreNode current = root;
+            StringBuilder pathBuilder = new StringBuilder();
+            for (int i = 0; i < parts.length; i++) {
+                String part = parts[i].trim();
+                if (part.isBlank()) continue;
+                if (pathBuilder.length() > 0) pathBuilder.append("/");
+                pathBuilder.append(part);
+                boolean isLeaf = i == parts.length - 1;
+                current = getOrCreateNode(current, part, pathBuilder.toString(), !isLeaf, file.size(), file.lastModified());
+            }
+        }
+        return root;
+    }
+
+    private RestoreNode getOrCreateNode(RestoreNode parent, String label, String fullPath, boolean isDirectory, long size, java.time.Instant lastModified) {
+        for (RestoreNode child : parent.children) {
+            if (child.label.equals(label) && child.isDirectory == isDirectory) return child;
+        }
+        RestoreNode created = new RestoreNode(label, fullPath, isDirectory, isDirectory ? 0L : size, lastModified);
+        parent.children.add(created);
+        return created;
     }
 
     private static class RestoreNode {
         private final String label;
         private final String fullPath;
+        private final boolean isDirectory;
+        private final long size;
+        private final java.time.Instant lastModified;
+        private final List<RestoreNode> children = new ArrayList<>();
 
-        private RestoreNode(String label, String fullPath) {
+        private RestoreNode(String label, String fullPath, boolean isDirectory, long size, java.time.Instant lastModified) {
             this.label = label;
             this.fullPath = fullPath;
+            this.isDirectory = isDirectory;
+            this.size = size;
+            this.lastModified = lastModified;
         }
 
         @Override
         public String toString() {
             return label;
+        }
+
+        private String displayPath() {
+            return fullPath == null || fullPath.isBlank() ? label : fullPath.replace("/", " > ");
         }
     }
 
@@ -461,10 +917,11 @@ public class KeeplyAgentApp extends Application {
 
     private Pane configView() {
         VBox box = box();
+        box.getStyleClass().add("screen-root");
         box.setSpacing(12);
 
         Label scheduleTitle = new Label("Agendamento automático");
-        scheduleTitle.setStyle("-fx-font-weight: bold;");
+        scheduleTitle.getStyleClass().add("section-title");
 
         GridPane scheduleGrid = new GridPane();
         scheduleGrid.setHgap(8);
@@ -828,6 +1285,25 @@ public class KeeplyAgentApp extends Application {
         return box;
     }
 
+    private VBox metricCard(String title, Label valueLabel) {
+        VBox card = new VBox(8);
+        card.getStyleClass().add("metric-card");
+        Label titleLabel = new Label(title);
+        titleLabel.getStyleClass().add("metric-title");
+        valueLabel.getStyleClass().add("metric-value");
+        card.getChildren().addAll(titleLabel, valueLabel);
+        return card;
+    }
+
+    private VBox panelWithTitle(String title) {
+        VBox panel = new VBox(8);
+        panel.getStyleClass().add("panel");
+        Label label = new Label(title);
+        label.getStyleClass().add("section-title");
+        panel.getChildren().add(label);
+        return panel;
+    }
+
     private boolean ready() {
         if (backend == null || deviceId == null) {
             log("Faça login primeiro.");
@@ -960,6 +1436,64 @@ public class KeeplyAgentApp extends Application {
 
     private void ui(Runnable r) {
         Platform.runLater(r);
+    }
+
+    private void redirectSystemErrToTextArea() {
+        OutputStream out = new TextAreaOutputStream(logs);
+        System.setErr(new PrintStream(out, true, StandardCharsets.UTF_8));
+    }
+
+    private static class TextAreaOutputStream extends OutputStream {
+        private final TextArea textArea;
+        private final StringBuilder buffer = new StringBuilder();
+        private final AtomicBoolean flushScheduled = new AtomicBoolean(false);
+
+        public TextAreaOutputStream(TextArea textArea) {
+            this.textArea = textArea;
+        }
+
+        @Override
+        public synchronized void write(int b) {
+            buffer.append((char) b);
+            scheduleFlush();
+        }
+
+        @Override
+        public synchronized void write(byte[] b, int off, int len) {
+            buffer.append(new String(b, off, len, StandardCharsets.UTF_8));
+            scheduleFlush();
+        }
+
+        @Override
+        public synchronized void flush() {
+            scheduleFlush();
+        }
+
+        private synchronized String drainBuffer() {
+            if (buffer.isEmpty()) return "";
+            String out = buffer.toString();
+            buffer.setLength(0);
+            return out;
+        }
+
+        private void scheduleFlush() {
+            if (!flushScheduled.compareAndSet(false, true)) return;
+            Platform.runLater(() -> {
+                try {
+                    String chunk = drainBuffer();
+                    if (!chunk.isEmpty()) {
+                        textArea.appendText(chunk);
+                    }
+                } finally {
+                    flushScheduled.set(false);
+                    synchronized (TextAreaOutputStream.this) {
+                        if (buffer.length() > 0) {
+                            scheduleFlush();
+                        }
+                    }
+                }
+            });
+        }
     }
 
     @FunctionalInterface
