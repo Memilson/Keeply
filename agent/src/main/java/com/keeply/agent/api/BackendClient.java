@@ -3,7 +3,6 @@ package com.keeply.agent.api;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
-import com.keeply.agent.model.ChunkPayload;
 import com.keeply.agent.model.DeviceSession;
 import com.keeply.agent.model.ProtectionPlan;
 import com.keeply.agent.model.SnapshotSummary;
@@ -158,20 +157,20 @@ public class BackendClient {
         }
     }
 
-    public ChunkUploadResult uploadChunk(ChunkPayload chunk) {
+    public ChunkUploadResult uploadChunk(String hash, long originalSize, Path compressedFile) {
         String traceId = UUID.randomUUID().toString();
         try {
-            HttpRequest request = authorized("/api/chunks/" + chunk.hash(), traceId)
+            HttpRequest request = authorized("/api/chunks/" + hash, traceId)
                     .header("Content-Type", "application/gzip")
-                    .header("X-Keeply-Original-Size", Long.toString(chunk.originalSize()))
-                    .PUT(HttpRequest.BodyPublishers.ofByteArray(chunk.compressedBytes()))
+                    .header("X-Keeply-Original-Size", Long.toString(originalSize))
+                    .PUT(HttpRequest.BodyPublishers.ofFile(compressedFile))
                     .build();
             HttpResponse<String> response = sendWithRefreshRetry(request, traceId);
             require2xx(response);
             Map<String, Object> json = mapper.readValue(response.body(), new TypeReference<>() {});
             return new ChunkUploadResult((String) json.get("hash"), Boolean.TRUE.equals(json.get("stored")));
         } catch (Exception e) {
-            throw new IllegalStateException("Falha ao enviar chunk %s [Trace-ID: %s]".formatted(chunk.hash(), traceId), e);
+            throw new IllegalStateException("Falha ao enviar chunk %s [Trace-ID: %s]".formatted(hash, traceId), e);
         }
     }
 

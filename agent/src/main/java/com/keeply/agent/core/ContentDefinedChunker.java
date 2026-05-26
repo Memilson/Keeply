@@ -3,11 +3,11 @@ package com.keeply.agent.core;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
+import java.util.Arrays;
 
 public class ContentDefinedChunker {
     private static final Logger log = LoggerFactory.getLogger(ContentDefinedChunker.class);
@@ -21,7 +21,8 @@ public class ContentDefinedChunker {
         log.debug("✂️ Iniciando chunking do arquivo: {}", file);
         try (InputStream in = Files.newInputStream(file)) {
             MessageDigest fileDigest = MessageDigest.getInstance("SHA-256");
-            ByteArrayOutputStream current = new ByteArrayOutputStream();
+            byte[] current = new byte[MAX_SIZE];
+            int currentSize = 0;
             int rolling = 0;
             int index = 0;
             long offset = 0;
@@ -30,35 +31,30 @@ public class ContentDefinedChunker {
 
             while ((bytesRead = in.read(buffer)) != -1) {
                 fileDigest.update(buffer, 0, bytesRead);
-                int lastCut = 0;
                 for (int i = 0; i < bytesRead; i++) {
                     int b = buffer[i] & 0xFF;
+                    current[currentSize++] = buffer[i];
                     rolling = ((rolling << 1) + b) & 0x7fffffff;
 
-                    int currentSize = current.size() + (i - lastCut + 1);
                     boolean canCut = currentSize >= MIN_SIZE && (rolling & CUT_MASK) == 0;
                     boolean mustCut = currentSize >= MAX_SIZE;
 
                     if (canCut || mustCut) {
-                        current.write(buffer, lastCut, i - lastCut + 1);
-                        byte[] data = current.toByteArray();
+                        byte[] data = mustCut ? current : Arrays.copyOf(current, currentSize);
                         log.debug("📦 Chunk gerado: index={} size={} type={}", index, data.length, mustCut ? "MUST_CUT" : "CAN_CUT");
                         consumer.accept(new ChunkData(index, offset, data, data.length));
                         
                         offset += data.length;
                         index++;
-                        current.reset();
+                        current = new byte[MAX_SIZE];
+                        currentSize = 0;
                         rolling = 0;
-                        lastCut = i + 1;
                     }
-                }
-                if (lastCut < bytesRead) {
-                    current.write(buffer, lastCut, bytesRead - lastCut);
                 }
             }
 
-            if (current.size() > 0) {
-                byte[] data = current.toByteArray();
+            if (currentSize > 0) {
+                byte[] data = Arrays.copyOf(current, currentSize);
                 log.debug("📦 Último chunk gerado: index={} size={}", index, data.length);
                 consumer.accept(new ChunkData(index, offset, data, data.length));
             }

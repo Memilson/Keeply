@@ -1,7 +1,6 @@
 package com.keeply.agent.core;
 
 import com.keeply.agent.api.BackendClient;
-import com.keeply.agent.model.ChunkPayload;
 import com.keeply.agent.model.SnapshotSummary;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -113,31 +112,43 @@ public class BackupEngine {
                                 byte[] raw = chunkData.data();
                                 String chunkHash = Sha256Hasher.hashBytes(raw);
                                 int originalSize = raw.length;
-                                
+                                Path compressedFile = Files.createTempFile("keeply-chunk-", ".gz");
+                                long compressedSize;
+                                try {
+                                    compressedSize = GzipCompressor.compressToFile(raw, compressedFile);
+                                } catch (Exception e) {
+                                    Files.deleteIfExists(compressedFile);
+                                    throw e;
+                                }
+                                db.addManifestChunk(relativePath, chunkData.index(), chunkHash, originalSize, compressedSize);
+
                                 if (db.claimChunkForSession(chunkHash)) {
+                                    Path uploadFile = compressedFile;
                                     uploaderPool.execute(() -> {
                                         try {
-                                            byte[] compressed = GzipCompressor.compress(raw);
-                                            ChunkPayload payload = new ChunkPayload(chunkHash, originalSize, compressed.length, compressed);
                                             long uploadStart = System.nanoTime();
-                                            BackendClient.ChunkUploadResult result = backend.uploadChunk(payload);
+                                            BackendClient.ChunkUploadResult result = backend.uploadChunk(chunkHash, originalSize, uploadFile);
                                             if (result.stored()) sentCount.incrementAndGet(); else duplicateCount.incrementAndGet();
                                             db.addKnownChunks(Set.of(chunkHash));
                                             long latencyMs = (System.nanoTime() - uploadStart) / 1_000_000;
                                             log.debug("event=chunk.upload hash={} compressed_bytes={} stored={} latency_ms={} in_flight={}",
-                                                    chunkHash, compressed.length, result.stored(), latencyMs,
+                                                    chunkHash, compressedSize, result.stored(), latencyMs,
                                                     uploaderPool.getActiveCount());
-                                            db.addManifestChunk(relativePath, chunkData.index(), chunkHash, originalSize, compressed.length);
                                         } catch (Exception e) {
                                             failedBatchItems.incrementAndGet();
                                             uploadErrors.add(e);
                                             log.error("event=chunk.upload status=failed hash={} message={}", chunkHash, e.getMessage(), e);
+                                        } finally {
+                                            try {
+                                                Files.deleteIfExists(uploadFile);
+                                            } catch (Exception e) {
+                                                log.warn("event=chunk.temp_file status=cleanup_failed path={} message={}", uploadFile, e.getMessage());
+                                            }
                                         }
                                     });
                                 } else {
                                     chunksReused.incrementAndGet();
-                                    byte[] compressed = GzipCompressor.compress(raw);
-                                    db.addManifestChunk(relativePath, chunkData.index(), chunkHash, originalSize, compressed.length);
+                                    Files.deleteIfExists(compressedFile);
                                 }
                             });
 
