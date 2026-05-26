@@ -6,7 +6,12 @@ import com.keeply.backend.service.ManifestReaderService;
 import com.keeply.backend.service.SnapshotService;
 import com.keeply.backend.util.CurrentUser;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
+import jakarta.servlet.http.HttpServletRequest;
 
+import java.io.InputStream;
 import java.util.List;
 import java.util.UUID;
 
@@ -26,12 +31,16 @@ public class SnapshotController {
         return snapshots.start(CurrentUser.get().userId(), request);
     }
 
-    @PostMapping("/{snapshotId}/complete")
+    @PostMapping(value = "/{snapshotId}/complete", consumes = "application/gzip")
     public SnapshotDtos.SnapshotResponse complete(
             @PathVariable UUID snapshotId,
-            @RequestBody SnapshotDtos.CompleteSnapshotRequest request
-    ) {
-        return snapshots.complete(CurrentUser.get().userId(), snapshotId, request);
+            @RequestHeader("X-Keeply-Total-Files") long totalFiles,
+            @RequestHeader("X-Keeply-Total-Original-Size") long totalOriginalSize,
+            @RequestHeader("X-Keeply-Total-Compressed-Size") long totalCompressedSize,
+            HttpServletRequest request
+    ) throws java.io.IOException {
+        return snapshots.complete(CurrentUser.get().userId(), snapshotId, request.getInputStream(),
+                request.getContentLengthLong(), totalFiles, totalOriginalSize, totalCompressedSize);
     }
 
     @PostMapping("/{snapshotId}/fail")
@@ -60,7 +69,13 @@ public class SnapshotController {
     }
 
     @GetMapping(value = "/{snapshotId}/manifest", produces = "application/json")
-    public String manifest(@PathVariable UUID snapshotId) {
-        return snapshots.manifest(CurrentUser.get().userId(), snapshotId);
+    public ResponseEntity<StreamingResponseBody> manifest(@PathVariable UUID snapshotId) {
+        InputStream stream = snapshots.manifest(CurrentUser.get().userId(), snapshotId);
+        StreamingResponseBody body = output -> {
+            try (stream) {
+                stream.transferTo(output);
+            }
+        };
+        return ResponseEntity.ok().contentType(MediaType.APPLICATION_JSON).body(body);
     }
 }

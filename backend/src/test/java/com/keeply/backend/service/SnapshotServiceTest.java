@@ -82,7 +82,8 @@ class SnapshotServiceTest {
         when(snapshots.findByIdAndDeviceUserId(snapshotId, userId)).thenReturn(Optional.of(s));
         when(storage.getStream("manifest.json.gz")).thenReturn(new ByteArrayInputStream(bos.toByteArray()));
 
-        String manifest = snapshotService.manifest(userId, snapshotId);
-        assertEquals(json, manifest);
+        try (var manifest = snapshotService.manifest(userId, snapshotId)) {
+            assertEquals(json, new String(manifest.readAllBytes()));
+        }
     }
 }

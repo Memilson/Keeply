@@ -8,8 +8,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import java.io.ByteArrayInputStream;
-
 @Service
 public class MinioStorageService implements ObjectStorageService {
     private static final Logger log = LoggerFactory.getLogger(MinioStorageService.class);
@@ -37,7 +35,7 @@ public class MinioStorageService implements ObjectStorageService {
     @Override
     public void put(String key, java.io.InputStream data, long length, String contentType) {
         try {
-            log.info("Armazenando objeto no MinIO: {} (Tamanho: {}, Tipo: {})", key, length, contentType);
+            log.debug("Armazenando objeto no MinIO: {} (Tamanho: {}, Tipo: {})", key, length, contentType);
             minio.putObject(PutObjectArgs.builder()
                     .bucket(bucket)
                     .object(key)
@@ -61,7 +59,7 @@ public class MinioStorageService implements ObjectStorageService {
     @Override
     public void delete(String key) {
         try {
-            log.info("Removendo objeto do MinIO: {}", key);
+            log.debug("Removendo objeto do MinIO: {}", key);
             minio.removeObject(RemoveObjectArgs.builder().bucket(bucket).object(key).build());
         } catch (Exception e) {
             throw new IllegalStateException("Falha ao remover objeto do MinIO: " + key, e);

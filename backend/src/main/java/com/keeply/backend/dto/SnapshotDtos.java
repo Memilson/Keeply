@@ -11,13 +11,6 @@ public final class SnapshotDtos {
 
     public record StartSnapshotRequest(UUID deviceId, String sourcePath) {}
 
-    public record CompleteSnapshotRequest(
-            String manifestJson,
-            long totalFiles,
-            long totalOriginalSize,
-            long totalCompressedSize
-    ) {}
-
     public record FailSnapshotRequest(String errorMessage) {}
 
     public record SnapshotResponse(

@@ -1,10 +1,11 @@
 package com.keeply.agent.core;
 
+import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.core.JsonToken;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.keeply.agent.api.BackendClient;
 import com.keeply.agent.model.FileManifest;
 import com.keeply.agent.model.ManifestChunk;
-import com.keeply.agent.model.SnapshotManifest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -39,14 +40,43 @@ public class RestoreEngine {
 
         try {
             log.info("📥 Iniciando restauração do snapshot: {}", snapshotId);
-            String json = backend.downloadManifest(snapshotId);
-            SnapshotManifest manifest = mapper.readValue(json, SnapshotManifest.class);
             Set<String> selected = selectedPaths == null ? null : new HashSet<>(selectedPaths);
-            Path originalRoot = Path.of(manifest.sourcePath());
+            try (var stream = backend.openManifestStream(snapshotId);
+                 JsonParser parser = mapper.getFactory().createParser(stream)) {
+                Path originalRoot = null;
+                while (parser.nextToken() != null) {
+                    if (parser.currentToken() == JsonToken.FIELD_NAME && "sourcePath".equals(parser.currentName())) {
+                        parser.nextToken();
+                        originalRoot = Path.of(parser.getValueAsString());
+                    }
+                    if (parser.currentToken() != JsonToken.FIELD_NAME || !"files".equals(parser.currentName())) continue;
+                    parser.nextToken();
+                    while (parser.nextToken() != JsonToken.END_ARRAY) {
+                        FileManifest file = mapper.readValue(parser, FileManifest.class);
+                        restoreFile(file, originalRoot, destinationRoot, selected, overwritePolicy,
+                                totalFiles, skippedFiles, totalRestoredSize);
+                    }
+                }
+            }
 
-            for (FileManifest file : manifest.files()) {
+            double totalDuration = (System.nanoTime() - startTotal) / 1_000_000_000.0;
+            double throughput = (totalRestoredSize.get() / 1024.0 / 1024.0) / totalDuration;
+
+            log.info("📊 [PERF] files.total={} files.skipped={} size.restored={}MB",
+                    totalFiles.get(), skippedFiles.get(), totalRestoredSize.get() / 1024 / 1024);
+            log.info("📊 [PERF] total.duration={.2f}s throughput={.2f}MB/s", totalDuration, throughput);
+            log.info("✅ Restore concluído com integridade validada.");
+        } catch (Exception e) {
+            log.error("❌ Restore falhou: {}", e.getMessage(), e);
+            throw new IllegalStateException("Restore falhou", e);
+        }
+    }
+
+    private void restoreFile(FileManifest file, Path originalRoot, Path destinationRoot, Set<String> selected,
+                             OverwritePolicy overwritePolicy, AtomicInteger totalFiles,
+                             AtomicInteger skippedFiles, AtomicLong totalRestoredSize) throws Exception {
                 if (selected != null && !selected.contains(file.path())) {
-                    continue;
+                    return;
                 }
                 totalFiles.incrementAndGet();
                 Path target;
@@ -61,7 +91,7 @@ public class RestoreEngine {
                 if (!shouldRestore(target, file.lastModified(), overwritePolicy)) {
                     log.debug("📄 Ignorado pela política ({}): {}", overwritePolicy.label, file.path());
                     skippedFiles.incrementAndGet();
-                    continue;
+                    return;
                 }
 
                 log.info("📄 Restaurando: {}", file.path());
@@ -88,19 +118,6 @@ public class RestoreEngine {
                 }
 
                 Files.setLastModifiedTime(target, FileTime.from(file.lastModified()));
-            }
-
-            double totalDuration = (System.nanoTime() - startTotal) / 1_000_000_000.0;
-            double throughput = (totalRestoredSize.get() / 1024.0 / 1024.0) / totalDuration;
-
-            log.info("📊 [PERF] files.total={} files.skipped={} size.restored={}MB", 
-                    totalFiles.get(), skippedFiles.get(), totalRestoredSize.get() / 1024 / 1024);
-            log.info("📊 [PERF] total.duration={.2f}s throughput={.2f}MB/s", totalDuration, throughput);
-            log.info("✅ Restore concluído com integridade validada.");
-        } catch (Exception e) {
-            log.error("❌ Restore falhou: {}", e.getMessage(), e);
-            throw new IllegalStateException("Restore falhou", e);
-        }
     }
 
     private Path safeResolve(Path root, String relativePath) {

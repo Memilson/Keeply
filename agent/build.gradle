@@ -44,7 +44,7 @@ tasks.register('runDaemon', JavaExec) {
     workingDir = rootProject.projectDir // Garante que o diretório de trabalho seja a raiz
     classpath = sourceSets.main.runtimeClasspath
     mainClass = 'com.keeply.agent.KeeplyAgentDaemonApp'
-    jvmArgs '--enable-native-access=ALL-UNNAMED'
+    jvmArgs '--enable-native-access=ALL-UNNAMED', '-Xmx128m'
     if (project.hasProperty('daemonArgs')) {
         args(project.property('daemonArgs').toString().split('\\s+'))
     }
@@ -53,7 +53,7 @@ tasks.register('runDaemon', JavaExec) {
 tasks.register('daemonStartScripts', CreateStartScripts) {
     mainClass = 'com.keeply.agent.KeeplyAgentDaemonApp'
     applicationName = 'keeply-agent-daemon'
-    defaultJvmOpts = ['--enable-native-access=ALL-UNNAMED']
+    defaultJvmOpts = ['--enable-native-access=ALL-UNNAMED', '-Xmx128m']
     classpath = files(tasks.named('jar').flatMap { it.archiveFile }, configurations.runtimeClasspath)
     outputDir = file("$buildDir/daemon/bin")
 }

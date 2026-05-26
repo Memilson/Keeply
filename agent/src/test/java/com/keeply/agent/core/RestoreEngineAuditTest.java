@@ -10,6 +10,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.ByteArrayInputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
@@ -39,8 +41,8 @@ class RestoreEngineAuditTest {
         }
 
         @Override
-        public String downloadManifest(UUID snapshotId) {
-            return manifestJson;
+        public InputStream openManifestStream(UUID snapshotId) {
+            return new ByteArrayInputStream(manifestJson.getBytes(java.nio.charset.StandardCharsets.UTF_8));
         }
 
         @Override

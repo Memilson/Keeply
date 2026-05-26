@@ -10,6 +10,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -22,6 +24,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 
 class ManifestReaderServiceAuditTest {
 
@@ -74,7 +78,7 @@ class ManifestReaderServiceAuditTest {
         service.listFiles(userId, snapshotId, 0, 10, null);
         service.listFiles(userId, snapshotId, 0, 10, null);
 
-        verify(snapshotFiles, times(2)).findBySnapshotId(snapshotId);
+        verify(snapshotFiles, times(2)).findBySnapshotId(eq(snapshotId), any(Pageable.class));
     }
 
     @Test
@@ -105,6 +109,18 @@ class ManifestReaderServiceAuditTest {
 
     private void stubIndexedFiles() {
         when(snapshots.findByIdAndDeviceUserId(snapshotId, userId)).thenReturn(Optional.of(snapshot));
-        when(snapshotFiles.findBySnapshotId(snapshotId)).thenReturn(indexedFiles);
+        when(snapshotFiles.findBySnapshotId(eq(snapshotId), any(Pageable.class))).thenAnswer(invocation -> {
+            Pageable pageable = invocation.getArgument(1);
+            int start = Math.min((int) pageable.getOffset(), indexedFiles.size());
+            int end = Math.min(start + pageable.getPageSize(), indexedFiles.size());
+            return new PageImpl<>(indexedFiles.subList(start, end), pageable, indexedFiles.size());
+        });
+        when(snapshotFiles.findBySnapshotIdAndPathContainingIgnoreCase(eq(snapshotId), any(String.class), any(Pageable.class)))
+                .thenAnswer(invocation -> {
+                    String search = invocation.getArgument(1);
+                    Pageable pageable = invocation.getArgument(2);
+                    List<SnapshotFile> matching = indexedFiles.stream().filter(f -> f.path.contains(search)).toList();
+                    return new PageImpl<>(matching, pageable, matching.size());
+                });
     }
 }
