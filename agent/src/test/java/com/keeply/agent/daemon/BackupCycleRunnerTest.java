@@ -31,7 +31,7 @@ class BackupCycleRunnerTest {
         );
 
         DeviceAuthStore authStore = new DeviceAuthStore(tempDir.resolve("auth.json"));
-        BackupCycleRunner runner = new BackupCycleRunner(config, authStore, new DaemonLogger(), (deviceId, source) -> {
+        BackupCycleRunner runner = new BackupCycleRunner(config, authStore, (deviceId, source) -> {
             processed.add(source);
             if (source.equals(first)) {
                 throw new IllegalStateException("boom");

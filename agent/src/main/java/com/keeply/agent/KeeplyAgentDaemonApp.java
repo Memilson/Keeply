@@ -7,19 +7,23 @@ import com.keeply.agent.core.LocalDatabase;
 import com.keeply.agent.daemon.AgentPaths;
 import com.keeply.agent.daemon.BackupCycleRunner;
 import com.keeply.agent.daemon.CronScheduler;
-import com.keeply.agent.daemon.DaemonLogger;
 import com.keeply.agent.daemon.DaemonInstanceLock;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
 public final class KeeplyAgentDaemonApp {
+    private static final Logger log = LoggerFactory.getLogger(KeeplyAgentDaemonApp.class);
+    private static final String VERSION = "0.1.0";
+
     private KeeplyAgentDaemonApp() {
     }
 
     public static void main(String[] args) {
-        DaemonLogger logger = new DaemonLogger();
+        log.info("event=daemon.boot app=keeply-agent-daemon version={}", VERSION);
 
         try {
             Path configPath = resolveConfigPath(args);
@@ -37,28 +41,29 @@ public final class KeeplyAgentDaemonApp {
             DeviceAuthStore authStore = new DeviceAuthStore(AgentPaths.resolveDeviceAuthPath());
 
             AgentConfig config = new AgentConfigLoader().load(configPath);
-            BackupCycleRunner runner = new BackupCycleRunner(config, db, authStore, logger);
+            BackupCycleRunner runner = new BackupCycleRunner(config, db, authStore);
 
-            logger.info("Iniciando daemon com config: " + configPath);
+            log.info("event=daemon.start config_path={}", configPath);
             try (DaemonInstanceLock lock = DaemonInstanceLock.acquire(lockPath)) {
                 if (Boolean.TRUE.equals(config.schedule().runOnStartup())) {
-                    logger.info("runOnStartup=true, executando ciclo imediato.");
+                    log.info("event=daemon.startup_run enabled=true action=run_cycle_now");
                     runner.runCycle();
                 } else {
-                    logger.info("runOnStartup=false, aguardando próximo horário do cron.");
+                    log.info("event=daemon.startup_run enabled=false action=wait_cron");
                 }
 
-                CronScheduler scheduler = new CronScheduler(config.schedule().cron(), runner::runCycle, logger);
+                CronScheduler scheduler = new CronScheduler(config.schedule().cron(), runner::runCycle);
                 Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-                    logger.info("Encerrando daemon...");
+                    log.info("event=daemon.shutdown status=started");
                     scheduler.shutdown();
+                    log.info("event=daemon.shutdown status=completed");
                 }));
 
                 scheduler.start();
                 Thread.currentThread().join();
             }
         } catch (Exception e) {
-            logger.error("Falha fatal ao iniciar daemon", e);
+            log.error("event=daemon.boot status=fatal_error", e);
             System.exit(1);
         }
     }

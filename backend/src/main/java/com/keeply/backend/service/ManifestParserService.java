@@ -1,14 +1,16 @@
 package com.keeply.backend.service;
 
+import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.core.JsonToken;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.keeply.backend.dto.ManifestParsingDtos;
 import com.keeply.backend.model.FileChunk;
 import com.keeply.backend.model.Snapshot;
 import com.keeply.backend.model.SnapshotFile;
 import com.keeply.backend.model.SnapshotStatus;
-import com.keeply.backend.repository.FileChunkRepository;
 import com.keeply.backend.repository.SnapshotFileRepository;
 import com.keeply.backend.repository.SnapshotRepository;
+import jakarta.persistence.EntityManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Async;
@@ -26,20 +28,20 @@ public class ManifestParserService {
     private static final Logger log = LoggerFactory.getLogger(ManifestParserService.class);
     private final SnapshotRepository snapshots;
     private final SnapshotFileRepository snapshotFiles;
-    private final FileChunkRepository fileChunks;
     private final ObjectStorageService storage;
     private final ObjectMapper mapper;
+    private final EntityManager entityManager;
 
     public ManifestParserService(SnapshotRepository snapshots,
                                  SnapshotFileRepository snapshotFiles,
-                                 FileChunkRepository fileChunks,
                                  ObjectStorageService storage,
-                                 ObjectMapper mapper) {
+                                 ObjectMapper mapper,
+                                 EntityManager entityManager) {
         this.snapshots = snapshots;
         this.snapshotFiles = snapshotFiles;
-        this.fileChunks = fileChunks;
         this.storage = storage;
         this.mapper = mapper;
+        this.entityManager = entityManager;
     }
 
     @Async
@@ -52,54 +54,71 @@ public class ManifestParserService {
         try (InputStream is = storage.getStream(snapshot.manifestKey);
              GZIPInputStream gis = new GZIPInputStream(is)) {
 
-            ManifestParsingDtos.SnapshotManifest manifest = mapper.readValue(gis, ManifestParsingDtos.SnapshotManifest.class);
-
-            // 1. Limpar dados anteriores de forma eficiente (Cascade no DB cuida dos chunks)
+            // 1. Limpar dados anteriores de forma eficiente
             snapshotFiles.deleteBySnapshotId(snapshotId);
 
-            List<SnapshotFile> filesToSave = new ArrayList<>();
-            List<FileChunk> chunksToSave = new ArrayList<>();
+            // 2. Parsing em streaming para evitar OOM e respeitar o Mandato 1
+            JsonParser parser = mapper.getFactory().createParser(gis);
+            
+            List<SnapshotFile> batch = new ArrayList<>();
+            int count = 0;
 
-            for (ManifestParsingDtos.FileManifest fm : manifest.files()) {
-                SnapshotFile sf = new SnapshotFile();
-                sf.snapshot = snapshot;
-                sf.path = fm.path();
-                sf.size = fm.size();
-                sf.lastModified = fm.lastModified();
-                sf.sha256 = fm.sha256();
-                
-                // Precisamos salvar o arquivo antes para ter o ID para os chunks (ou usar Cascade)
-                // Para simplificar e garantir batching, vamos salvar em lotes de 100
-                SnapshotFile savedFile = snapshotFiles.save(sf);
+            while (parser.nextToken() != JsonToken.END_OBJECT) {
+                String fieldName = parser.getCurrentName();
+                if ("files".equals(fieldName)) {
+                    parser.nextToken(); // Entra no array
+                    while (parser.nextToken() != JsonToken.END_ARRAY) {
+                        ManifestParsingDtos.FileManifest fm = mapper.readValue(parser, ManifestParsingDtos.FileManifest.class);
+                        
+                        SnapshotFile sf = new SnapshotFile();
+                        sf.snapshot = snapshot;
+                        sf.path = fm.path();
+                        sf.size = fm.size();
+                        sf.lastModified = fm.lastModified();
+                        sf.sha256 = fm.sha256();
+                        sf.chunks = new ArrayList<>();
 
-                for (ManifestParsingDtos.ManifestChunk mc : fm.chunks()) {
-                    FileChunk fc = new FileChunk();
-                    fc.snapshotFile = savedFile;
-                    fc.chunkIndex = mc.index();
-                    fc.chunkHash = mc.hash();
-                    fc.originalSize = mc.originalSize();
-                    fc.compressedSize = mc.compressedSize();
-                    chunksToSave.add(fc);
-                    
-                    if (chunksToSave.size() >= 1000) {
-                        fileChunks.saveAll(chunksToSave);
-                        chunksToSave.clear();
+                        for (ManifestParsingDtos.ManifestChunk mc : fm.chunks()) {
+                            FileChunk fc = new FileChunk();
+                            fc.snapshotFile = sf;
+                            fc.chunkIndex = mc.index();
+                            fc.chunkHash = mc.hash();
+                            fc.originalSize = mc.originalSize();
+                            fc.compressedSize = mc.compressedSize();
+                            sf.chunks.add(fc);
+                        }
+
+                        batch.add(sf);
+                        count++;
+
+                        if (batch.size() >= 100) {
+                            saveBatch(batch, snapshotId);
+                            batch.clear();
+                        }
                     }
                 }
             }
             
-            if (!chunksToSave.isEmpty()) {
-                fileChunks.saveAll(chunksToSave);
+            if (!batch.isEmpty()) {
+                saveBatch(batch, snapshotId);
             }
 
             snapshot.status = SnapshotStatus.COMPLETED;
             snapshots.save(snapshot);
-            log.info("Indexação do manifesto concluída com sucesso para o snapshot: {}", snapshotId);
+            log.info("Indexação concluída: {} arquivos processados para o snapshot: {}", count, snapshotId);
 
         } catch (Exception e) {
             log.error("Erro ao processar manifesto do snapshot: " + snapshotId, e);
             snapshot.status = SnapshotStatus.FAILED;
             snapshots.save(snapshot);
         }
+    }
+
+    private void saveBatch(List<SnapshotFile> batch, UUID snapshotId) {
+        log.info("Salvando lote de {} arquivos para o snapshot: {}", batch.size(), snapshotId);
+        snapshotFiles.saveAll(batch);
+        // Limpa o persistence context para evitar lentidão progressiva (O(N^2) checks)
+        entityManager.flush();
+        entityManager.clear();
     }
 }

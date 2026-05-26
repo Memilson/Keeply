@@ -9,6 +9,7 @@ dependencies {
     implementation 'com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.17.2'
     implementation 'com.cronutils:cron-utils:9.2.1'
     implementation 'org.xerial:sqlite-jdbc:3.49.1.0'
+    implementation 'org.slf4j:slf4j-simple:2.0.13'
     
     // Security & Keyring
     implementation 'com.github.javakeyring:java-keyring:1.0.2'
@@ -23,11 +24,13 @@ dependencies {
 
 application {
     mainClass = 'com.keeply.agent.KeeplyAgentApp'
+    applicationDefaultJvmArgs = ['--enable-native-access=ALL-UNNAMED']
 }
 
 // Configura o diretório de trabalho para a tarefa 'run' padrão (GUI)
 tasks.named('run') {
     workingDir = rootProject.projectDir
+    jvmArgs '--enable-native-access=ALL-UNNAMED'
 }
 
 javafx {
@@ -41,6 +44,7 @@ tasks.register('runDaemon', JavaExec) {
     workingDir = rootProject.projectDir // Garante que o diretório de trabalho seja a raiz
     classpath = sourceSets.main.runtimeClasspath
     mainClass = 'com.keeply.agent.KeeplyAgentDaemonApp'
+    jvmArgs '--enable-native-access=ALL-UNNAMED'
     if (project.hasProperty('daemonArgs')) {
         args(project.property('daemonArgs').toString().split('\\s+'))
     }
@@ -49,6 +53,7 @@ tasks.register('runDaemon', JavaExec) {
 tasks.register('daemonStartScripts', CreateStartScripts) {
     mainClass = 'com.keeply.agent.KeeplyAgentDaemonApp'
     applicationName = 'keeply-agent-daemon'
+    defaultJvmOpts = ['--enable-native-access=ALL-UNNAMED']
     classpath = files(tasks.named('jar').flatMap { it.archiveFile }, configurations.runtimeClasspath)
     outputDir = file("$buildDir/daemon/bin")
 }

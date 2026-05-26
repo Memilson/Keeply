@@ -2,6 +2,7 @@ package com.keeply.backend.model;
 
 import jakarta.persistence.*;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 @Entity
@@ -32,4 +33,7 @@ public class SnapshotFile {
 
     @Column(nullable = false, length = 64)
     public String sha256;
+
+    @OneToMany(mappedBy = "snapshotFile", cascade = CascadeType.ALL, orphanRemoval = true)
+    public List<FileChunk> chunks;
 }

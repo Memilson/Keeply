@@ -24,6 +24,13 @@ O Keeply é uma solução de backup em nuvem com foco em **deduplicação inteli
 - **Proteção Anti-Invasão:** Bloqueio de **Path Traversal** no Restore e validação de posse via JWT em todas as APIs.
 - **Mascara de Logs:** Caminhos absolutos do sistema do usuário são ocultados nos logs do daemon.
 
+### 🖥️ Interface do Agente (Keeply Explorer)
+- **Windows-Like Experience:** Refatoração completa das telas de Backup e Restore para um visual moderno inspirado no Windows Explorer.
+- **File Tree com Ícones:** Visualização hierárquica de arquivos com ícones coloridos (📁/📄) para facilitar a navegação.
+- **Split-Pane Explorer:** Sidebar para snapshots e painel principal para arquivos, permitindo uma navegação mais intuitiva.
+- **Busca em Tempo Real:** Barra de pesquisa no explorador de arquivos para localizar itens rapidamente dentro de snapshots.
+- **Login Moderno:** Interface de autenticação renovada e mais amigável.
+
 ---
 
 ## 🏗️ Arquitetura Técnica
@@ -62,7 +69,7 @@ Após o agente completar um backup, você pode listar os arquivos via API:
 # 1. Login para pegar o TOKEN
 TOKEN=$(curl -s -X POST http://localhost:8080/api/auth/login \
      -H "Content-Type: application/json" \
-     -d '{"email": "keeply@keeply.com", "password": "keeply123"}' | jq -r .accessToken)
+     -d '{"email": "keeply@keeply.com", "password": ""}' | jq -r .accessToken)
 
 # 2. Listar arquivos do último Snapshot
 curl -X GET "http://localhost:8080/api/snapshots/{SNAPSHOT_ID}/files?page=0&size=20&search=doc" \

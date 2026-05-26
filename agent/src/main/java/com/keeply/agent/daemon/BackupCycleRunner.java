@@ -1,6 +1,7 @@
 package com.keeply.agent.daemon;
 
 import com.keeply.agent.api.BackendClient;
+import com.keeply.agent.api.LogUtils;
 import com.keeply.agent.auth.DeviceAuthStore;
 import com.keeply.agent.auth.DeviceIdentity;
 import com.keeply.agent.config.AgentConfig;
@@ -8,6 +9,8 @@ import com.keeply.agent.model.ProtectionPlan;
 import com.keeply.agent.core.BackupEngine;
 import com.keeply.agent.core.LocalDatabase;
 import com.keeply.agent.model.DeviceSession;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.net.InetAddress;
 import java.nio.file.Path;
@@ -17,13 +20,14 @@ import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public final class BackupCycleRunner {
+    private static final Logger log = LoggerFactory.getLogger(BackupCycleRunner.class);
+
     @FunctionalInterface
     interface SourceBackupExecutor {
         UUID run(UUID deviceId, Path source) throws Exception;
     }
 
     private final AgentConfig config;
-    private final DaemonLogger logger;
     private final AtomicBoolean running = new AtomicBoolean(false);
 
     private final BackendClient backend;
@@ -32,18 +36,16 @@ public final class BackupCycleRunner {
     private final DeviceAuthStore authStore;
     private UUID deviceId;
 
-    public BackupCycleRunner(AgentConfig config, LocalDatabase db, DeviceAuthStore authStore, DaemonLogger logger) {
+    public BackupCycleRunner(AgentConfig config, LocalDatabase db, DeviceAuthStore authStore) {
         this.config = config;
-        this.logger = logger;
         this.backend = new BackendClient(config.backend().url());
         this.db = db;
         this.authStore = authStore;
-        this.sourceBackupExecutor = (id, source) -> new BackupEngine(backend, db).backup(id, source, logger::info);
+        this.sourceBackupExecutor = (id, source) -> new BackupEngine(backend, db).backup(id, source);
     }
 
-    BackupCycleRunner(AgentConfig config, DeviceAuthStore authStore, DaemonLogger logger, SourceBackupExecutor sourceBackupExecutor) {
+    BackupCycleRunner(AgentConfig config, DeviceAuthStore authStore, SourceBackupExecutor sourceBackupExecutor) {
         this.config = config;
-        this.logger = logger;
         this.backend = new BackendClient(config.backend().url());
         this.db = null;
         this.authStore = authStore;
@@ -52,17 +54,19 @@ public final class BackupCycleRunner {
 
     public void runCycle() {
         if (!running.compareAndSet(false, true)) {
-            logger.warn("Execução ignorada: backup anterior ainda em andamento.");
+            log.warn("event=backup.cycle status=skipped reason=already_running");
             return;
         }
 
         try {
+            log.info("event=backup.cycle status=started");
             authenticate(false);
             ensureDeviceRegistered();
             backupAllSources(deviceId);
         } catch (Exception e) {
-            logger.error("Ciclo abortado por falha de autenticação/registro", e);
+            LogUtils.logError(log, "event=backup.cycle status=failed stage=auth_or_registration", e);
         } finally {
+            log.info("event=backup.cycle status=finished");
             running.set(false);
         }
     }
@@ -70,10 +74,10 @@ public final class BackupCycleRunner {
     void backupAllSources(UUID currentDeviceId) {
         Optional<ProtectionPlan> maybePlan = backend.getDevicePlan(currentDeviceId);
         if (maybePlan.isEmpty()) {
-            logger.warn("Plano de proteção ausente para o device; ciclo cancelado.");
+            log.warn("event=backup.cycle status=skipped reason=missing_protection_plan");
             return;
         }
-        logger.info("Executando ciclo com deviceId=" + currentDeviceId);
+        log.info("event=backup.cycle device_id={} status=running_sources", currentDeviceId);
         List<Path> sources = maybePlan.get().sources().stream().map(Path::of).toList();
         backupAllSources(currentDeviceId, sources);
     }
@@ -82,24 +86,24 @@ public final class BackupCycleRunner {
         for (Path source : sources) {
             String sourceName = source.getFileName().toString();
             try {
-                logger.info("Iniciando backup de " + sourceName);
+                log.info("event=backup.source status=started source={}", sourceName);
                 UUID snapshotId = sourceBackupExecutor.run(currentDeviceId, source);
-                logger.info("Backup concluído para " + sourceName + " snapshot=" + snapshotId);
+                log.info("event=backup.source status=completed source={} snapshot_id={}", sourceName, snapshotId);
             } catch (Exception e) {
                 if (isInvalidDeviceError(e)) {
-                    logger.warn("Device inválido detectado; tentando re-registrar e repetir origem " + sourceName);
+                    log.warn("event=backup.source status=retrying source={} reason=invalid_device", sourceName);
                     try {
                         deviceId = null;
                         authenticate(true);
                         ensureDeviceRegistered();
                         UUID retriedSnapshotId = sourceBackupExecutor.run(deviceId, source);
-                        logger.info("Backup concluído após re-registro para " + sourceName + " snapshot=" + retriedSnapshotId);
+                        log.info("event=backup.source status=completed_after_reregister source={} snapshot_id={}", sourceName, retriedSnapshotId);
                         continue;
                     } catch (Exception retryError) {
-                        logger.error("Falha no retry após re-registro da origem " + sourceName, retryError);
+                        log.error("event=backup.source status=failed_after_reregister source={} message={}", sourceName, retryError.getMessage());
                     }
                 } else {
-                    logger.error("Falha no backup da origem " + sourceName, e);
+                    log.error("event=backup.source status=failed source={} message={}", sourceName, e.getMessage());
                 }
             }
         }
@@ -127,7 +131,7 @@ public final class BackupCycleRunner {
                 deviceId = refreshed.deviceId();
                 return;
             } catch (Exception e) {
-                logger.warn("Sessão local inválida/revogada; novo login necessário.");
+                log.warn("event=auth.session status=refresh_failed action=login_required");
             }
         }
         try {

@@ -2,7 +2,9 @@ package com.keeply.backend.service;
 
 import com.keeply.backend.dto.DeviceDtos;
 import com.keeply.backend.model.Device;
+import com.keeply.backend.model.UserAccount;
 import com.keeply.backend.repository.DeviceRepository;
+import com.keeply.backend.repository.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -10,6 +12,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -23,12 +26,19 @@ class DeviceServiceTest {
     @Mock
     private DeviceRepository deviceRepository;
 
+    @Mock
+    private UserRepository userRepository;
+
     @InjectMocks
     private DeviceService deviceService;
 
     @Test
     void registerCreatesDeviceWithInstallationId() {
         UUID userId = UUID.randomUUID();
+        UserAccount userAccount = new UserAccount();
+        userAccount.id = userId;
+        
+        when(userRepository.findById(userId)).thenReturn(Optional.of(userAccount));
         when(deviceRepository.save(any(Device.class))).thenAnswer(inv -> {
             Device d = inv.getArgument(0);
             d.id = UUID.randomUUID();

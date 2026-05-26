@@ -85,7 +85,7 @@ class RestoreEngineAuditTest {
         backend.chunks.put(hash1, chunk1Gzip);
         backend.chunks.put(hash2, chunk2Gzip);
         
-        restoreEngine.restore(snapshotId, dest, s -> System.out.println(s));
+        restoreEngine.restore(snapshotId, dest);
         
         Path restoredFile = dest.resolve("test.txt");
         assertTrue(Files.exists(restoredFile));
@@ -106,7 +106,7 @@ class RestoreEngineAuditTest {
         backend.manifestJson = mapper.writeValueAsString(sm);
         
         assertThrows(IllegalStateException.class, () -> {
-            restoreEngine.restore(snapshotId, dest, s -> {});
+            restoreEngine.restore(snapshotId, dest);
         });
         
         assertFalse(Files.exists(dest.getParent().resolve("traversal.txt")));
@@ -130,7 +130,7 @@ class RestoreEngineAuditTest {
         backend.manifestJson = mapper.writeValueAsString(sm);
         backend.chunks.put(hash, gzip);
         
-        restoreEngine.restore(snapshotId, dest, s -> {});
+        restoreEngine.restore(snapshotId, dest);
         
         Path restoredFile = dest.resolve("det.txt");
         assertEquals(originalMtime.toEpochMilli(), Files.getLastModifiedTime(restoredFile).toMillis());
@@ -157,7 +157,7 @@ class RestoreEngineAuditTest {
         backend.chunks.put(hash, wrongGzip);
         
         assertThrows(IllegalStateException.class, () -> {
-            restoreEngine.restore(snapshotId, dest, s -> {});
+            restoreEngine.restore(snapshotId, dest);
         });
     }
 
@@ -172,7 +172,7 @@ class RestoreEngineAuditTest {
 
         backend.manifestJson = mapper.writeValueAsString(sm);
 
-        restoreEngine.restore(snapshotId, dest, s -> {});
+        restoreEngine.restore(snapshotId, dest);
 
         Path restoredFile = dest.resolve("empty.txt");
         assertTrue(Files.exists(restoredFile));
@@ -191,10 +191,10 @@ class RestoreEngineAuditTest {
         FileManifest fm2 = new FileManifest("C:\\Windows\\System32\\config", 10, Instant.now(), "otherhash", Collections.emptyList());
 
         backend.manifestJson = mapper.writeValueAsString(new SnapshotManifest(snapshotId.toString(), tempDir.toString(), Instant.now(), "CDP", "GZIP", "SHA-256", List.of(fm1)));
-        assertThrows(IllegalStateException.class, () -> restoreEngine.restore(snapshotId, dest, s -> {}));
+        assertThrows(IllegalStateException.class, () -> restoreEngine.restore(snapshotId, dest));
 
         backend.manifestJson = mapper.writeValueAsString(new SnapshotManifest(snapshotId.toString(), tempDir.toString(), Instant.now(), "CDP", "GZIP", "SHA-256", List.of(fm2)));
-        assertThrows(IllegalStateException.class, () -> restoreEngine.restore(snapshotId, dest, s -> {}));
+        assertThrows(IllegalStateException.class, () -> restoreEngine.restore(snapshotId, dest));
     }
 
     @Test
@@ -211,7 +211,7 @@ class RestoreEngineAuditTest {
         // Do NOT put chunk in backend
 
         assertThrows(IllegalStateException.class, () -> {
-            restoreEngine.restore(snapshotId, dest, s -> {});
+            restoreEngine.restore(snapshotId, dest);
         });
     }
 
@@ -232,7 +232,7 @@ class RestoreEngineAuditTest {
         backend.chunks.put(hash, corruptedGzip);
 
         assertThrows(IllegalStateException.class, () -> {
-            restoreEngine.restore(snapshotId, dest, s -> {});
+            restoreEngine.restore(snapshotId, dest);
         });
     }
 
@@ -258,7 +258,7 @@ class RestoreEngineAuditTest {
         backend.chunks.put(h1, g1);
         backend.chunks.put(h2, g2);
 
-        restoreEngine.restore(snapshotId, dest, s -> {});
+        restoreEngine.restore(snapshotId, dest);
 
         assertTrue(Files.exists(dest.resolve("f1.txt")));
         assertTrue(Files.exists(dest.resolve("dir/f2.txt")));
