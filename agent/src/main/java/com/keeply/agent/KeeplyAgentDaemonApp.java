@@ -24,6 +24,8 @@ public final class KeeplyAgentDaemonApp {
 
     public static void main(String[] args) {
         log.info("event=daemon.boot app=keeply-agent-daemon version={}", VERSION);
+        log.info("event=daemon.runtime max_heap_bytes={} chunk_upload_workers=4 chunk_upload_queue_size=4",
+                Runtime.getRuntime().maxMemory());
 
         try {
             Path configPath = resolveConfigPath(args);

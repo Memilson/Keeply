@@ -8,8 +8,10 @@ import com.keeply.backend.repository.SnapshotFileRepository;
 import com.keeply.backend.repository.SnapshotRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 
-import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -31,28 +33,12 @@ public class ManifestReaderService {
             throw new IllegalStateException("Snapshot ainda não concluído (Status: " + snapshot.status + ")");
         }
 
-        // Recupera todos os arquivos do snapshot (ordenados por path por padrão se necessário, ou podemos adicionar sorting no repo)
-        // Nota: Para grandes volumes, o ideal seria implementar paginação diretamente no Repository (Pageable)
-        List<SnapshotFile> allFiles = snapshotFiles.findBySnapshotId(snapshotId);
+        PageRequest pageable = PageRequest.of(Math.max(page, 0), size, Sort.by("path").ascending());
+        Page<SnapshotFile> result = (search == null || search.isBlank())
+                ? snapshotFiles.findBySnapshotId(snapshotId, pageable)
+                : snapshotFiles.findBySnapshotIdAndPathContainingIgnoreCase(snapshotId, search, pageable);
 
-        // Filtragem (search)
-        List<SnapshotFile> filtered = (search == null || search.isBlank())
-                ? allFiles
-                : allFiles.stream()
-                .filter(f -> f.path.toLowerCase().contains(search.toLowerCase()))
-                .toList();
-
-        // Ordenação por caminho para consistência na paginação
-        filtered = filtered.stream()
-                .sorted((f1, f2) -> f1.path.compareToIgnoreCase(f2.path))
-                .toList();
-
-        // Paginação
-        int totalElements = filtered.size();
-        int start = Math.min(page * size, totalElements);
-        int end = Math.min(start + size, totalElements);
-
-        List<SnapshotDtos.SnapshotFileItem> items = filtered.subList(start, end).stream()
+        var items = result.getContent().stream()
                 .map(f -> new SnapshotDtos.SnapshotFileItem(
                         f.path,
                         f.size,
@@ -62,7 +48,7 @@ public class ManifestReaderService {
 
         return new SnapshotDtos.SnapshotFileListResponse(
                 items,
-                new SnapshotDtos.PageMetadata(totalElements, page, size)
+                new SnapshotDtos.PageMetadata(result.getTotalElements(), page, size)
         );
     }
 }

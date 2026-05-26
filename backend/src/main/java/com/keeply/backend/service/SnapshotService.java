@@ -9,9 +9,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.io.ByteArrayInputStream;
 import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.*;
 
@@ -49,31 +47,24 @@ public class SnapshotService {
     }
 
     @Transactional
-    public SnapshotDtos.SnapshotResponse complete(UUID userId, UUID snapshotId, SnapshotDtos.CompleteSnapshotRequest request) {
+    public SnapshotDtos.SnapshotResponse complete(UUID userId, UUID snapshotId, InputStream manifestGzip,
+                                                   long manifestLength, long totalFiles,
+                                                   long totalOriginalSize, long totalCompressedSize) {
         log.info("Finalizando snapshot: {} (User: {})", snapshotId, userId);
         Snapshot s = findOwned(userId, snapshotId);
         if (s.status != SnapshotStatus.IN_PROGRESS) {
             throw new IllegalStateException("Snapshot não está em progresso");
         }
 
-        byte[] manifestData = request.manifestJson().getBytes(StandardCharsets.UTF_8);
-        byte[] compressedManifest;
-        try {
-            java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
-            try (java.util.zip.GZIPOutputStream gos = new java.util.zip.GZIPOutputStream(bos)) {
-                gos.write(manifestData);
-            }
-            compressedManifest = bos.toByteArray();
-        } catch (Exception e) {
-            throw new IllegalStateException("Falha ao comprimir manifesto", e);
-        }
-
         String key = "users/%s/manifests/%s.json.gz".formatted(userId, snapshotId);
-        storage.put(key, new java.io.ByteArrayInputStream(compressedManifest), compressedManifest.length, "application/gzip");
+        if (manifestLength <= 0) {
+            throw new IllegalArgumentException("Manifesto vazio");
+        }
+        storage.put(key, manifestGzip, manifestLength, "application/gzip");
 
-        s.totalFiles = request.totalFiles();
-        s.totalOriginalSize = request.totalOriginalSize();
-        s.totalCompressedSize = request.totalCompressedSize();
+        s.totalFiles = totalFiles;
+        s.totalOriginalSize = totalOriginalSize;
+        s.totalCompressedSize = totalCompressedSize;
         s.manifestKey = key;
         s.status = SnapshotStatus.PROCESSING; // Novo estado: processando manifesto
         s.completedAt = Instant.now();
@@ -103,15 +94,14 @@ public class SnapshotService {
     }
 
     @Transactional(readOnly = true)
-    public String manifest(UUID userId, UUID snapshotId) {
+    public InputStream manifest(UUID userId, UUID snapshotId) {
         Snapshot s = findOwned(userId, snapshotId);
         if (s.status != SnapshotStatus.COMPLETED && s.status != SnapshotStatus.PROCESSING) {
             throw new IllegalStateException("Somente snapshots concluídos ou em processamento podem ter o manifesto lido");
         }
         
-        try (InputStream is = storage.getStream(s.manifestKey);
-             java.util.zip.GZIPInputStream gis = new java.util.zip.GZIPInputStream(is)) {
-            return new String(gis.readAllBytes(), StandardCharsets.UTF_8);
+        try {
+            return new java.util.zip.GZIPInputStream(storage.getStream(s.manifestKey));
         } catch (Exception e) {
             throw new IllegalStateException("Falha ao descompactar manifesto para restore", e);
         }

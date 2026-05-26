@@ -552,6 +552,15 @@ public class KeeplyAgentApp extends Application {
         RestoreNode[] currentFolderRef = new RestoreNode[1];
         VBox[] actionPanelRef = new VBox[1];
         VBox.setVgrow(folderTree, Priority.ALWAYS);
+        TextField fileSearch = new TextField();
+        fileSearch.setPromptText("Buscar arquivo...");
+        Button searchFiles = new Button("Buscar");
+        Button previousFiles = new Button("Anterior");
+        Button nextFiles = new Button("Proxima");
+        Label pageInfo = new Label();
+        Set<String> selectedRestorePaths = new HashSet<>();
+        previousFiles.setDisable(true);
+        nextFiles.setDisable(true);
 
         folderTree.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
             VBox panel = actionPanelRef[0];
@@ -572,7 +581,9 @@ public class KeeplyAgentApp extends Application {
             }
         });
 
-        explorer.getChildren().add(folderTree);
+        HBox fileNavigation = new HBox(8, fileSearch, searchFiles, previousFiles, nextFiles, pageInfo);
+        fileNavigation.setPadding(new Insets(8));
+        explorer.getChildren().addAll(fileNavigation, folderTree);
 
         splitPane.getItems().addAll(sidebar, explorer);
         splitPane.setDividerPositions(0.28);
@@ -628,6 +639,55 @@ public class KeeplyAgentApp extends Application {
         layout.setRight(actionPanel);
 
         // --- LOGIC ---
+        int[] visiblePage = new int[]{0};
+        java.util.function.BiConsumer<SnapshotSummary, Integer> loadSnapshotFiles = (snapshot, requestedPage) -> runAsync(() -> {
+            try {
+                var page = backend.listSnapshotFiles(snapshot.id(), Math.max(0, requestedPage), 200, fileSearch.getText());
+                RestoreNode restoreRoot = buildRestoreTreeItems(snapshot.sourcePath(), page.items());
+                ui(() -> {
+                    visiblePage[0] = page.pagination().page();
+                    CheckBoxTreeItem<RestoreNode> rootItem = buildFolderTreeItem(restoreRoot);
+                    folderTree.setRoot(rootItem);
+                    folderTree.setShowRoot(true);
+                    if (restoreRoot != null) {
+                        rootItem.setExpanded(true);
+                        applyCheckedPaths(rootItem, selectedRestorePaths);
+                        bindCheckboxListeners(rootItem, () -> {
+                            updateSelectedPathsForVisibleTree(rootItem, selectedRestorePaths);
+                            actionPanel.setVisible(!selectedRestorePaths.isEmpty());
+                            actionPanel.setManaged(!selectedRestorePaths.isEmpty());
+                        });
+                        currentPathLabel.setText("Backup > " + restoreRoot.displayPath());
+                    }
+                    long first = page.items().isEmpty() ? 0 : ((long) visiblePage[0] * page.pagination().size()) + 1;
+                    long last = ((long) visiblePage[0] * page.pagination().size()) + page.items().size();
+                    pageInfo.setText(first + "-" + last + " / " + page.pagination().totalElements());
+                    previousFiles.setDisable(visiblePage[0] == 0);
+                    nextFiles.setDisable(last >= page.pagination().totalElements());
+                    summaryLabel.setText("Snapshot: " + snapshot.id().toString().substring(0, 8)
+                            + "\nStatus: " + snapshot.status()
+                            + "\nExibindo " + page.items().size() + " arquivos");
+                    actionPanel.setVisible(!selectedRestorePaths.isEmpty());
+                    actionPanel.setManaged(!selectedRestorePaths.isEmpty());
+                });
+            } catch (Exception ex) {
+                log("Erro ao carregar arquivos: " + ex.getMessage());
+            }
+        });
+        searchFiles.setOnAction(e -> {
+            SnapshotSummary selected = snapshotList.getSelectionModel().getSelectedItem();
+            if (selected != null) loadSnapshotFiles.accept(selected, 0);
+        });
+        fileSearch.setOnAction(e -> searchFiles.fire());
+        previousFiles.setOnAction(e -> {
+            SnapshotSummary selected = snapshotList.getSelectionModel().getSelectedItem();
+            if (selected != null) loadSnapshotFiles.accept(selected, visiblePage[0] - 1);
+        });
+        nextFiles.setOnAction(e -> {
+            SnapshotSummary selected = snapshotList.getSelectionModel().getSelectedItem();
+            if (selected != null) loadSnapshotFiles.accept(selected, visiblePage[0] + 1);
+        });
+
         Runnable refreshSnapshots = () -> {
             if (backend == null) {
                 return;
@@ -645,6 +705,7 @@ public class KeeplyAgentApp extends Application {
 
         snapshotList.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
             if (newVal != null) {
+                selectedRestorePaths.clear();
                 boolean isCompleted = "COMPLETED".equals(newVal.status());
                 boolean isProcessing = "PROCESSING".equals(newVal.status());
                 boolean canRestore = isCompleted;
@@ -655,34 +716,8 @@ public class KeeplyAgentApp extends Application {
                 summaryLabel.setText("Snapshot: " + newVal.id().toString().substring(0, 8) + "\nStatus: " + newVal.status());
 
                 if (isCompleted || isProcessing) {
-                    runAsync(() -> {
-                        try {
-                            String json = backend.downloadManifest(newVal.id());
-                            ObjectMapper localMapper = new ObjectMapper()
-                                    .registerModule(new com.fasterxml.jackson.datatype.jsr310.JavaTimeModule())
-                                    .findAndRegisterModules();
-                            com.keeply.agent.model.SnapshotManifest manifest = localMapper.readValue(json, com.keeply.agent.model.SnapshotManifest.class);
-                            RestoreNode restoreRoot = buildRestoreTree(manifest.sourcePath(), manifest.files());
-                            ui(() -> {
-                                CheckBoxTreeItem<RestoreNode> rootItem = buildFolderTreeItem(restoreRoot);
-                                folderTree.setRoot(rootItem);
-                                folderTree.setShowRoot(true);
-                                if (restoreRoot != null) {
-                                    rootItem.setExpanded(true);
-                                    bindCheckboxListeners(rootItem, () -> updateActionPanelVisibility(actionPanel, rootItem));
-                                    currentPathLabel.setText("Backup > " + restoreRoot.displayPath());
-                                    actionPanel.setVisible(false);
-                                    actionPanel.setManaged(false);
-                                } else {
-                                    currentPathLabel.setText("Backup");
-                                    actionPanel.setVisible(false);
-                                    actionPanel.setManaged(false);
-                                }
-                            });
-                        } catch (Exception ex) {
-                            log("Erro ao carregar arquivos: " + ex.getMessage());
-                        }
-                    });
+                    fileSearch.clear();
+                    loadSnapshotFiles.accept(newVal, 0);
                 } else {
                     ui(() -> {
                         folderTree.setRoot(null);
@@ -726,7 +761,7 @@ public class KeeplyAgentApp extends Application {
             if (selected == null) return;
             Path destinationRoot = restoreOriginal.isSelected() ? null : parseDestinationPath(destination.getText());
             if (!restoreOriginal.isSelected() && destinationRoot == null) return;
-            Set<String> selectedFiles = collectCheckedFilePathsFromTree(folderTree.getRoot());
+            Set<String> selectedFiles = new HashSet<>(selectedRestorePaths);
             if (selectedFiles.isEmpty()) {
                 log("Selecione pelo menos um arquivo.");
                 return;
@@ -743,10 +778,31 @@ public class KeeplyAgentApp extends Application {
         return selected;
     }
 
-    private void updateActionPanelVisibility(VBox actionPanel, TreeItem<RestoreNode> root) {
-        boolean hasChecked = !collectCheckedFilePathsFromTree(root).isEmpty();
-        actionPanel.setVisible(hasChecked);
-        actionPanel.setManaged(hasChecked);
+    private void updateSelectedPathsForVisibleTree(TreeItem<RestoreNode> root, Set<String> selected) {
+        Set<String> visible = new HashSet<>();
+        collectVisibleFilePaths(root, visible);
+        selected.removeAll(visible);
+        selected.addAll(collectCheckedFilePathsFromTree(root));
+    }
+
+    private void collectVisibleFilePaths(TreeItem<RestoreNode> node, Set<String> out) {
+        if (node == null || node.getValue() == null) return;
+        RestoreNode value = node.getValue();
+        if (!value.isDirectory && value.fullPath != null && !value.fullPath.isBlank()) out.add(value.fullPath);
+        for (TreeItem<RestoreNode> child : node.getChildren()) collectVisibleFilePaths(child, out);
+    }
+
+    private void applyCheckedPaths(CheckBoxTreeItem<RestoreNode> node, Set<String> selected) {
+        if (node == null || node.getValue() == null) return;
+        RestoreNode value = node.getValue();
+        if (!value.isDirectory && selected.contains(value.fullPath)) node.setSelected(true);
+        for (TreeItem<RestoreNode> child : node.getChildren()) {
+            if (child instanceof CheckBoxTreeItem<?> checkBoxChild) {
+                @SuppressWarnings("unchecked")
+                CheckBoxTreeItem<RestoreNode> typed = (CheckBoxTreeItem<RestoreNode>) checkBoxChild;
+                applyCheckedPaths(typed, selected);
+            }
+        }
     }
 
     private void bindCheckboxListeners(CheckBoxTreeItem<RestoreNode> node, Runnable onChange) {
@@ -865,6 +921,13 @@ public class KeeplyAgentApp extends Application {
             }
         }
         return root;
+    }
+
+    private RestoreNode buildRestoreTreeItems(String sourcePath, List<com.keeply.agent.api.BackendClient.SnapshotFileItem> files) {
+        List<com.keeply.agent.model.FileManifest> mapped = files.stream()
+                .map(file -> new com.keeply.agent.model.FileManifest(file.path(), file.size(), file.lastModified(), "", List.of()))
+                .toList();
+        return buildRestoreTree(sourcePath, mapped);
     }
 
     private RestoreNode getOrCreateNode(RestoreNode parent, String label, String fullPath, boolean isDirectory, long size, java.time.Instant lastModified) {

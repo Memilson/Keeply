@@ -57,6 +57,7 @@ final class DaemonProcessManager {
         List<String> command = new ArrayList<>();
         command.add(javaBin);
         command.add("--enable-native-access=ALL-UNNAMED");
+        command.add("-Xmx128m");
         command.add("-cp");
         command.add(classpath);
         command.add("com.keeply.agent.KeeplyAgentDaemonApp");

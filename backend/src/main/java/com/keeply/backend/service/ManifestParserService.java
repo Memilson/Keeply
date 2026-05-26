@@ -3,12 +3,12 @@ package com.keeply.backend.service;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonToken;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.keeply.backend.dto.ManifestParsingDtos;
 import com.keeply.backend.model.FileChunk;
 import com.keeply.backend.model.Snapshot;
 import com.keeply.backend.model.SnapshotFile;
 import com.keeply.backend.model.SnapshotStatus;
 import com.keeply.backend.repository.SnapshotFileRepository;
+import com.keeply.backend.repository.FileChunkRepository;
 import com.keeply.backend.repository.SnapshotRepository;
 import jakarta.persistence.EntityManager;
 import org.slf4j.Logger;
@@ -21,6 +21,7 @@ import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.time.Instant;
 import java.util.zip.GZIPInputStream;
 
 @Service
@@ -28,17 +29,20 @@ public class ManifestParserService {
     private static final Logger log = LoggerFactory.getLogger(ManifestParserService.class);
     private final SnapshotRepository snapshots;
     private final SnapshotFileRepository snapshotFiles;
+    private final FileChunkRepository fileChunks;
     private final ObjectStorageService storage;
     private final ObjectMapper mapper;
     private final EntityManager entityManager;
 
     public ManifestParserService(SnapshotRepository snapshots,
                                  SnapshotFileRepository snapshotFiles,
+                                 FileChunkRepository fileChunks,
                                  ObjectStorageService storage,
                                  ObjectMapper mapper,
                                  EntityManager entityManager) {
         this.snapshots = snapshots;
         this.snapshotFiles = snapshotFiles;
+        this.fileChunks = fileChunks;
         this.storage = storage;
         this.mapper = mapper;
         this.entityManager = entityManager;
@@ -60,47 +64,21 @@ public class ManifestParserService {
             // 2. Parsing em streaming para evitar OOM e respeitar o Mandato 1
             JsonParser parser = mapper.getFactory().createParser(gis);
             
-            List<SnapshotFile> batch = new ArrayList<>();
+            List<FileChunk> chunkBatch = new ArrayList<>(250);
             int count = 0;
 
-            while (parser.nextToken() != JsonToken.END_OBJECT) {
-                String fieldName = parser.getCurrentName();
-                if ("files".equals(fieldName)) {
-                    parser.nextToken(); // Entra no array
+            while (parser.nextToken() != null) {
+                if (parser.currentToken() == JsonToken.FIELD_NAME && "files".equals(parser.currentName())) {
+                    parser.nextToken();
                     while (parser.nextToken() != JsonToken.END_ARRAY) {
-                        ManifestParsingDtos.FileManifest fm = mapper.readValue(parser, ManifestParsingDtos.FileManifest.class);
-                        
-                        SnapshotFile sf = new SnapshotFile();
-                        sf.snapshot = snapshot;
-                        sf.path = fm.path();
-                        sf.size = fm.size();
-                        sf.lastModified = fm.lastModified();
-                        sf.sha256 = fm.sha256();
-                        sf.chunks = new ArrayList<>();
-
-                        for (ManifestParsingDtos.ManifestChunk mc : fm.chunks()) {
-                            FileChunk fc = new FileChunk();
-                            fc.snapshotFile = sf;
-                            fc.chunkIndex = mc.index();
-                            fc.chunkHash = mc.hash();
-                            fc.originalSize = mc.originalSize();
-                            fc.compressedSize = mc.compressedSize();
-                            sf.chunks.add(fc);
-                        }
-
-                        batch.add(sf);
+                        parseFile(parser, snapshot, chunkBatch);
                         count++;
-
-                        if (batch.size() >= 100) {
-                            saveBatch(batch, snapshotId);
-                            batch.clear();
-                        }
                     }
                 }
             }
             
-            if (!batch.isEmpty()) {
-                saveBatch(batch, snapshotId);
+            if (!chunkBatch.isEmpty()) {
+                saveChunkBatch(chunkBatch);
             }
 
             snapshot.status = SnapshotStatus.COMPLETED;
@@ -114,10 +92,58 @@ public class ManifestParserService {
         }
     }
 
-    private void saveBatch(List<SnapshotFile> batch, UUID snapshotId) {
-        log.info("Salvando lote de {} arquivos para o snapshot: {}", batch.size(), snapshotId);
-        snapshotFiles.saveAll(batch);
-        // Limpa o persistence context para evitar lentidão progressiva (O(N^2) checks)
+    private void parseFile(JsonParser parser, Snapshot snapshot, List<FileChunk> chunkBatch) throws java.io.IOException {
+        SnapshotFile file = new SnapshotFile();
+        file.snapshot = snapshot;
+        while (parser.nextToken() != JsonToken.END_OBJECT) {
+            if (parser.currentToken() != JsonToken.FIELD_NAME) {
+                continue;
+            }
+            String name = parser.currentName();
+            JsonToken value = parser.nextToken();
+            switch (name) {
+                case "path" -> file.path = parser.getValueAsString();
+                case "size" -> file.size = parser.getLongValue();
+                case "lastModified" -> file.lastModified = Instant.parse(parser.getValueAsString());
+                case "sha256" -> file.sha256 = parser.getValueAsString();
+                case "chunks" -> {
+                    snapshotFiles.save(file);
+                    while (parser.nextToken() != JsonToken.END_ARRAY) {
+                        chunkBatch.add(parseChunk(parser, file));
+                        if (chunkBatch.size() >= 250) {
+                            saveChunkBatch(chunkBatch);
+                            chunkBatch.clear();
+                        }
+                    }
+                }
+                default -> parser.skipChildren();
+            }
+        }
+        if (file.id == null) {
+            snapshotFiles.save(file);
+        }
+    }
+
+    private FileChunk parseChunk(JsonParser parser, SnapshotFile file) throws java.io.IOException {
+        FileChunk chunk = new FileChunk();
+        chunk.snapshotFile = file;
+        while (parser.nextToken() != JsonToken.END_OBJECT) {
+            if (parser.currentToken() != JsonToken.FIELD_NAME) continue;
+            String name = parser.currentName();
+            parser.nextToken();
+            switch (name) {
+                case "index" -> chunk.chunkIndex = parser.getIntValue();
+                case "hash" -> chunk.chunkHash = parser.getValueAsString();
+                case "originalSize" -> chunk.originalSize = parser.getLongValue();
+                case "compressedSize" -> chunk.compressedSize = parser.getLongValue();
+                default -> parser.skipChildren();
+            }
+        }
+        return chunk;
+    }
+
+    private void saveChunkBatch(List<FileChunk> batch) {
+        fileChunks.saveAll(batch);
         entityManager.flush();
         entityManager.clear();
     }

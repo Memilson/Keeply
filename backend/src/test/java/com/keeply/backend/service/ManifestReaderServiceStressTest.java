@@ -10,6 +10,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -19,6 +21,8 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 
 class ManifestReaderServiceStressTest {
 
@@ -52,7 +56,19 @@ class ManifestReaderServiceStressTest {
         }
 
         when(snapshots.findByIdAndDeviceUserId(snapshotId, userId)).thenReturn(Optional.of(snapshot));
-        when(snapshotFiles.findBySnapshotId(snapshotId)).thenReturn(files);
+        when(snapshotFiles.findBySnapshotId(eq(snapshotId), any(Pageable.class))).thenAnswer(invocation -> {
+            Pageable pageable = invocation.getArgument(1);
+            int start = Math.min((int) pageable.getOffset(), files.size());
+            int end = Math.min(start + pageable.getPageSize(), files.size());
+            return new PageImpl<>(files.subList(start, end), pageable, files.size());
+        });
+        when(snapshotFiles.findBySnapshotIdAndPathContainingIgnoreCase(eq(snapshotId), any(String.class), any(Pageable.class)))
+                .thenAnswer(invocation -> {
+                    String search = invocation.getArgument(1);
+                    Pageable pageable = invocation.getArgument(2);
+                    List<SnapshotFile> found = files.stream().filter(f -> f.path.contains(search)).toList();
+                    return new PageImpl<>(found, pageable, found.size());
+                });
 
         SnapshotDtos.SnapshotFileListResponse firstPage = service.listFiles(userId, snapshotId, 0, 100, null);
         assertEquals(100, firstPage.items().size());

@@ -15,7 +15,11 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.util.Base64;
+import java.io.InputStream;
+import java.nio.file.Path;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -154,58 +158,35 @@ public class BackendClient {
         }
     }
 
-    public BatchUploadStats uploadChunksBatch(List<ChunkPayload> chunks) {
-        if (chunks == null || chunks.isEmpty()) {
-            return new BatchUploadStats(0, 0, 0, 0);
-        }
+    public ChunkUploadResult uploadChunk(ChunkPayload chunk) {
         String traceId = UUID.randomUUID().toString();
         try {
-            List<Map<String, Object>> items = chunks.stream().map(chunk -> {
-                Map<String, Object> item = new java.util.LinkedHashMap<>();
-                item.put("hash", chunk.hash());
-                item.put("originalSize", chunk.originalSize());
-                item.put("compressedSize", chunk.compressedSize());
-                item.put("compressedBytesBase64", Base64.getEncoder().encodeToString(chunk.compressedBytes()));
-                return item;
-            }).toList();
-            String body = mapper.writeValueAsString(Map.of("items", items));
-            HttpResponse<String> response = sendJson("/api/chunks/upload-batch", body, "POST", traceId);
+            HttpRequest request = authorized("/api/chunks/" + chunk.hash(), traceId)
+                    .header("Content-Type", "application/gzip")
+                    .header("X-Keeply-Original-Size", Long.toString(chunk.originalSize()))
+                    .PUT(HttpRequest.BodyPublishers.ofByteArray(chunk.compressedBytes()))
+                    .build();
+            HttpResponse<String> response = sendWithRefreshRetry(request, traceId);
+            require2xx(response);
             Map<String, Object> json = mapper.readValue(response.body(), new TypeReference<>() {});
-            @SuppressWarnings("unchecked")
-            List<Map<String, Object>> results = (List<Map<String, Object>>) json.getOrDefault("results", List.of());
-
-            int stored = 0;
-            int duplicates = 0;
-            int failed = 0;
-            for (Map<String, Object> result : results) {
-                boolean storedItem = Boolean.TRUE.equals(result.get("stored"));
-                String error = result.get("error") == null ? null : result.get("error").toString();
-                if (storedItem) {
-                    stored++;
-                } else if (error == null || error.isBlank()) {
-                    duplicates++;
-                } else {
-                    failed++;
-                    String hash = result.get("hash") == null ? "desconhecido" : result.get("hash").toString();
-                    throw new IllegalStateException("Falha no chunk %s: %s".formatted(hash, error));
-                }
-            }
-            return new BatchUploadStats(results.size(), stored, duplicates, failed);
+            return new ChunkUploadResult((String) json.get("hash"), Boolean.TRUE.equals(json.get("stored")));
         } catch (Exception e) {
-            throw new IllegalStateException("Falha ao enviar lote de chunks [Trace-ID: %s]".formatted(traceId), e);
+            throw new IllegalStateException("Falha ao enviar chunk %s [Trace-ID: %s]".formatted(chunk.hash(), traceId), e);
         }
     }
 
-    public void completeSnapshot(UUID snapshotId, String manifestJson, long totalFiles, long totalOriginalSize, long totalCompressedSize) {
+    public void completeSnapshot(UUID snapshotId, Path manifestGzip, long totalFiles, long totalOriginalSize, long totalCompressedSize) {
         String traceId = UUID.randomUUID().toString();
         try {
-            String body = mapper.writeValueAsString(Map.of(
-                    "manifestJson", manifestJson,
-                    "totalFiles", totalFiles,
-                    "totalOriginalSize", totalOriginalSize,
-                    "totalCompressedSize", totalCompressedSize
-            ));
-            sendJson("/api/snapshots/" + snapshotId + "/complete", body, "POST", traceId);
+            HttpRequest request = authorized("/api/snapshots/" + snapshotId + "/complete", traceId)
+                    .header("Content-Type", "application/gzip")
+                    .header("X-Keeply-Total-Files", Long.toString(totalFiles))
+                    .header("X-Keeply-Total-Original-Size", Long.toString(totalOriginalSize))
+                    .header("X-Keeply-Total-Compressed-Size", Long.toString(totalCompressedSize))
+                    .POST(HttpRequest.BodyPublishers.ofFile(manifestGzip))
+                    .build();
+            HttpResponse<String> response = sendWithRefreshRetry(request, traceId);
+            require2xx(response);
         } catch (Exception e) {
             throw new IllegalStateException("Falha ao concluir snapshot %s [Trace-ID: %s]".formatted(snapshotId, traceId), e);
         }
@@ -232,12 +213,31 @@ public class BackendClient {
         }
     }
 
-    public String downloadManifest(UUID snapshotId) {
+    public SnapshotFilePage listSnapshotFiles(UUID snapshotId, int page, int size, String search) {
+        String traceId = UUID.randomUUID().toString();
+        try {
+            String path = "/api/snapshots/" + snapshotId + "/files?page=" + page + "&size=" + size;
+            if (search != null && !search.isBlank()) {
+                path += "&search=" + URLEncoder.encode(search, StandardCharsets.UTF_8);
+            }
+            HttpRequest request = authorized(path, traceId).GET().build();
+            HttpResponse<String> response = sendWithRefreshRetry(request, traceId);
+            require2xx(response);
+            return mapper.readValue(response.body(), SnapshotFilePage.class);
+        } catch (Exception e) {
+            throw new IllegalStateException("Falha ao listar arquivos do snapshot [Trace-ID: %s]".formatted(traceId), e);
+        }
+    }
+
+    public InputStream openManifestStream(UUID snapshotId) {
         String traceId = UUID.randomUUID().toString();
         try {
             HttpRequest request = authorized("/api/snapshots/" + snapshotId + "/manifest", traceId).GET().build();
-            HttpResponse<String> response = sendWithRefreshRetry(request, traceId);
-            require2xx(response);
+            HttpResponse<InputStream> response = sendStreamWithRefreshRetry(request, traceId);
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                response.body().close();
+                throw new IllegalStateException("HTTP " + response.statusCode());
+            }
             return response.body();
         } catch (Exception e) {
             throw new IllegalStateException("Falha ao baixar manifesto [Trace-ID: %s]".formatted(traceId), e);
@@ -317,6 +317,16 @@ public class BackendClient {
         return response;
     }
 
+    private HttpResponse<InputStream> sendStreamWithRefreshRetry(HttpRequest request, String traceId) throws Exception {
+        HttpResponse<InputStream> response = http.send(request, HttpResponse.BodyHandlers.ofInputStream());
+        if (response.statusCode() == 401 && session != null && !blank(session.refreshToken())) {
+            response.body().close();
+            refreshSession();
+            response = http.send(retryWithUpdatedAccessToken(request), HttpResponse.BodyHandlers.ofInputStream());
+        }
+        return response;
+    }
+
     private HttpResponse<String> sendAndLog(HttpRequest request, String traceId) throws Exception {
         logger.debug("[{}] Request: {} {}", traceId, request.method(), request.uri());
         HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
@@ -368,5 +378,8 @@ public class BackendClient {
         return value == null || value.isBlank();
     }
 
-    public record BatchUploadStats(int sent, int stored, int duplicate, int failed) {}
+    public record ChunkUploadResult(String hash, boolean stored) {}
+    public record SnapshotFileItem(String path, long size, Instant lastModified) {}
+    public record PageMetadata(long totalElements, int page, int size) {}
+    public record SnapshotFilePage(List<SnapshotFileItem> items, PageMetadata pagination) {}
 }
