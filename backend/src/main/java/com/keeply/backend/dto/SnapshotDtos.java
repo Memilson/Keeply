@@ -13,6 +13,13 @@ public final class SnapshotDtos {
 
     public record FailSnapshotRequest(String errorMessage) {}
 
+    public record CompleteSnapshotRequest(
+            UUID transferSessionId,
+            long totalFiles,
+            long totalOriginalSize,
+            long totalCompressedSize
+    ) {}
+
     public record SnapshotResponse(
             UUID id,
             UUID deviceId,
@@ -24,6 +31,11 @@ public final class SnapshotDtos {
             Instant startedAt,
             Instant completedAt,
             String errorMessage
+    ) {}
+
+    public record StartSnapshotResponse(
+            SnapshotResponse snapshot,
+            TransferSessionDtos.Credentials transfer
     ) {}
 
     public record SnapshotFileItem(

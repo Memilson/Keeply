@@ -6,6 +6,8 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.keeply.agent.model.DeviceSession;
 import com.keeply.agent.model.ProtectionPlan;
 import com.keeply.agent.model.SnapshotSummary;
+import com.keeply.agent.model.StartedSnapshot;
+import com.keeply.agent.model.TransferCredentials;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -33,7 +35,10 @@ public class BackendClient {
     private final HttpClient http = HttpClient.newBuilder()
             .connectTimeout(java.time.Duration.ofSeconds(15))
             .build();
-    private final ObjectMapper mapper = new ObjectMapper().registerModule(new JavaTimeModule()).findAndRegisterModules();
+    private final ObjectMapper mapper = new ObjectMapper()
+            .registerModule(new JavaTimeModule())
+            .findAndRegisterModules()
+            .configure(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
     private final String baseUrl;
     private volatile DeviceSession session;
 
@@ -133,13 +138,12 @@ public class BackendClient {
         }
     }
 
-    public UUID startSnapshot(UUID deviceId, String sourcePath) {
+    public StartedSnapshot startSnapshot(UUID deviceId, String sourcePath) {
         String traceId = UUID.randomUUID().toString();
         try {
             String body = mapper.writeValueAsString(Map.of("deviceId", deviceId.toString(), "sourcePath", sourcePath));
             HttpResponse<String> response = sendJson("/api/snapshots/start", body, "POST", traceId);
-            Map<String, Object> json = mapper.readValue(response.body(), new TypeReference<>() {});
-            return UUID.fromString((String) json.get("id"));
+            return mapper.readValue(response.body(), StartedSnapshot.class);
         } catch (Exception e) {
             throw new IllegalStateException("Falha ao iniciar snapshot [Trace-ID: %s]".formatted(traceId), e);
         }
@@ -157,38 +161,35 @@ public class BackendClient {
         }
     }
 
-    public ChunkUploadResult uploadChunk(String hash, long originalSize, Path compressedFile) {
+    public void completeSnapshot(UUID snapshotId, UUID transferSessionId, long totalFiles, long totalOriginalSize, long totalCompressedSize) {
         String traceId = UUID.randomUUID().toString();
         try {
-            HttpRequest request = authorized("/api/chunks/" + hash, traceId)
-                    .header("Content-Type", "application/gzip")
-                    .header("X-Keeply-Original-Size", Long.toString(originalSize))
-                    .PUT(HttpRequest.BodyPublishers.ofFile(compressedFile))
-                    .build();
-            HttpResponse<String> response = sendWithRefreshRetry(request, traceId);
-            require2xx(response);
-            Map<String, Object> json = mapper.readValue(response.body(), new TypeReference<>() {});
-            return new ChunkUploadResult((String) json.get("hash"), Boolean.TRUE.equals(json.get("stored")));
-        } catch (Exception e) {
-            throw new IllegalStateException("Falha ao enviar chunk %s [Trace-ID: %s]".formatted(hash, traceId), e);
-        }
-    }
-
-    public void completeSnapshot(UUID snapshotId, Path manifestGzip, long totalFiles, long totalOriginalSize, long totalCompressedSize) {
-        String traceId = UUID.randomUUID().toString();
-        try {
-            HttpRequest request = authorized("/api/snapshots/" + snapshotId + "/complete", traceId)
-                    .header("Content-Type", "application/gzip")
-                    .header("X-Keeply-Total-Files", Long.toString(totalFiles))
-                    .header("X-Keeply-Total-Original-Size", Long.toString(totalOriginalSize))
-                    .header("X-Keeply-Total-Compressed-Size", Long.toString(totalCompressedSize))
-                    .POST(HttpRequest.BodyPublishers.ofFile(manifestGzip))
-                    .build();
-            HttpResponse<String> response = sendWithRefreshRetry(request, traceId);
-            require2xx(response);
+            String body = mapper.writeValueAsString(Map.of(
+                    "transferSessionId", transferSessionId.toString(),
+                    "totalFiles", totalFiles,
+                    "totalOriginalSize", totalOriginalSize,
+                    "totalCompressedSize", totalCompressedSize
+            ));
+            sendJson("/api/snapshots/" + snapshotId + "/complete", body, "POST", traceId);
         } catch (Exception e) {
             throw new IllegalStateException("Falha ao concluir snapshot %s [Trace-ID: %s]".formatted(snapshotId, traceId), e);
         }
+    }
+
+    public TransferCredentials renewTransferSession(UUID transferSessionId) {
+        return transferRequest("/api/transfer-sessions/" + transferSessionId + "/renew");
+    }
+
+    public TransferCredentials startRestoreSession(UUID snapshotId) {
+        return transferRequest("/api/snapshots/" + snapshotId + "/restore-sessions");
+    }
+
+    public void finishTransferSession(UUID transferSessionId) {
+        emptyPost("/api/transfer-sessions/" + transferSessionId + "/finish");
+    }
+
+    public void cancelTransferSession(UUID transferSessionId) {
+        emptyPost("/api/transfer-sessions/" + transferSessionId + "/cancel");
     }
 
     public void failSnapshot(UUID snapshotId, String errorMessage) {
@@ -228,32 +229,22 @@ public class BackendClient {
         }
     }
 
-    public InputStream openManifestStream(UUID snapshotId) {
+    private TransferCredentials transferRequest(String path) {
         String traceId = UUID.randomUUID().toString();
         try {
-            HttpRequest request = authorized("/api/snapshots/" + snapshotId + "/manifest", traceId).GET().build();
-            HttpResponse<InputStream> response = sendStreamWithRefreshRetry(request, traceId);
-            if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                response.body().close();
-                throw new IllegalStateException("HTTP " + response.statusCode());
-            }
-            return response.body();
+            HttpResponse<String> response = sendJson(path, "{}", "POST", traceId);
+            return mapper.readValue(response.body(), TransferCredentials.class);
         } catch (Exception e) {
-            throw new IllegalStateException("Falha ao baixar manifesto [Trace-ID: %s]".formatted(traceId), e);
+            throw new IllegalStateException("Falha ao obter credencial de transferência [Trace-ID: %s]".formatted(traceId), e);
         }
     }
 
-    public byte[] downloadChunk(String hash) {
+    private void emptyPost(String path) {
         String traceId = UUID.randomUUID().toString();
         try {
-            HttpRequest request = authorized("/api/chunks/" + hash + "/download", traceId).GET().build();
-            HttpResponse<byte[]> response = sendBytesWithRefreshRetry(request, traceId);
-            if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                throw new IllegalStateException("HTTP " + response.statusCode());
-            }
-            return response.body();
+            sendJson(path, "{}", "POST", traceId);
         } catch (Exception e) {
-            throw new IllegalStateException("Falha ao baixar chunk %s [Trace-ID: %s]".formatted(hash, traceId), e);
+            throw new IllegalStateException("Falha ao encerrar sessão de transferência [Trace-ID: %s]".formatted(traceId), e);
         }
     }
 

@@ -17,6 +17,7 @@ public class JwtService {
     private static final String CLAIM_EMAIL = "email";
     private static final String CLAIM_TYPE = "typ";
     private static final String CLAIM_INSTALLATION_ID = "installationId";
+    private static final String CLAIM_DEVICE_ID = "deviceId";
 
     private final SecretKey key;
     private final long accessExpirationMinutes;
@@ -36,12 +37,17 @@ public class JwtService {
     }
 
     public String generateAccessToken(UUID userId, String email) {
-        return generateToken(userId, email, "access", null,
+        return generateToken(userId, email, "access", null, null,
+                Instant.now().plusSeconds(accessExpirationMinutes * 60));
+    }
+
+    public String generateDeviceAccessToken(UUID userId, String email, UUID deviceId) {
+        return generateToken(userId, email, "access", null, deviceId,
                 Instant.now().plusSeconds(accessExpirationMinutes * 60));
     }
 
     public String generateRefreshToken(UUID userId, String email, String installationId) {
-        return generateToken(userId, email, "refresh", installationId,
+        return generateToken(userId, email, "refresh", installationId, null,
                 Instant.now().plusSeconds(refreshExpirationDays * 24 * 60 * 60));
     }
 
@@ -63,7 +69,7 @@ public class JwtService {
         return new RefreshPrincipal(principal.userId(), principal.email(), installationId);
     }
 
-    private String generateToken(UUID userId, String email, String type, String installationId, Instant expiresAt) {
+    private String generateToken(UUID userId, String email, String type, String installationId, UUID deviceId, Instant expiresAt) {
         Instant now = Instant.now();
         var builder = Jwts.builder()
                 .subject(userId.toString())
@@ -73,6 +79,9 @@ public class JwtService {
                 .expiration(Date.from(expiresAt));
         if (installationId != null) {
             builder.claim(CLAIM_INSTALLATION_ID, installationId);
+        }
+        if (deviceId != null) {
+            builder.claim(CLAIM_DEVICE_ID, deviceId.toString());
         }
         return builder.signWith(key).compact();
     }
@@ -84,7 +93,8 @@ public class JwtService {
     private JwtPrincipal toPrincipal(Claims claims) {
         UUID userId = UUID.fromString(claims.getSubject());
         String email = claims.get(CLAIM_EMAIL, String.class);
-        return new JwtPrincipal(userId, email);
+        String deviceId = claims.get(CLAIM_DEVICE_ID, String.class);
+        return new JwtPrincipal(userId, email, deviceId == null ? null : UUID.fromString(deviceId));
     }
 
     public record RefreshPrincipal(UUID userId, String email, String deviceInstallationId) {

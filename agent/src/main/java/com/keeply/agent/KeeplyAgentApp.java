@@ -70,6 +70,7 @@ public class KeeplyAgentApp extends Application {
     private BorderPane appShell;
     private StackPane contentHost;
     private Label shellPageLabel;
+    private com.keeply.agent.ui.MainShellController mainShellController;
     private final Map<String, Node> appViews = new LinkedHashMap<>();
     private final Map<String, Button> navButtons = new LinkedHashMap<>();
     private Runnable restoreRefresh = () -> {};
@@ -121,6 +122,9 @@ public class KeeplyAgentApp extends Application {
             backend.setSession(session);
             deviceId = session.deviceId();
             status.setText("Conectado. Device: " + deviceId);
+            if (mainShellController != null && session.email() != null) {
+                mainShellController.setProfile(session.email());
+            }
         }
         updateAuthenticationNavigation(authenticated);
         showView(authenticated ? "Dashboard" : "Login");
@@ -176,6 +180,9 @@ public class KeeplyAgentApp extends Application {
 
                     ui(() -> {
                         status.setText("Conectado. Device: " + deviceId);
+                        if (mainShellController != null && session.email() != null) {
+                            mainShellController.setProfile(session.email());
+                        }
                         updateAuthenticationNavigation(true);
                         showView("Dashboard");
                     });
@@ -196,61 +203,31 @@ public class KeeplyAgentApp extends Application {
     }
 
     private BorderPane buildAppShell() {
-        BorderPane shell = new BorderPane();
-        shell.getStyleClass().add("app-shell");
-
-        VBox sidebar = new VBox(18);
-        sidebar.getStyleClass().add("app-sidebar");
-        sidebar.setPrefWidth(204);
-
-        Label brandName = new Label("Keeply");
-        brandName.getStyleClass().add("shell-brand");
-        HBox brand = new HBox(9, createKeeplySparkIcon(), brandName);
-        brand.setAlignment(Pos.CENTER_LEFT);
-        brand.getStyleClass().add("shell-brand-box");
-
-        VBox navigation = new VBox(5);
-        navigation.getStyleClass().add("shell-navigation");
-        navigation.getChildren().addAll(
-                navigationButton("Login", "Login", "login"),
-                navigationButton("Dashboard", "Inicio", "home"),
-                navigationButton("Backup", "Backups", "backup"),
-                navigationButton("Restore", "Restaurar", "restore"),
-                navigationButton("Configurações", "Configuracoes", "settings"),
-                navigationButton("Logs", "Atividade", "activity")
-        );
-
-        Region navigationSpacer = new Region();
-        VBox.setVgrow(navigationSpacer, Priority.ALWAYS);
-        VBox storageCard = new VBox(7);
-        storageCard.getStyleClass().add("storage-card");
-        Label protectionTitle = new Label("Protecao ativa");
-        protectionTitle.getStyleClass().add("section-title");
-        Label protectionCopy = new Label("Backups e snapshots\nsob seu controle.");
-        protectionCopy.getStyleClass().add("item-muted");
-        storageCard.getChildren().addAll(protectionTitle, protectionCopy);
-        sidebar.getChildren().addAll(brand, navigation, navigationSpacer, storageCard);
-
-        BorderPane workspace = new BorderPane();
-        workspace.getStyleClass().add("workspace");
-        HBox header = new HBox(14);
-        header.setAlignment(Pos.CENTER_LEFT);
-        header.getStyleClass().add("app-header");
-        shellPageLabel = new Label();
-        shellPageLabel.getStyleClass().add("app-context");
-        Region headerSpacer = new Region();
-        HBox.setHgrow(headerSpacer, Priority.ALWAYS);
-        status.getStyleClass().add("status-pill");
-        header.getChildren().addAll(shellPageLabel, headerSpacer, status);
-
-        contentHost = new StackPane();
-        contentHost.getStyleClass().add("content-host");
-        workspace.setTop(header);
-        workspace.setCenter(contentHost);
-
-        shell.setLeft(sidebar);
-        shell.setCenter(workspace);
-        return shell;
+        try {
+            javafx.fxml.FXMLLoader loader = new javafx.fxml.FXMLLoader(getClass().getResource("/fxml/MainShell.fxml"));
+            BorderPane shell = loader.load();
+            this.mainShellController = loader.getController();
+            this.mainShellController.setNavigationHandler(this::showView);
+            this.contentHost = this.mainShellController.getContentHost();
+            if (this.contentHost == null) {
+                 log("Erro: contentHost não encontrado no MainShell.fxml");
+                 this.contentHost = new StackPane();
+                 shell.setCenter(this.contentHost);
+            }
+            
+            navButtons.put("Login", new Button("Login"));
+            navButtons.put("Dashboard", (Button) shell.lookup("#btnInicio"));
+            navButtons.put("Backup", (Button) shell.lookup("#btnBackups"));
+            navButtons.put("Restore", (Button) shell.lookup("#btnRestaurar"));
+            navButtons.put("Configurações", (Button) shell.lookup("#btnConfiguracoes"));
+            navButtons.put("Logs", (Button) shell.lookup("#btnAtividade"));
+            
+            shellPageLabel = new Label();
+            return shell;
+        } catch (Exception e) {
+            e.printStackTrace();
+            return new BorderPane(new Label("Erro ao carregar MainShell.fxml"));
+        }
     }
 
     private Button navigationButton(String view, String label, String iconName) {
@@ -268,8 +245,11 @@ public class KeeplyAgentApp extends Application {
         if (content == null || contentHost == null) return;
         contentHost.getChildren().setAll(content);
         shellPageLabel.setText(view.equals("Restore") ? "Restauracao" : view);
-        navButtons.forEach((name, button) -> button.pseudoClassStateChanged(
-                javafx.css.PseudoClass.getPseudoClass("selected"), name.equals(view)));
+        navButtons.forEach((name, button) -> {
+            if (button != null) {
+                button.pseudoClassStateChanged(javafx.css.PseudoClass.getPseudoClass("selected"), name.equals(view));
+            }
+        });
         if ("Restore".equals(view)) {
             restoreRefresh.run();
         }
@@ -277,100 +257,45 @@ public class KeeplyAgentApp extends Application {
 
     private void updateAuthenticationNavigation(boolean authenticated) {
         navButtons.forEach((view, button) -> {
-            boolean shown = authenticated ? !"Login".equals(view) : "Login".equals(view);
-            button.setVisible(shown);
-            button.setManaged(shown);
+            if (button != null) {
+                boolean shown = authenticated ? !"Login".equals(view) : "Login".equals(view);
+                button.setVisible(shown);
+                button.setManaged(shown);
+            }
         });
     }
 
-    private Pane dashboardView() {
-        BorderPane root = new BorderPane();
-        root.getStyleClass().add("dashboard-root");
-        root.setPadding(new Insets(16));
+        private Pane dashboardView() {
+        try {
+            javafx.fxml.FXMLLoader loader = new javafx.fxml.FXMLLoader(getClass().getResource("/fxml/Dashboard.fxml"));
+            Pane root = loader.load();
+            com.keeply.agent.ui.DashboardController controller = loader.getController();
+            
+            // Simula um refresh de dados (opcional, pode ser movido para Timeline)
+            Thread.startVirtualThread(() -> {
+                if (backend != null && deviceId != null) {
+                    try {
+                        var snapshots = backend.listSnapshots();
+                        long totalFiles = snapshots.stream().mapToLong(com.keeply.agent.model.SnapshotSummary::totalFiles).sum();
+                        String latest = snapshots.isEmpty() ? "Sem snapshots" : snapshots.getFirst().status();
+                        String lastDate = snapshots.isEmpty() ? "Nunca" : "Hoje, 09:42"; // Mock
+                        
+                        var optPlan = backend.getDevicePlan(deviceId);
+                        List<String> currentSources = optPlan.isPresent() ? optPlan.get().sources() : parseSources(backupSourcesConfig.getText());
 
-        VBox content = new VBox(12);
-        HBox header = new HBox(12);
-        header.setAlignment(Pos.CENTER_LEFT);
-        Label title = new Label("Dashboard");
-        title.getStyleClass().add("page-title");
-        Label subtitle = new Label("Visão geral do agente e snapshots");
-        subtitle.getStyleClass().add("muted");
-        VBox heading = new VBox(2, title, subtitle);
-        Label connectionChip = new Label(deviceId == null ? "Nao conectado" : "Protegido");
-        connectionChip.getStyleClass().add("success-pill");
-        Region spacer = new Region();
-        HBox.setHgrow(spacer, Priority.ALWAYS);
-        Button refresh = new Button("Atualizar");
-        refresh.getStyleClass().add("btn-primary");
-        header.getChildren().addAll(heading, spacer, connectionChip, refresh);
-
-        GridPane cards = new GridPane();
-        cards.setHgap(12);
-        cards.setVgap(12);
-        Label connValue = new Label("Desconectado");
-        Label backupValue = new Label("Sem dados");
-        Label countValue = new Label("0");
-        Label filesValue = new Label("0");
-        cards.add(metricCard("Conexão", connValue), 0, 0);
-        cards.add(metricCard("Último status", backupValue), 1, 0);
-        cards.add(metricCard("Snapshots", countValue), 2, 0);
-        cards.add(metricCard("Arquivos protegidos", filesValue), 3, 0);
-
-        HBox lower = new HBox(12);
-        VBox recentSnapshots = panelWithTitle("Snapshots recentes");
-        ListView<String> snapshotsList = new ListView<>(FXCollections.observableArrayList("Sem dados"));
-        snapshotsList.getStyleClass().add("snapshot-list");
-        VBox.setVgrow(snapshotsList, Priority.ALWAYS);
-        recentSnapshots.getChildren().add(snapshotsList);
-
-        VBox activity = panelWithTitle("Atividade recente");
-        ListView<String> activityList = new ListView<>(FXCollections.observableArrayList("Aguardando atualização"));
-        activityList.getStyleClass().add("snapshot-list");
-        VBox.setVgrow(activityList, Priority.ALWAYS);
-        activity.getChildren().add(activityList);
-
-        HBox.setHgrow(recentSnapshots, Priority.ALWAYS);
-        HBox.setHgrow(activity, Priority.ALWAYS);
-        lower.getChildren().addAll(recentSnapshots, activity);
-        VBox.setVgrow(lower, Priority.ALWAYS);
-
-        Label footer = new Label("Status: pronto");
-        footer.getStyleClass().add("footer-status");
-
-        refresh.setOnAction(e -> {
-            if (!ready()) {
-                return;
-            }
-            runAsync(() -> {
-                List<SnapshotSummary> snapshots = backend.listSnapshots();
-                long totalFiles = snapshots.stream().mapToLong(SnapshotSummary::totalFiles).sum();
-                String currentConnection = deviceId == null ? "Desconectado" : "Conectado";
-                String latestStatus = snapshots.isEmpty() ? "Sem snapshots" : snapshots.getFirst().status();
-                List<String> snapshotLines = snapshots.stream()
-                        .limit(8)
-                        .map(s -> s.id().toString().substring(0, 8) + " • " + s.status() + " • " + s.totalFiles() + " arqs")
-                        .toList();
-                List<String> activityLines = snapshots.stream()
-                        .limit(8)
-                        .map(s -> "Origem: " + s.sourcePath())
-                        .toList();
-
-                ui(() -> {
-                    connValue.setText(currentConnection);
-                    backupValue.setText(latestStatus);
-                    countValue.setText(String.valueOf(snapshots.size()));
-                    filesValue.setText(String.valueOf(totalFiles));
-                    snapshotsList.getItems().setAll(snapshotLines.isEmpty() ? List.of("Sem snapshots") : snapshotLines);
-                    activityList.getItems().setAll(activityLines.isEmpty() ? List.of("Nenhuma atividade recente") : activityLines);
-                    connectionChip.setText(deviceId == null ? "Nao conectado" : "Tudo protegido");
-                    footer.setText("Status: sincronizado");
-                });
+                        javafx.application.Platform.runLater(() -> {
+                            controller.updateStats(lastDate, String.valueOf(snapshots.size()), "256");
+                            controller.setFolders(currentSources);
+                        });
+                    } catch (Exception e) {}
+                }
             });
-        });
 
-        content.getChildren().addAll(header, cards, lower, footer);
-        root.setCenter(content);
-        return root;
+            return root;
+        } catch (Exception e) {
+            e.printStackTrace();
+            return new VBox(new Label("Erro ao carregar Dashboard.fxml"));
+        }
     }
 
     private Pane backupView(Stage stage) {

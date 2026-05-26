@@ -4,14 +4,10 @@ package com.keeply.backend.controller;
 import com.keeply.backend.dto.SnapshotDtos;
 import com.keeply.backend.service.ManifestReaderService;
 import com.keeply.backend.service.SnapshotService;
+import com.keeply.backend.service.TransferCredentialBroker;
 import com.keeply.backend.util.CurrentUser;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
-import jakarta.servlet.http.HttpServletRequest;
 
-import java.io.InputStream;
 import java.util.List;
 import java.util.UUID;
 
@@ -20,27 +16,35 @@ import java.util.UUID;
 public class SnapshotController {
     private final SnapshotService snapshots;
     private final ManifestReaderService manifestReader;
+    private final TransferCredentialBroker transferBroker;
 
-    public SnapshotController(SnapshotService snapshots, ManifestReaderService manifestReader) {
+    public SnapshotController(SnapshotService snapshots, ManifestReaderService manifestReader, TransferCredentialBroker transferBroker) {
         this.snapshots = snapshots;
         this.manifestReader = manifestReader;
+        this.transferBroker = transferBroker;
     }
 
     @PostMapping("/start")
-    public SnapshotDtos.SnapshotResponse start(@RequestBody SnapshotDtos.StartSnapshotRequest request) {
-        return snapshots.start(CurrentUser.get().userId(), request);
+    public SnapshotDtos.StartSnapshotResponse start(@RequestBody SnapshotDtos.StartSnapshotRequest request) {
+        return snapshots.start(CurrentUser.get(), request);
     }
 
-    @PostMapping(value = "/{snapshotId}/complete", consumes = "application/gzip")
+    @PostMapping("/{snapshotId}/complete")
     public SnapshotDtos.SnapshotResponse complete(
             @PathVariable UUID snapshotId,
-            @RequestHeader("X-Keeply-Total-Files") long totalFiles,
-            @RequestHeader("X-Keeply-Total-Original-Size") long totalOriginalSize,
-            @RequestHeader("X-Keeply-Total-Compressed-Size") long totalCompressedSize,
-            HttpServletRequest request
-    ) throws java.io.IOException {
-        return snapshots.complete(CurrentUser.get().userId(), snapshotId, request.getInputStream(),
-                request.getContentLengthLong(), totalFiles, totalOriginalSize, totalCompressedSize);
+            @RequestBody SnapshotDtos.CompleteSnapshotRequest request
+    ) {
+        return snapshots.complete(CurrentUser.get(), snapshotId, request);
+    }
+
+    @PostMapping("/{snapshotId}/restore-sessions")
+    public com.keeply.backend.dto.TransferSessionDtos.Credentials restoreSession(@PathVariable UUID snapshotId) {
+        var principal = CurrentUser.get();
+        if (principal.deviceId() == null) {
+            throw new IllegalStateException("Token de dispositivo obrigatório para restore");
+        }
+        snapshots.assertRestorable(principal.userId(), snapshotId);
+        return transferBroker.openRestore(principal, principal.deviceId(), snapshotId);
     }
 
     @PostMapping("/{snapshotId}/fail")
@@ -68,14 +72,4 @@ public class SnapshotController {
         return manifestReader.listFiles(CurrentUser.get().userId(), snapshotId, page, pageSize, search);
     }
 
-    @GetMapping(value = "/{snapshotId}/manifest", produces = "application/json")
-    public ResponseEntity<StreamingResponseBody> manifest(@PathVariable UUID snapshotId) {
-        InputStream stream = snapshots.manifest(CurrentUser.get().userId(), snapshotId);
-        StreamingResponseBody body = output -> {
-            try (stream) {
-                stream.transferTo(output);
-            }
-        };
-        return ResponseEntity.ok().contentType(MediaType.APPLICATION_JSON).body(body);
-    }
 }

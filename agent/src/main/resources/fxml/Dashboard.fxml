@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+<?import javafx.scene.shape.SVGPath?>
+<?import javafx.scene.shape.Circle?>
+<?import javafx.scene.shape.Rectangle?>
+
+<VBox xmlns="http://javafx.com/javafx/17" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.keeply.agent.ui.DashboardController" spacing="20" style="-fx-padding: 24;">
+    <!-- Title Area -->
+    <HBox alignment="CENTER_LEFT" spacing="12">
+        <Label text="Resumo da proteção" styleClass="dashboard-title"/>
+        <Region HBox.hgrow="ALWAYS"/>
+        <HBox alignment="CENTER" spacing="6" styleClass="pill-success-outline">
+            <SVGPath content="M9 16.2L4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4L9 16.2z" style="-fx-fill: #16A34A;" scaleX="0.7" scaleY="0.7"/>
+            <Label text="Tudo protegido" style="-fx-text-fill: #16A34A; -fx-font-weight: 600; -fx-font-size: 13px;"/>
+        </HBox>
+    </HBox>
+
+    <!-- 4 Cards Row -->
+    <HBox spacing="16">
+        <!-- Card 1: Status do Backup -->
+        <VBox styleClass="dash-card" spacing="12" HBox.hgrow="ALWAYS" prefWidth="250">
+            <HBox spacing="12" alignment="CENTER_LEFT">
+                <StackPane styleClass="card-icon-wrapper, icon-violet">
+                    <SVGPath content="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm-2 16l-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9l-8 8z" style="-fx-fill: #6D47FF;"/>
+                </StackPane>
+                <VBox>
+                    <Label text="Status do Backup" styleClass="card-label"/>
+                    <Label text="Protegido" styleClass="card-value-success"/>
+                </VBox>
+            </HBox>
+            <VBox spacing="4" style="-fx-padding: 8 0 0 0;">
+                <Label fx:id="lblLastBackup" text="Último backup: Hoje, 09:42" styleClass="card-subtitle"/>
+                <Label text="Próximo: Automático" styleClass="card-subtitle"/>
+            </VBox>
+            <Region VBox.vgrow="ALWAYS"/>
+            <Button text="Fazer backup agora" styleClass="btn-outline-primary" maxWidth="Infinity"/>
+        </VBox>
+
+        <!-- Card 2: Snapshots -->
+        <VBox styleClass="dash-card" spacing="12" HBox.hgrow="ALWAYS" prefWidth="250">
+            <HBox spacing="12" alignment="CENTER_LEFT">
+                <StackPane styleClass="card-icon-wrapper, icon-indigo">
+                    <SVGPath content="M12 0l10 5-10 5L2 5l10-5zm0 12l-10-5v2l10 5 10-5V7l-10 5zm0 5l-10-5v2l10 5 10-5v-2l-10 5z" style="-fx-fill: #4e39df;"/>
+                </StackPane>
+                <VBox>
+                    <Label text="Snapshots" styleClass="card-label"/>
+                    <Label fx:id="lblSnapshotCount" text="24" styleClass="card-value"/>
+                </VBox>
+            </HBox>
+            <VBox spacing="4" style="-fx-padding: 8 0 0 0;">
+                <Label text="versões salvas" styleClass="card-subtitle"/>
+            </VBox>
+            <Region VBox.vgrow="ALWAYS"/>
+            <Button text="Ver histórico →" styleClass="btn-text-primary" alignment="CENTER_LEFT"/>
+        </VBox>
+
+        <!-- Card 3: Armazenamento -->
+        <VBox styleClass="dash-card" spacing="12" HBox.hgrow="ALWAYS" prefWidth="250">
+            <HBox spacing="12" alignment="CENTER_LEFT">
+                <StackPane styleClass="card-icon-wrapper, icon-indigo">
+                    <SVGPath content="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 14H4V6h16v12z M6 10h2v2H6zm0 4h8v2H6z" style="-fx-fill: #4e39df;"/>
+                </StackPane>
+                <VBox>
+                    <Label text="Armazenamento" styleClass="card-label"/>
+                    <HBox alignment="BASELINE_LEFT" spacing="4">
+                        <Label fx:id="lblStorageUsed" text="256" styleClass="card-value"/>
+                        <Label text="GB" style="-fx-font-size: 16px; -fx-font-weight: 700; -fx-text-fill: #0F172A;"/>
+                    </HBox>
+                </VBox>
+            </HBox>
+            <VBox spacing="4" style="-fx-padding: 8 0 0 0;">
+                <Label text="de 1 TB utilizado" styleClass="card-subtitle"/>
+            </VBox>
+            <Region VBox.vgrow="ALWAYS"/>
+            <Button text="Ver detalhes →" styleClass="btn-text-primary" alignment="CENTER_LEFT"/>
+        </VBox>
+
+        <!-- Card 4: Restauração rápida -->
+        <VBox styleClass="dash-card" spacing="12" HBox.hgrow="ALWAYS" prefWidth="250">
+            <HBox spacing="12" alignment="CENTER_LEFT">
+                <StackPane styleClass="card-icon-wrapper, icon-indigo">
+                    <SVGPath content="M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z" style="-fx-fill: #4e39df;"/>
+                </StackPane>
+                <VBox>
+                    <Label text="Restauração rápida" styleClass="card-label"/>
+                    <Label text="Pronto" styleClass="card-value"/>
+                </VBox>
+            </HBox>
+            <VBox spacing="4" style="-fx-padding: 8 0 0 0;">
+                <Label text="Seus arquivos podem ser&#10;recuperados a qualquer&#10;momento." styleClass="card-subtitle" wrapText="true"/>
+            </VBox>
+            <Region VBox.vgrow="ALWAYS"/>
+            <Button text="Testar restauração →" styleClass="btn-text-primary" alignment="CENTER_LEFT"/>
+        </VBox>
+    </HBox>
+
+    <!-- Lower Section -->
+    <HBox spacing="16" VBox.vgrow="ALWAYS">
+        <!-- Seus Arquivos -->
+        <VBox styleClass="dash-card" spacing="16" HBox.hgrow="ALWAYS" prefWidth="500">
+            <HBox alignment="CENTER_LEFT">
+                <Label text="Seus arquivos" styleClass="section-title-dash"/>
+                <Region HBox.hgrow="ALWAYS"/>
+                <HBox spacing="8" alignment="CENTER">
+                    <Label text="Ver todos" styleClass="link-text"/>
+                    <StackPane styleClass="icon-btn-small">
+                        <SVGPath content="M4 4h4v4H4zm6 0h4v4h-4zm6 0h4v4h-4zM4 10h4v4H4zm6 0h4v4h-4zm6 0h4v4h-4zM4 16h4v4H4zm6 0h4v4h-4zm6 0h4v4h-4z" styleClass="header-icon" scaleX="0.8" scaleY="0.8"/>
+                    </StackPane>
+                    <StackPane styleClass="icon-btn-small">
+                        <SVGPath content="M4 6h16v2H4zm0 5h16v2H4zm0 5h16v2H4z" styleClass="header-icon" scaleX="0.8" scaleY="0.8"/>
+                    </StackPane>
+                </HBox>
+            </HBox>
+            <HBox fx:id="foldersContainer" spacing="12">
+                <VBox fx:id="btnAddFolder" styleClass="folder-card-dashed" spacing="8" HBox.hgrow="ALWAYS" alignment="CENTER">
+                    <SVGPath content="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" style="-fx-fill: #6D47FF;"/>
+                    <Label text="Adicionar pasta" styleClass="link-text-small"/>
+                </VBox>
+            </HBox>
+        </VBox>
+
+        <!-- Snapshots recentes -->
+        <VBox styleClass="dash-card" spacing="16" HBox.hgrow="ALWAYS" prefWidth="400">
+            <HBox alignment="CENTER_LEFT">
+                <Label text="Snapshots recentes" styleClass="section-title-dash"/>
+                <Region HBox.hgrow="ALWAYS"/>
+                <Label text="Ver todos" styleClass="link-text"/>
+            </HBox>
+            <ListView fx:id="listSnapshots" styleClass="recent-snapshots-list" VBox.vgrow="ALWAYS" />
+        </VBox>
+    </HBox>
+
+    <!-- Bottom Banner -->
+    <HBox styleClass="banner-active" alignment="CENTER_LEFT" spacing="16">
+        <StackPane styleClass="icon-wrapper-large-violet">
+            <SVGPath content="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm-2 16l-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9l-8 8z" style="-fx-fill: white;" scaleX="1.2" scaleY="1.2"/>
+        </StackPane>
+        <VBox spacing="4">
+            <Label text="Proteção contínua ativa" styleClass="banner-title"/>
+            <Label text="Keeply monitora, protege e mantém seus dados seguros em segundo plano." styleClass="banner-subtitle"/>
+        </VBox>
+        <Region HBox.hgrow="ALWAYS"/>
+        <Button text="Ver atividade" styleClass="btn-text-primary" alignment="CENTER_LEFT">
+            <graphic>
+                <SVGPath content="M16 6l2.29 2.29-4.88 4.88-4-4L2 16.59 3.41 18l6-6 4 4 6.3-6.29L22 12V6z" styleClass="header-icon" scaleX="0.8" scaleY="0.8"/>
+            </graphic>
+        </Button>
+    </HBox>
+</VBox>

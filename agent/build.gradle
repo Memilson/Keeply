@@ -10,6 +10,7 @@ dependencies {
     implementation 'com.cronutils:cron-utils:9.2.1'
     implementation 'org.xerial:sqlite-jdbc:3.49.1.0'
     implementation 'org.slf4j:slf4j-simple:2.0.13'
+    implementation 'io.minio:minio:8.5.17'
     
     // Security & Keyring
     implementation 'com.github.javakeyring:java-keyring:1.0.2'
@@ -35,7 +36,7 @@ tasks.named('run') {
 
 javafx {
     version = '25'
-    modules = [ 'javafx.controls' ]
+    modules = [ 'javafx.controls', 'javafx.fxml' ]
 }
 
 tasks.register('runDaemon', JavaExec) {

@@ -4,12 +4,12 @@ package com.keeply.backend.service;
 import com.keeply.backend.dto.SnapshotDtos;
 import com.keeply.backend.model.*;
 import com.keeply.backend.repository.*;
+import com.keeply.backend.security.JwtPrincipal;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.io.InputStream;
 import java.time.Instant;
 import java.util.*;
 
@@ -20,21 +20,24 @@ public class SnapshotService {
     private final DeviceRepository devices;
     private final ObjectStorageService storage;
     private final ManifestParserService manifestParser;
+    private final TransferCredentialBroker transferBroker;
 
     public SnapshotService(SnapshotRepository snapshots,
                            DeviceRepository devices,
                            ObjectStorageService storage,
-                           ManifestParserService manifestParser) {
+                           ManifestParserService manifestParser,
+                           TransferCredentialBroker transferBroker) {
         this.snapshots = snapshots;
         this.devices = devices;
         this.storage = storage;
         this.manifestParser = manifestParser;
+        this.transferBroker = transferBroker;
     }
 
     @Transactional
-    public SnapshotDtos.SnapshotResponse start(UUID userId, SnapshotDtos.StartSnapshotRequest request) {
-        log.info("Iniciando novo snapshot para o device: {} (User: {})", request.deviceId(), userId);
-        Device device = devices.findByIdAndUserId(request.deviceId(), userId)
+    public SnapshotDtos.StartSnapshotResponse start(JwtPrincipal principal, SnapshotDtos.StartSnapshotRequest request) {
+        log.info("Iniciando novo snapshot para o device: {} (User: {})", request.deviceId(), principal.userId());
+        Device device = devices.findByIdAndUserId(request.deviceId(), principal.userId())
                 .orElseThrow(() -> new IllegalArgumentException("Device inválido"));
 
         Snapshot s = new Snapshot();
@@ -43,35 +46,36 @@ public class SnapshotService {
         s.status = SnapshotStatus.IN_PROGRESS;
         s.startedAt = Instant.now();
         snapshots.save(s);
-        return toResponse(s);
+        return new SnapshotDtos.StartSnapshotResponse(
+                toResponse(s),
+                transferBroker.openBackup(principal, request.deviceId(), s.id)
+        );
     }
 
     @Transactional
-    public SnapshotDtos.SnapshotResponse complete(UUID userId, UUID snapshotId, InputStream manifestGzip,
-                                                   long manifestLength, long totalFiles,
-                                                   long totalOriginalSize, long totalCompressedSize) {
-        log.info("Finalizando snapshot: {} (User: {})", snapshotId, userId);
-        Snapshot s = findOwned(userId, snapshotId);
+    public SnapshotDtos.SnapshotResponse complete(JwtPrincipal principal, UUID snapshotId,
+                                                   SnapshotDtos.CompleteSnapshotRequest request) {
+        log.info("Finalizando uploads do snapshot: {} (User: {})", snapshotId, principal.userId());
+        Snapshot s = findOwned(principal.userId(), snapshotId);
         if (s.status != SnapshotStatus.IN_PROGRESS) {
             throw new IllegalStateException("Snapshot não está em progresso");
         }
 
-        String key = "users/%s/manifests/%s.json.gz".formatted(userId, snapshotId);
-        if (manifestLength <= 0) {
-            throw new IllegalArgumentException("Manifesto vazio");
+        TransferSession session = transferBroker.processing(principal, request.transferSessionId(), snapshotId);
+        String stagedManifest = session.stagingPrefix + "manifest.json.gz";
+        if (!storage.exists(stagedManifest)) {
+            throw new IllegalStateException("Manifesto staged não encontrado");
         }
-        storage.put(key, manifestGzip, manifestLength, "application/gzip");
 
-        s.totalFiles = totalFiles;
-        s.totalOriginalSize = totalOriginalSize;
-        s.totalCompressedSize = totalCompressedSize;
-        s.manifestKey = key;
-        s.status = SnapshotStatus.PROCESSING; // Novo estado: processando manifesto
+        s.totalFiles = request.totalFiles();
+        s.totalOriginalSize = request.totalOriginalSize();
+        s.totalCompressedSize = request.totalCompressedSize();
+        s.manifestKey = "users/%s/manifests/%s.json.gz".formatted(principal.userId(), snapshotId);
+        s.status = SnapshotStatus.PROCESSING;
         s.completedAt = Instant.now();
         snapshots.save(s);
 
-        // Dispara o processamento assíncrono do manifesto para indexação no banco
-        manifestParser.parseAsync(s.id);
+        manifestParser.auditAndPromoteAsync(s.id, session.id, session.stagingPrefix);
 
         return toResponse(s);
     }
@@ -94,16 +98,10 @@ public class SnapshotService {
     }
 
     @Transactional(readOnly = true)
-    public InputStream manifest(UUID userId, UUID snapshotId) {
+    public void assertRestorable(UUID userId, UUID snapshotId) {
         Snapshot s = findOwned(userId, snapshotId);
-        if (s.status != SnapshotStatus.COMPLETED && s.status != SnapshotStatus.PROCESSING) {
-            throw new IllegalStateException("Somente snapshots concluídos ou em processamento podem ter o manifesto lido");
-        }
-        
-        try {
-            return new java.util.zip.GZIPInputStream(storage.getStream(s.manifestKey));
-        } catch (Exception e) {
-            throw new IllegalStateException("Falha ao descompactar manifesto para restore", e);
+        if (s.status != SnapshotStatus.COMPLETED) {
+            throw new IllegalStateException("Somente snapshots concluídos podem ser restaurados");
         }
     }
 
@@ -113,14 +111,7 @@ public class SnapshotService {
     }
 
     private SnapshotDtos.SnapshotResponse toResponse(Snapshot s) {
-        UUID deviceId = null;
-        if (s.device != null) {
-            // Se for proxy e tivermos só o ID na memória, Hibernate consegue pegar sem bater no banco dependendo do setup,
-            // Mas para evitar NullPointer se o objeto foi detachado incorretamente:
-            try {
-                deviceId = s.device.id;
-            } catch (Exception ignored) {}
-        }
+        UUID deviceId = s.device != null ? s.device.id : null;
         
         return new SnapshotDtos.SnapshotResponse(
                 s.id,
