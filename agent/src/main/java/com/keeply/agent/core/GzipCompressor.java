@@ -5,6 +5,8 @@ import org.slf4j.LoggerFactory;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
 
@@ -25,6 +27,21 @@ public final class GzipCompressor {
         } catch (Exception e) {
             log.error("❌ Falha ao comprimir GZIP: {}", e.getMessage());
             throw new IllegalStateException("Falha ao comprimir GZIP", e);
+        }
+    }
+
+    public static long compressToFile(byte[] input, Path output) {
+        try (var out = Files.newOutputStream(output);
+             GZIPOutputStream gzip = new GZIPOutputStream(out)) {
+            gzip.write(input);
+        } catch (Exception e) {
+            log.error("Falha ao comprimir GZIP para arquivo: {}", e.getMessage());
+            throw new IllegalStateException("Falha ao comprimir GZIP para arquivo", e);
+        }
+        try {
+            return Files.size(output);
+        } catch (Exception e) {
+            throw new IllegalStateException("Falha ao obter tamanho do chunk GZIP", e);
         }
     }
 

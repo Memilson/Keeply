@@ -2,8 +2,6 @@ package com.keeply.agent.core;
 
 import java.io.IOException;
 import java.nio.file.*;
-import java.nio.file.attribute.BasicFileAttributes;
-import java.util.EnumSet;
 import java.util.Set;
 import java.util.stream.Stream;
 
@@ -28,34 +26,23 @@ public final class FileScanner {
     }
 
     public static Stream<Path> scan(Path root) {
-        Stream.Builder<Path> builder = Stream.builder();
         try {
-            Files.walkFileTree(root, EnumSet.of(FileVisitOption.FOLLOW_LINKS), Integer.MAX_VALUE, new SimpleFileVisitor<>() {
-                @Override
-                public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) {
-                    if (EXCLUDED_DIRS.contains(dir.getFileName().toString())) {
-                        return FileVisitResult.SKIP_SUBTREE;
-                    }
-                    return FileVisitResult.CONTINUE;
-                }
-
-                @Override
-                public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
-                    if (attrs.isRegularFile()) {
-                        builder.add(file);
-                    }
-                    return FileVisitResult.CONTINUE;
-                }
-
-                @Override
-                public FileVisitResult visitFileFailed(Path file, IOException exc) {
-                    // Silenciosamente ignora arquivos que não podem ser acessados ou desapareceram
-                    return FileVisitResult.CONTINUE;
-                }
-            });
+            Path normalizedRoot = root.toAbsolutePath().normalize();
+            return Files.walk(root, FileVisitOption.FOLLOW_LINKS)
+                    .filter(Files::isRegularFile)
+                    .filter(path -> !isExcluded(normalizedRoot, path.toAbsolutePath().normalize()));
         } catch (IOException e) {
             throw new IllegalStateException("Falha ao escanear pasta: " + root, e);
         }
-        return builder.build();
+    }
+
+    private static boolean isExcluded(Path root, Path path) {
+        Path relative = root.relativize(path);
+        for (Path component : relative) {
+            if (EXCLUDED_DIRS.contains(component.toString())) {
+                return true;
+            }
+        }
+        return false;
     }
 }
