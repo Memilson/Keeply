@@ -220,7 +220,7 @@ public class BackupEngine {
             db.clearBackupManifest(); 
 
             double totalDuration = (System.nanoTime() - startTotal) / 1_000_000_000.0;
-            log.info("event=backup.snapshot status=completed snapshot_id={} total_duration_seconds={} chunks_sent={}",
+            log.info("event=backup.snapshot status=uploads_completed_pending_audit snapshot_id={} total_duration_seconds={} chunks_sent={}",
                     snapshotId,
                     String.format(java.util.Locale.ROOT, "%.2f", totalDuration),
                     sentCount.get());

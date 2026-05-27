@@ -21,6 +21,7 @@ import java.nio.file.Path;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -214,11 +215,18 @@ public class BackendClient {
     }
 
     public SnapshotFilePage listSnapshotFiles(UUID snapshotId, int page, int size, String search) {
+        return listSnapshotFiles(snapshotId, page, size, search, null);
+    }
+
+    public SnapshotFilePage listSnapshotFiles(UUID snapshotId, int page, int size, String search, String prefix) {
         String traceId = UUID.randomUUID().toString();
         try {
             String path = "/api/snapshots/" + snapshotId + "/files?page=" + page + "&size=" + size;
             if (search != null && !search.isBlank()) {
                 path += "&search=" + URLEncoder.encode(search, StandardCharsets.UTF_8);
+            }
+            if (prefix != null && !prefix.isBlank()) {
+                path += "&prefix=" + URLEncoder.encode(prefix, StandardCharsets.UTF_8);
             }
             HttpRequest request = authorized(path, traceId).GET().build();
             HttpResponse<String> response = sendWithRefreshRetry(request, traceId);
@@ -226,6 +234,23 @@ public class BackendClient {
             return mapper.readValue(response.body(), SnapshotFilePage.class);
         } catch (Exception e) {
             throw new IllegalStateException("Falha ao listar arquivos do snapshot [Trace-ID: %s]".formatted(traceId), e);
+        }
+    }
+
+    public List<SnapshotFileItem> listAllSnapshotFiles(UUID snapshotId, String search) {
+        return listAllSnapshotFiles(snapshotId, search, null);
+    }
+
+    public List<SnapshotFileItem> listAllSnapshotFiles(UUID snapshotId, String search, String prefix) {
+        List<SnapshotFileItem> items = new ArrayList<>();
+        int pageNumber = 0;
+        for (;;) {
+            SnapshotFilePage page = listSnapshotFiles(snapshotId, pageNumber, 200, search, prefix);
+            items.addAll(page.items());
+            if (page.items().isEmpty() || items.size() >= page.pagination().totalElements()) {
+                return items;
+            }
+            pageNumber++;
         }
     }
 

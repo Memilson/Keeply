@@ -75,7 +75,7 @@ public class SnapshotService {
         s.completedAt = Instant.now();
         snapshots.save(s);
 
-        manifestParser.auditAndPromoteAsync(s.id, session.id, session.stagingPrefix);
+        manifestParser.auditAndPromoteAsync(s.id, session.id, session.stagingPrefix, principal.userId());
 
         return toResponse(s);
     }

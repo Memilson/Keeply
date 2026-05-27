@@ -143,13 +143,18 @@ public class TransferCredentialBroker {
     }
 
     private String policy(TransferSession session) {
+        String bucketArn = "arn:aws:s3:::" + bucket;
+        String bucketLocation = "{\"Effect\":\"Allow\",\"Action\":[\"s3:GetBucketLocation\"],\"Resource\":[\"" + bucketArn + "\"]}";
         if (session.type == TransferSessionType.BACKUP_UPLOAD) {
-            String arn = "arn:aws:s3:::" + bucket + "/" + session.stagingPrefix + "*";
-            return "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":[\"s3:PutObject\",\"s3:AbortMultipartUpload\",\"s3:ListMultipartUploadParts\"],\"Resource\":[\"" + arn + "\"]}]}";
+            String arn = bucketArn + "/" + session.stagingPrefix + "*";
+            return "{\"Version\":\"2012-10-17\",\"Statement\":[" + bucketLocation
+                    + ",{\"Effect\":\"Allow\",\"Action\":[\"s3:PutObject\",\"s3:AbortMultipartUpload\",\"s3:ListMultipartUploadParts\"],\"Resource\":[\""
+                    + arn + "\"]}]}";
         }
-        String manifest = "arn:aws:s3:::%s/users/%s/manifests/%s.json.gz".formatted(bucket, session.userId, session.snapshotId);
-        String chunks = "arn:aws:s3:::%s/users/%s/chunks/*".formatted(bucket, session.userId);
-        return "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":[\"s3:GetObject\"],\"Resource\":[\"" + manifest + "\",\"" + chunks + "\"]}]}";
+        String manifest = "%s/users/%s/manifests/%s.json.gz".formatted(bucketArn, session.userId, session.snapshotId);
+        String chunks = "%s/users/%s/chunks/*".formatted(bucketArn, session.userId);
+        return "{\"Version\":\"2012-10-17\",\"Statement\":[" + bucketLocation
+                + ",{\"Effect\":\"Allow\",\"Action\":[\"s3:GetObject\"],\"Resource\":[\"" + manifest + "\",\"" + chunks + "\"]}]}";
     }
 
     private TransferSession ownedOpen(JwtPrincipal principal, UUID id) {

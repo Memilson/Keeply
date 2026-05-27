@@ -28,6 +28,8 @@ import javafx.stage.DirectoryChooser;
 import javafx.stage.Stage;
 import javafx.animation.KeyFrame;
 import javafx.animation.Timeline;
+import javafx.animation.FadeTransition;
+import javafx.animation.KeyValue;
 import javafx.util.Duration;
 
 import java.io.OutputStream;
@@ -35,17 +37,23 @@ import java.io.PrintStream;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.net.InetAddress;
+import java.nio.ByteBuffer;
+import java.nio.channels.SeekableByteChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.time.LocalTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.Optional;
@@ -56,6 +64,8 @@ import org.slf4j.LoggerFactory;
 
 public class KeeplyAgentApp extends Application {
     private static final Logger log = LoggerFactory.getLogger(KeeplyAgentApp.class);
+    private static final long DAEMON_LOG_READ_LIMIT_BYTES = 256L * 1024;
+    private static final int VISIBLE_LOG_LIMIT_CHARS = 300_000;
     private BackendClient backend;
     private LocalDatabase db;
     private UUID deviceId;
@@ -106,9 +116,9 @@ public class KeeplyAgentApp extends Application {
 
         appViews.put("Login", loginView());
         appViews.put("Dashboard", dashboardView());
-        appViews.put("Backup", backupView(stage));
-        appViews.put("Restore", restoreView(stage));
-        appViews.put("Configurações", configView());
+        appViews.put("Backup", configView()); // Configurações virou Backup
+        appViews.put("AddFolder", backupView(stage)); // Wizard de nova pasta
+        appViews.put("Restore", restoreView(stage)); // Meus arquivos
         logs.getStyleClass().add("log-surface");
         appViews.put("Logs", logs);
         appShell = buildAppShell();
@@ -215,11 +225,9 @@ public class KeeplyAgentApp extends Application {
                  shell.setCenter(this.contentHost);
             }
             
-            navButtons.put("Login", new Button("Login"));
             navButtons.put("Dashboard", (Button) shell.lookup("#btnInicio"));
+            navButtons.put("Restore", (Button) shell.lookup("#btnMeusArquivos"));
             navButtons.put("Backup", (Button) shell.lookup("#btnBackups"));
-            navButtons.put("Restore", (Button) shell.lookup("#btnRestaurar"));
-            navButtons.put("Configurações", (Button) shell.lookup("#btnConfiguracoes"));
             navButtons.put("Logs", (Button) shell.lookup("#btnAtividade"));
             
             shellPageLabel = new Label();
@@ -265,11 +273,12 @@ public class KeeplyAgentApp extends Application {
         });
     }
 
-        private Pane dashboardView() {
+    private Pane dashboardView() {
         try {
             javafx.fxml.FXMLLoader loader = new javafx.fxml.FXMLLoader(getClass().getResource("/fxml/Dashboard.fxml"));
             Pane root = loader.load();
             com.keeply.agent.ui.DashboardController controller = loader.getController();
+            controller.setOnNavigate(this::showView);
             
             // Simula um refresh de dados (opcional, pode ser movido para Timeline)
             Thread.startVirtualThread(() -> {
@@ -277,17 +286,30 @@ public class KeeplyAgentApp extends Application {
                     try {
                         var snapshots = backend.listSnapshots();
                         long totalFiles = snapshots.stream().mapToLong(com.keeply.agent.model.SnapshotSummary::totalFiles).sum();
-                        String latest = snapshots.isEmpty() ? "Sem snapshots" : snapshots.getFirst().status();
-                        String lastDate = snapshots.isEmpty() ? "Nunca" : "Hoje, 09:42"; // Mock
+                        String lastDate = snapshots.isEmpty() ? "Nunca" : snapshots.getFirst().startedAt().toString().substring(0, 10);
                         
                         var optPlan = backend.getDevicePlan(deviceId);
                         List<String> currentSources = optPlan.isPresent() ? optPlan.get().sources() : parseSources(backupSourcesConfig.getText());
 
+                        // Pegamos o tamanho real deduplicado do banco local
+                        long totalSize = db.totalDistinctCompressedSize();
+                        String sizeStr = String.format("%.2f", totalSize / (1024.0 * 1024.0 * 1024.0));
+
                         javafx.application.Platform.runLater(() -> {
-                            controller.updateStats(lastDate, String.valueOf(snapshots.size()), "256");
+                            controller.updateStats(lastDate, String.valueOf(snapshots.size()), sizeStr);
                             controller.setFolders(currentSources);
+                            controller.setSnapshotsList(snapshots);
+
+                            // Atualiza também o card da barra lateral se estiver disponível
+                            if (mainShellController != null) {
+                                double totalCapacityGb = 1024.0; // Mock 1TB
+                                double usedGb = totalSize / (1024.0 * 1024.0 * 1024.0);
+                                mainShellController.updateStorageInfo(sizeStr, Math.min(1.0, usedGb / totalCapacityGb));
+                            }
                         });
-                    } catch (Exception e) {}
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
                 }
             });
 
@@ -370,14 +392,14 @@ public class KeeplyAgentApp extends Application {
         topBar.setAlignment(Pos.CENTER_LEFT);
         topBar.getStyleClass().add("restore-toolbar");
 
-        Label title = new Label("Explorar snapshot");
+        Label title = new Label("Snapshots");
         title.getStyleClass().add("restore-title");
 
-        Button restoreAll = new Button("Restaurar Tudo");
+        Button restoreAll = new Button("Recuperar snapshot");
         restoreAll.getStyleClass().add("btn-secondary");
         restoreAll.setDisable(true);
 
-        Button restoreSelected = new Button("Restaurar Selecionados");
+        Button restoreSelected = new Button("Recuperar itens");
         restoreSelected.getStyleClass().add("btn-success");
         restoreSelected.setDisable(true);
 
@@ -385,7 +407,7 @@ public class KeeplyAgentApp extends Application {
         HBox.setHgrow(topSpacer, Priority.ALWAYS);
         topBar.getChildren().addAll(title, topSpacer, restoreAll, restoreSelected);
 
-        Label currentPathLabel = new Label("Backup");
+        Label currentPathLabel = new Label("Snapshots");
         currentPathLabel.getStyleClass().add("item-muted");
         HBox addressBar = new HBox(8, currentPathLabel);
         addressBar.getStyleClass().add("restore-address");
@@ -396,9 +418,6 @@ public class KeeplyAgentApp extends Application {
         VBox topArea = new VBox(8, topBar, addressBar);
         layout.setTop(topArea);
 
-        SplitPane splitPane = new SplitPane();
-        splitPane.getStyleClass().add("restore-split");
-
         VBox sidebar = new VBox(10);
         sidebar.getStyleClass().add("restore-sidebar");
         Label sidebarTitle = new Label("PONTOS DE RESTAURACAO");
@@ -406,212 +425,122 @@ public class KeeplyAgentApp extends Application {
         ListView<SnapshotSummary> snapshotList = new ListView<>();
         snapshotList.getStyleClass().add("explorer-list");
         VBox.setVgrow(snapshotList, Priority.ALWAYS);
+        SnapshotSummary[] selectedSnapshot = new SnapshotSummary[1];
+
+        java.util.function.Consumer<SnapshotSummary> recoverSnapshot = snapshot -> {
+            if (snapshot == null) return;
+            runAsync(() -> new RestoreEngine(backend).restore(snapshot.id(), null, null, OverwritePolicy.ALWAYS));
+        };
+        java.util.function.Consumer<SnapshotSummary> loadItems = snapshot -> {
+            if (snapshot == null) return;
+            runAsync(() -> {
+                var page = backend.listSnapshotFiles(snapshot.id(), 0, 200, null);
+                log("event=ui.restore.items_loaded snapshot_id=" + snapshot.id()
+                        + " loaded=" + page.items().size()
+                        + " total=" + page.pagination().totalElements());
+            });
+        };
+
         snapshotList.setCellFactory(param -> new ListCell<>() {
+            private Region currentActionsWrap;
+            private Timeline currentExpandAnimation;
+
+            {
+                selectedProperty().addListener((obs, oldSelected, selected) -> {
+                    if (currentActionsWrap == null) return;
+                    if (currentExpandAnimation != null) {
+                        currentExpandAnimation.stop();
+                    }
+                    if (selected) {
+                        currentActionsWrap.setManaged(true);
+                        currentActionsWrap.setVisible(true);
+                        currentExpandAnimation = new Timeline(
+                                new KeyFrame(Duration.ZERO,
+                                        new KeyValue(currentActionsWrap.maxHeightProperty(), currentActionsWrap.getMaxHeight()),
+                                        new KeyValue(currentActionsWrap.opacityProperty(), currentActionsWrap.getOpacity())),
+                                new KeyFrame(Duration.millis(190),
+                                        new KeyValue(currentActionsWrap.maxHeightProperty(), 78),
+                                        new KeyValue(currentActionsWrap.opacityProperty(), 1.0))
+                        );
+                        currentExpandAnimation.play();
+                    } else {
+                        currentExpandAnimation = new Timeline(
+                                new KeyFrame(Duration.ZERO,
+                                        new KeyValue(currentActionsWrap.maxHeightProperty(), currentActionsWrap.getMaxHeight()),
+                                        new KeyValue(currentActionsWrap.opacityProperty(), currentActionsWrap.getOpacity())),
+                                new KeyFrame(Duration.millis(170),
+                                        new KeyValue(currentActionsWrap.maxHeightProperty(), 0),
+                                        new KeyValue(currentActionsWrap.opacityProperty(), 0.0))
+                        );
+                        currentExpandAnimation.setOnFinished(e -> {
+                            currentActionsWrap.setVisible(false);
+                            currentActionsWrap.setManaged(false);
+                        });
+                        currentExpandAnimation.play();
+                    }
+                });
+            }
+
             @Override
             protected void updateItem(SnapshotSummary item, boolean empty) {
                 super.updateItem(item, empty);
                 if (empty || item == null) {
                     setText(null);
                     setGraphic(null);
+                    currentActionsWrap = null;
                 } else {
-                    Label deviceIcon = new Label();
-                    deviceIcon.setGraphic(createBootstrapPcIcon());
-                    VBox cellBox = new VBox(3);
-                    cellBox.getStyleClass().add("snapshot-item");
-                    Label idLabel = new Label(item.id().toString().substring(0, 8));
-                    idLabel.getStyleClass().add("snapshot-item-title");
-                    Label detailsLabel = new Label(item.sourcePath() + "\n" + item.totalFiles() + " arquivos");
-                    detailsLabel.getStyleClass().add("item-muted");
-                    Label stateLabel = new Label(item.status());
+                    Label dateLabel = new Label("Data " + formatSnapshotDateCompact(item.startedAt()));
+                    dateLabel.getStyleClass().add("item-muted");
+                    dateLabel.setStyle("-fx-font-size: 11px;");
+                    Label typeLabel = new Label(inferSnapshotType(snapshotList.getItems(), item));
+                    typeLabel.getStyleClass().add("snapshot-item-title");
+                    Label filesLabel = new Label(item.totalFiles() + " arquivos");
+                    filesLabel.getStyleClass().add("item-muted");
+                    Label stateLabel = new Label(formatSnapshotStatus(item.status()));
                     stateLabel.getStyleClass().add("snapshot-badge");
-                    Button quickRestore = new Button("Restaurar");
-                    quickRestore.getStyleClass().add("btn-success");
-                    quickRestore.setOnAction(e -> {
+
+                    Button rowRecover = new Button("Recuperar snapshot");
+                    rowRecover.getStyleClass().add("btn-secondary");
+                    rowRecover.setOnAction(e -> {
                         snapshotList.getSelectionModel().select(item);
-                        restoreAll.fire();
+                        recoverSnapshot.accept(item);
                     });
-                    Button quickDelete = new Button("Excluir");
-                    quickDelete.getStyleClass().add("btn-secondary");
-                    quickDelete.setOnAction(e -> log("Exclusão de snapshot ainda não disponível no backend."));
-                    HBox actions = new HBox(6, quickRestore, quickDelete);
-                    cellBox.getChildren().addAll(idLabel, detailsLabel, stateLabel, actions);
-                    HBox row = new HBox(8, deviceIcon, cellBox);
-                    row.setAlignment(Pos.TOP_LEFT);
-                    setGraphic(row);
+
+                    Button rowLoadItems = new Button("Carregar itens");
+                    rowLoadItems.getStyleClass().add("btn-success");
+                    rowLoadItems.setOnAction(e -> {
+                        snapshotList.getSelectionModel().select(item);
+                        loadItems.accept(item);
+                    });
+                    HBox actions = new HBox(8, rowRecover, rowLoadItems);
+                    actions.setAlignment(Pos.CENTER_LEFT);
+                    StackPane actionsWrap = new StackPane(actions);
+                    actionsWrap.setPadding(new Insets(18, 0, 8, 24));
+                    actionsWrap.setVisible(isSelected());
+                    actionsWrap.setManaged(isSelected());
+                    actionsWrap.setOpacity(isSelected() ? 1.0 : 0.0);
+                    actionsWrap.setMaxHeight(isSelected() ? 78 : 0);
+                    actionsWrap.setPrefHeight(isSelected() ? 78 : 0);
+                    currentActionsWrap = actionsWrap;
+
+                    Region spacer = new Region();
+                    HBox.setHgrow(spacer, Priority.ALWAYS);
+                    HBox row = new HBox(10,
+                            createBootstrapPcIcon(),
+                            dateLabel,
+                            typeLabel,
+                            filesLabel,
+                            spacer,
+                            stateLabel);
+                    row.setAlignment(Pos.CENTER_LEFT);
+                    VBox cellContent = new VBox(6, row, actionsWrap);
+                    setGraphic(cellContent);
                 }
             }
         });
         sidebar.getChildren().addAll(sidebarTitle, snapshotList);
-        sidebar.setMinWidth(220);
-
-        VBox explorer = new VBox(0);
-        explorer.getStyleClass().add("explorer-surface");
-
-        TreeView<RestoreNode> folderTree = new TreeView<>();
-        folderTree.getStyleClass().add("explorer-tree");
-        folderTree.setMinWidth(260);
-        folderTree.setCellFactory(param -> new TreeCell<>() {
-            @Override
-            protected void updateItem(RestoreNode item, boolean empty) {
-                super.updateItem(item, empty);
-                if (empty || item == null) {
-                    setText(null);
-                    setGraphic(null);
-                    return;
-                }
-                CheckBox checkBox = new CheckBox();
-                if (getTreeItem() instanceof CheckBoxTreeItem<?> cbItem) {
-                    @SuppressWarnings("unchecked")
-                    CheckBoxTreeItem<RestoreNode> typedItem = (CheckBoxTreeItem<RestoreNode>) cbItem;
-                    checkBox.selectedProperty().unbindBidirectional(typedItem.selectedProperty());
-                    checkBox.selectedProperty().bindBidirectional(typedItem.selectedProperty());
-                    checkBox.setAllowIndeterminate(false);
-                }
-                Label text = new Label(item.label);
-                HBox row = new HBox(6, checkBox, createBootstrapFileIcon(item.isDirectory), text);
-                row.setAlignment(Pos.CENTER_LEFT);
-                setGraphic(row);
-                setText(null);
-            }
-        });
-        RestoreNode[] currentFolderRef = new RestoreNode[1];
-        VBox[] actionPanelRef = new VBox[1];
-        VBox.setVgrow(folderTree, Priority.ALWAYS);
-        TextField fileSearch = new TextField();
-        fileSearch.setPromptText("Buscar arquivo...");
-        Button searchFiles = new Button("Buscar");
-        Button previousFiles = new Button("Anterior");
-        Button nextFiles = new Button("Proxima");
-        Label pageInfo = new Label();
-        Set<String> selectedRestorePaths = new HashSet<>();
-        previousFiles.setDisable(true);
-        nextFiles.setDisable(true);
-
-        folderTree.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
-            VBox panel = actionPanelRef[0];
-            if (newVal == null || newVal.getValue() == null) {
-                return;
-            }
-            currentFolderRef[0] = newVal.getValue();
-            currentPathLabel.setText("Backup > " + currentFolderRef[0].displayPath());
-        });
-
-        currentPathLabel.setOnMouseClicked(e -> {
-            TreeItem<RestoreNode> rootTree = folderTree.getRoot();
-            RestoreNode rootNode = rootTree == null ? null : rootTree.getValue();
-            if (rootNode != null) {
-                currentFolderRef[0] = rootNode;
-                currentPathLabel.setText("Backup > " + rootNode.displayPath());
-                folderTree.getSelectionModel().select(rootTree);
-            }
-        });
-
-        HBox fileNavigation = new HBox(8, fileSearch, searchFiles, previousFiles, nextFiles, pageInfo);
-        fileNavigation.setPadding(new Insets(8));
-        explorer.getChildren().addAll(fileNavigation, folderTree);
-
-        splitPane.getItems().addAll(sidebar, explorer);
-        splitPane.setDividerPositions(0.28);
-        layout.setCenter(splitPane);
-
-        VBox actionPanel = new VBox(12);
-        actionPanel.setPadding(new Insets(12));
-        actionPanel.setPrefWidth(280);
-        actionPanel.getStyleClass().add("restore-actions");
-        actionPanel.setVisible(false);
-        actionPanel.setManaged(false);
-        actionPanelRef[0] = actionPanel;
-
-        Label actionTitle = new Label("PAINEL DE RESTAURACAO");
-        actionTitle.getStyleClass().add("section-title");
-        Label summaryLabel = new Label("Selecione um snapshot para carregar os arquivos.");
-        summaryLabel.getStyleClass().add("item-muted");
-        summaryLabel.setWrapText(true);
-
-        Label destLabel = new Label("Destino:");
-        ToggleGroup destinationModeGroup = new ToggleGroup();
-        RadioButton restoreOriginal = new RadioButton("Original");
-        restoreOriginal.setToggleGroup(destinationModeGroup);
-        RadioButton restoreCustom = new RadioButton("Personalizado");
-        restoreCustom.setToggleGroup(destinationModeGroup);
-        restoreCustom.setSelected(true);
-
-        TextField destination = new TextField();
-        destination.setPromptText("Pasta de destino...");
-        Button chooseDest = new Button("Selecionar...");
-        chooseDest.setMaxWidth(Double.MAX_VALUE);
-
-        destination.disableProperty().bind(restoreOriginal.selectedProperty());
-        chooseDest.disableProperty().bind(restoreOriginal.selectedProperty());
-
-        ComboBox<OverwritePolicy> overwritePolicy = new ComboBox<>();
-        overwritePolicy.getItems().setAll(OverwritePolicy.values());
-        overwritePolicy.setValue(OverwritePolicy.ALWAYS);
-        overwritePolicy.setMaxWidth(Double.MAX_VALUE);
-
-        Label warningLabel = new Label();
-        warningLabel.setWrapText(true);
-        warningLabel.getStyleClass().add("warning-text");
-
-        actionPanel.getChildren().addAll(
-            actionTitle, 
-            summaryLabel,
-            new Separator(),
-            destLabel, restoreOriginal, restoreCustom, destination, chooseDest,
-            new Label("Sobrescrita:"), overwritePolicy,
-            warningLabel
-        );
-        layout.setRight(actionPanel);
-
-        // --- LOGIC ---
-        int[] visiblePage = new int[]{0};
-        java.util.function.BiConsumer<SnapshotSummary, Integer> loadSnapshotFiles = (snapshot, requestedPage) -> runAsync(() -> {
-            try {
-                var page = backend.listSnapshotFiles(snapshot.id(), Math.max(0, requestedPage), 200, fileSearch.getText());
-                RestoreNode restoreRoot = buildRestoreTreeItems(snapshot.sourcePath(), page.items());
-                ui(() -> {
-                    visiblePage[0] = page.pagination().page();
-                    CheckBoxTreeItem<RestoreNode> rootItem = buildFolderTreeItem(restoreRoot);
-                    folderTree.setRoot(rootItem);
-                    folderTree.setShowRoot(true);
-                    if (restoreRoot != null) {
-                        rootItem.setExpanded(true);
-                        applyCheckedPaths(rootItem, selectedRestorePaths);
-                        bindCheckboxListeners(rootItem, () -> {
-                            updateSelectedPathsForVisibleTree(rootItem, selectedRestorePaths);
-                            actionPanel.setVisible(!selectedRestorePaths.isEmpty());
-                            actionPanel.setManaged(!selectedRestorePaths.isEmpty());
-                        });
-                        currentPathLabel.setText("Backup > " + restoreRoot.displayPath());
-                    }
-                    long first = page.items().isEmpty() ? 0 : ((long) visiblePage[0] * page.pagination().size()) + 1;
-                    long last = ((long) visiblePage[0] * page.pagination().size()) + page.items().size();
-                    pageInfo.setText(first + "-" + last + " / " + page.pagination().totalElements());
-                    previousFiles.setDisable(visiblePage[0] == 0);
-                    nextFiles.setDisable(last >= page.pagination().totalElements());
-                    summaryLabel.setText("Snapshot: " + snapshot.id().toString().substring(0, 8)
-                            + "\nStatus: " + snapshot.status()
-                            + "\nExibindo " + page.items().size() + " arquivos");
-                    actionPanel.setVisible(!selectedRestorePaths.isEmpty());
-                    actionPanel.setManaged(!selectedRestorePaths.isEmpty());
-                });
-            } catch (Exception ex) {
-                log("Erro ao carregar arquivos: " + ex.getMessage());
-            }
-        });
-        searchFiles.setOnAction(e -> {
-            SnapshotSummary selected = snapshotList.getSelectionModel().getSelectedItem();
-            if (selected != null) loadSnapshotFiles.accept(selected, 0);
-        });
-        fileSearch.setOnAction(e -> searchFiles.fire());
-        previousFiles.setOnAction(e -> {
-            SnapshotSummary selected = snapshotList.getSelectionModel().getSelectedItem();
-            if (selected != null) loadSnapshotFiles.accept(selected, visiblePage[0] - 1);
-        });
-        nextFiles.setOnAction(e -> {
-            SnapshotSummary selected = snapshotList.getSelectionModel().getSelectedItem();
-            if (selected != null) loadSnapshotFiles.accept(selected, visiblePage[0] + 1);
-        });
+        sidebar.setMinWidth(320);
+        layout.setCenter(sidebar);
 
         Runnable refreshSnapshots = () -> {
             if (backend == null) {
@@ -630,68 +559,28 @@ public class KeeplyAgentApp extends Application {
 
         snapshotList.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
             if (newVal != null) {
-                selectedRestorePaths.clear();
+                selectedSnapshot[0] = newVal;
                 boolean isCompleted = "COMPLETED".equals(newVal.status());
-                boolean isProcessing = "PROCESSING".equals(newVal.status());
                 boolean canRestore = isCompleted;
 
                 restoreAll.setDisable(!canRestore);
                 restoreSelected.setDisable(!canRestore);
-                warningLabel.setText(canRestore ? "" : "⚠️ Apenas backups COMPLETED podem ser restaurados.");
-                summaryLabel.setText("Snapshot: " + newVal.id().toString().substring(0, 8) + "\nStatus: " + newVal.status());
-
-                if (isCompleted || isProcessing) {
-                    fileSearch.clear();
-                    loadSnapshotFiles.accept(newVal, 0);
-                } else {
-                    ui(() -> {
-                        folderTree.setRoot(null);
-                        currentFolderRef[0] = null;
-                        currentPathLabel.setText("Backup");
-                        actionPanel.setVisible(false);
-                        actionPanel.setManaged(false);
-                    });
-                }
+                currentPathLabel.setText("Snapshots > " + newVal.id().toString().substring(0, 8)
+                        + " [" + newVal.status() + "]");
             } else {
+                selectedSnapshot[0] = null;
                 restoreAll.setDisable(true);
                 restoreSelected.setDisable(true);
-                warningLabel.setText("");
-                summaryLabel.setText("Selecione um snapshot para carregar os arquivos.");
-                ui(() -> {
-                    folderTree.setRoot(null);
-                    currentFolderRef[0] = null;
-                    currentPathLabel.setText("Backup");
-                    actionPanel.setVisible(false);
-                    actionPanel.setManaged(false);
-                });
+                currentPathLabel.setText("Snapshots");
             }
-        });
-
-        chooseDest.setOnAction(e -> {
-            DirectoryChooser chooser = new DirectoryChooser();
-            var dir = chooser.showDialog(stage);
-            if (dir != null) destination.setText(dir.toPath().toString());
         });
 
         restoreAll.setOnAction(e -> {
-            SnapshotSummary selected = snapshotList.getSelectionModel().getSelectedItem();
-            if (selected == null) return;
-            Path destinationRoot = restoreOriginal.isSelected() ? null : parseDestinationPath(destination.getText());
-            if (!restoreOriginal.isSelected() && destinationRoot == null) return;
-            runAsync(() -> new RestoreEngine(backend).restore(selected.id(), destinationRoot, null, overwritePolicy.getValue()));
+            recoverSnapshot.accept(snapshotList.getSelectionModel().getSelectedItem());
         });
 
         restoreSelected.setOnAction(e -> {
-            SnapshotSummary selected = snapshotList.getSelectionModel().getSelectedItem();
-            if (selected == null) return;
-            Path destinationRoot = restoreOriginal.isSelected() ? null : parseDestinationPath(destination.getText());
-            if (!restoreOriginal.isSelected() && destinationRoot == null) return;
-            Set<String> selectedFiles = new HashSet<>(selectedRestorePaths);
-            if (selectedFiles.isEmpty()) {
-                log("Selecione pelo menos um arquivo.");
-                return;
-            }
-            runAsync(() -> new RestoreEngine(backend).restore(selected.id(), destinationRoot, selectedFiles, overwritePolicy.getValue()));
+            loadItems.accept(snapshotList.getSelectionModel().getSelectedItem());
         });
 
         return layout;
@@ -765,6 +654,65 @@ public class KeeplyAgentApp extends Application {
             item.getChildren().add(buildFolderTreeItem(child));
         }
         return item;
+    }
+
+    private String inferSnapshotType(List<SnapshotSummary> snapshots, SnapshotSummary current) {
+        long olderFromSameSource = snapshots.stream()
+                .filter(s -> s.id() != null && !s.id().equals(current.id()))
+                .filter(s -> Objects.equals(s.sourcePath(), current.sourcePath()))
+                .filter(s -> s.startedAt() != null && current.startedAt() != null && s.startedAt().isBefore(current.startedAt()))
+                .count();
+        return olderFromSameSource == 0 ? "COMPLETO" : "INCREMENTAL";
+    }
+
+    private String formatSnapshotStatus(String status) {
+        if (status == null || status.isBlank()) return "-";
+        return switch (status) {
+            case "IN_PROGRESS" -> "Em progresso";
+            case "PROCESSING" -> "Processando";
+            case "COMPLETED" -> "Concluído";
+            case "FAILED" -> "Falhou";
+            default -> status;
+        };
+    }
+
+    private String formatSnapshotDateCompact(java.time.Instant startedAt) {
+        if (startedAt == null) return "-";
+        return DateTimeFormatter.ofPattern("MM-dd HH:mm")
+                .format(startedAt.atZone(ZoneId.systemDefault()));
+    }
+
+    private List<RestoreNode> buildImmediateChildren(String prefix, List<BackendClient.SnapshotFileItem> files, String search) {
+        String normalizedPrefix = prefix == null ? "" : prefix;
+        String normalizedSearch = search == null ? "" : search.trim().toLowerCase(Locale.ROOT);
+        Set<String> folderKeys = new HashSet<>();
+        List<RestoreNode> children = new ArrayList<>();
+
+        for (BackendClient.SnapshotFileItem file : files) {
+            String path = file.path();
+            if (path == null || path.isBlank() || !path.startsWith(normalizedPrefix)) continue;
+            String relative = path.substring(normalizedPrefix.length());
+            if (relative.isBlank()) continue;
+
+            int slash = relative.indexOf('/');
+            if (slash < 0) {
+                if (!normalizedSearch.isBlank() && !relative.toLowerCase(Locale.ROOT).contains(normalizedSearch)) continue;
+                children.add(new RestoreNode(relative, path, false, file.size(), file.lastModified()));
+            } else {
+                String folderName = relative.substring(0, slash);
+                if (!normalizedSearch.isBlank() && !folderName.toLowerCase(Locale.ROOT).contains(normalizedSearch)) continue;
+                String folderPrefix = normalizedPrefix + folderName + "/";
+                if (folderKeys.add(folderPrefix)) {
+                    children.add(new RestoreNode(folderName, folderPrefix, true, 0L, null));
+                }
+            }
+        }
+
+        children.sort((a, b) -> {
+            if (a.isDirectory != b.isDirectory) return a.isDirectory ? -1 : 1;
+            return a.label.compareToIgnoreCase(b.label);
+        });
+        return children;
     }
 
     private Node createBootstrapFileIcon(boolean directory) {
@@ -1388,7 +1336,7 @@ public class KeeplyAgentApp extends Application {
     }
 
     private void log(String message) {
-        ui(() -> logs.appendText(message + "\n"));
+        appendLogs(message + "\n");
     }
 
     private void streamDaemonLogs() {
@@ -1402,14 +1350,30 @@ public class KeeplyAgentApp extends Application {
                         offset = 0L;
                     }
                     if (fileSize > offset) {
-                        byte[] full = Files.readAllBytes(daemonLogPath);
-                        String chunk = new String(full, (int) offset, (int) (fileSize - offset), StandardCharsets.UTF_8);
+                        long readStart = Math.max(offset, fileSize - DAEMON_LOG_READ_LIMIT_BYTES);
+                        boolean skipped = readStart > offset;
+                        String chunk;
+                        try (SeekableByteChannel channel = Files.newByteChannel(daemonLogPath, StandardOpenOption.READ)) {
+                            ByteBuffer buffer = ByteBuffer.allocate(Math.toIntExact(fileSize - readStart));
+                            channel.position(readStart);
+                            while (buffer.hasRemaining() && channel.read(buffer) >= 0) {
+                            }
+                            buffer.flip();
+                            chunk = StandardCharsets.UTF_8.decode(buffer).toString();
+                        }
                         daemonLogOffset.set(fileSize);
+                        StringBuilder visibleChunk = new StringBuilder();
+                        if (skipped) {
+                            visibleChunk.append("[daemon] ... eventos anteriores omitidos da visualizacao ...\n");
+                        }
                         for (String line : chunk.split("\\R")) {
                             String trimmed = line.trim();
                             if (!trimmed.isEmpty()) {
-                                log("[daemon] " + trimmed);
+                                visibleChunk.append("[daemon] ").append(trimmed).append('\n');
                             }
+                        }
+                        if (!visibleChunk.isEmpty()) {
+                            appendLogs(visibleChunk.toString());
                         }
                     }
                 }
@@ -1420,6 +1384,16 @@ public class KeeplyAgentApp extends Application {
             } catch (Exception ignored) {
             }
         }
+    }
+
+    private void appendLogs(String text) {
+        ui(() -> {
+            logs.appendText(text);
+            int excess = logs.getLength() - VISIBLE_LOG_LIMIT_CHARS;
+            if (excess > 0) {
+                logs.deleteText(0, excess);
+            }
+        });
     }
 
     private void ui(Runnable r) {
@@ -1471,6 +1445,10 @@ public class KeeplyAgentApp extends Application {
                     String chunk = drainBuffer();
                     if (!chunk.isEmpty()) {
                         textArea.appendText(chunk);
+                        int excess = textArea.getLength() - VISIBLE_LOG_LIMIT_CHARS;
+                        if (excess > 0) {
+                            textArea.deleteText(0, excess);
+                        }
                     }
                 } finally {
                     flushScheduled.set(false);

@@ -347,13 +347,15 @@
 }
 
 .restore-shell .list-cell:selected {
-    -fx-background-color: #4f49c9;
-    -fx-text-fill: white;
+    -fx-background-color: #eef3ff;
+    -fx-text-fill: #102048;
     -fx-background-radius: 10px;
+    -fx-border-color: #cfd9f4;
+    -fx-border-radius: 10px;
 }
 
 .restore-shell .list-cell:selected .label {
-    -fx-text-fill: white;
+    -fx-text-fill: #102048;
 }
 
 .restore-shell .list-cell {
@@ -367,8 +369,8 @@
 }
 
 .restore-shell .list-cell:selected .snapshot-badge {
-    -fx-background-color: #ffffff;
-    -fx-text-fill: #4f49c9;
+    -fx-background-color: #dde6ff;
+    -fx-text-fill: #3040b0;
 }
 
 .restore-shell .check-box .box {

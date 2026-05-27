@@ -26,6 +26,11 @@ public class ManifestReaderService {
 
     @Transactional(readOnly = true)
     public SnapshotDtos.SnapshotFileListResponse listFiles(UUID userId, UUID snapshotId, int page, int size, String search) {
+        return listFiles(userId, snapshotId, page, size, search, null);
+    }
+
+    @Transactional(readOnly = true)
+    public SnapshotDtos.SnapshotFileListResponse listFiles(UUID userId, UUID snapshotId, int page, int size, String search, String prefix) {
         Snapshot snapshot = snapshots.findByIdAndDeviceUserId(snapshotId, userId)
                 .orElseThrow(() -> new IllegalArgumentException("Snapshot não encontrado"));
 
@@ -34,9 +39,14 @@ public class ManifestReaderService {
         }
 
         PageRequest pageable = PageRequest.of(Math.max(page, 0), size, Sort.by("path").ascending());
-        Page<SnapshotFile> result = (search == null || search.isBlank())
-                ? snapshotFiles.findBySnapshotId(snapshotId, pageable)
-                : snapshotFiles.findBySnapshotIdAndPathContainingIgnoreCase(snapshotId, search, pageable);
+        Page<SnapshotFile> result;
+        if (prefix != null && !prefix.isBlank()) {
+            result = snapshotFiles.findBySnapshotIdAndPathStartingWith(snapshotId, prefix, pageable);
+        } else if (search != null && !search.isBlank()) {
+            result = snapshotFiles.findBySnapshotIdAndPathContainingIgnoreCase(snapshotId, search, pageable);
+        } else {
+            result = snapshotFiles.findBySnapshotId(snapshotId, pageable);
+        }
 
         var items = result.getContent().stream()
                 .map(f -> new SnapshotDtos.SnapshotFileItem(

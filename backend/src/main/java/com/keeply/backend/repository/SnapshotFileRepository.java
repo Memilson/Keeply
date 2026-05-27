@@ -12,5 +12,6 @@ import java.util.UUID;
 public interface SnapshotFileRepository extends JpaRepository<SnapshotFile, UUID> {
     Page<SnapshotFile> findBySnapshotId(UUID snapshotId, Pageable pageable);
     Page<SnapshotFile> findBySnapshotIdAndPathContainingIgnoreCase(UUID snapshotId, String path, Pageable pageable);
+    Page<SnapshotFile> findBySnapshotIdAndPathStartingWith(UUID snapshotId, String prefix, Pageable pageable);
     void deleteBySnapshotId(UUID snapshotId);
 }
