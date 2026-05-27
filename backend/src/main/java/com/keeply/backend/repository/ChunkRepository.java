@@ -17,4 +17,7 @@ import java.util.UUID;
 public interface ChunkRepository extends JpaRepository<ChunkEntity, UUID> {
     Optional<ChunkEntity> findByUserIdAndHash(UUID userId, String hash);
     List<ChunkEntity> findByUserIdAndHashIn(UUID userId, Collection<String> hashes);
+
+    @Query("SELECT COALESCE(SUM(c.compressedSize), 0) FROM ChunkEntity c WHERE c.userId = :userId")
+    long totalCompressedSizeByUserId(@Param("userId") UUID userId);
 }

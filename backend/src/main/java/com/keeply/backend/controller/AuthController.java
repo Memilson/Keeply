@@ -2,6 +2,7 @@ package com.keeply.backend.controller;
 
 import com.keeply.backend.dto.AuthDtos;
 import com.keeply.backend.service.AuthService;
+import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -14,22 +15,22 @@ public class AuthController {
     }
 
     @PostMapping("/register")
-    public AuthDtos.AuthResponse register(@RequestBody AuthDtos.RegisterRequest request) {
+    public AuthDtos.AuthResponse register(@Valid @RequestBody AuthDtos.RegisterRequest request) {
         return auth.register(request);
     }
 
     @PostMapping("/login")
-    public AuthDtos.AuthResponse login(@RequestBody AuthDtos.LoginRequest request) {
+    public AuthDtos.AuthResponse login(@Valid @RequestBody AuthDtos.LoginRequest request) {
         return auth.login(request);
     }
 
     @PostMapping("/login-device")
-    public AuthDtos.AuthResponse loginDevice(@RequestBody AuthDtos.DeviceLoginRequest request) {
+    public AuthDtos.AuthResponse loginDevice(@Valid @RequestBody AuthDtos.DeviceLoginRequest request) {
         return auth.loginDevice(request);
     }
 
     @PostMapping("/refresh")
-    public AuthDtos.AuthResponse refresh(@RequestBody AuthDtos.RefreshRequest request) {
+    public AuthDtos.AuthResponse refresh(@Valid @RequestBody AuthDtos.RefreshRequest request) {
         return auth.refresh(request);
     }
 }

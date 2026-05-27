@@ -14,7 +14,7 @@ O Keeply é uma solução de backup em nuvem com foco em **deduplicação inteli
 
 ### ☁️ Experiência SaaS (Browser)
 - **Lightweight PostgreSQL:** Banco de dados otimizado. Metadados de milhões de arquivos não inflam mais o SQL.
-- **Manifest-Based Browsing:** Listagem de arquivos feita diretamente do `manifest.json.gz` no MinIO.
+- **Manifest-Based Browsing:** Listagem de arquivos indexada a partir do `manifest.json.zst` no MinIO.
 - **ManifestReaderService:** Leitura sob demanda com **Caffeine Cache** (TTL 5m) para navegação instantânea.
 - **API Paginada:** Endpoint `/api/snapshots/{id}/files` com suporte a busca e paginação.
 
@@ -44,8 +44,15 @@ graph TD
 ```
 
 ### 📦 Estrutura de Storage (MinIO)
-- **Manifestos:** `users/{userId}/manifests/{snapshotId}.json.gz`
-- **Chunks:** `users/{userId}/chunks/{aa}/{bb}/{hash}.gz`
+- **Manifestos:** `users/{userId}/manifests/{snapshotId}.json.zst`
+- **Chunks:** `users/{userId}/chunks/{aa}/{bb}/{hash}.zst`
+
+### Corte destrutivo Zstd
+
+O formato atual usa exclusivamente Zstandard nível 3 e CDC `min 1 MB / medio 4 MB / max 8 MB`.
+Dados criados com GZIP nao sao lidos nem restaurados. A atualizacao exige executar
+`debug/reset_env.sh` uma vez antes do primeiro backup Zstd para limpar PostgreSQL, MinIO e caches
+locais do agente.
 
 ---
 

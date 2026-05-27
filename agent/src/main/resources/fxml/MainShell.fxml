@@ -49,11 +49,11 @@
             <VBox styleClass="storage-card" spacing="10">
                 <Label text="Armazenamento" styleClass="storage-title"/>
                 <HBox alignment="BASELINE_LEFT" spacing="4">
-                    <Label fx:id="lblStorageUsed" text="256" styleClass="storage-used"/>
-                    <Label text="GB de 1 TB" styleClass="storage-total"/>
+                    <Label fx:id="lblStorageUsed" text="0 B" styleClass="storage-used"/>
+                    <Label text="de 1 TB" styleClass="storage-total"/>
                 </HBox>
-                <ProgressBar fx:id="pbStorage" progress="0.256" prefWidth="200" styleClass="storage-progress"/>
-                <Label fx:id="lblStoragePercent" text="25% usado" styleClass="storage-percent"/>
+                <ProgressBar fx:id="pbStorage" progress="0" prefWidth="200" styleClass="storage-progress"/>
+                <Label fx:id="lblStoragePercent" text="0% usado" styleClass="storage-percent"/>
                 <Button text="Gerenciar plano" styleClass="btn-manage-plan" maxWidth="Infinity">
                     <graphic>
                         <SVGPath content="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z" styleClass="btn-icon-purple"/>
@@ -66,7 +66,7 @@
     <center>
         <BorderPane styleClass="workspace">
             <top>
-                <HBox styleClass="app-header" alignment="CENTER_LEFT" spacing="16">
+                <HBox fx:id="appHeader" styleClass="app-header" alignment="CENTER_LEFT" spacing="16">
                     <TextField fx:id="searchField" promptText="Buscar arquivos, pastas ou snapshots..." styleClass="top-search-field" prefWidth="320"/>
                     <Region HBox.hgrow="ALWAYS"/>
                     <!-- Notifications -->
@@ -86,6 +86,7 @@
                         <Label fx:id="lblProfileName" text="Convidado" styleClass="profile-name"/>
                         <SVGPath content="M7 10l5 5 5-5z" styleClass="header-icon"/>
                     </HBox>
+                    <Button fx:id="btnClose" text="&#x00D7;" styleClass="window-close-button" focusTraversable="false"/>
                 </HBox>
             </top>
             <center>

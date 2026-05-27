@@ -1,16 +1,17 @@
 package com.keeply.agent;
 
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import com.keeply.agent.api.BackendClient;
 import com.keeply.agent.auth.DeviceAuthStore;
 import com.keeply.agent.auth.DeviceIdentity;
+import com.keeply.agent.config.AgentConfigReader;
+import com.keeply.agent.config.AgentConfigWriter;
 import com.keeply.agent.core.BackupEngine;
 import com.keeply.agent.core.LocalDatabase;
 import com.keeply.agent.core.RestoreEngine;
 import com.keeply.agent.core.RestoreEngine.OverwritePolicy;
 import com.keeply.agent.daemon.AgentPaths;
+import com.keeply.agent.daemon.DaemonLauncher;
+import com.keeply.agent.daemon.DaemonLogStreamer;
 import com.keeply.agent.model.DeviceSession;
 import com.keeply.agent.model.ProtectionPlan;
 import com.keeply.agent.model.SnapshotSummary;
@@ -26,6 +27,7 @@ import javafx.scene.layout.*;
 import javafx.scene.shape.SVGPath;
 import javafx.stage.DirectoryChooser;
 import javafx.stage.Stage;
+import javafx.stage.StageStyle;
 import javafx.animation.KeyFrame;
 import javafx.animation.Timeline;
 import javafx.animation.FadeTransition;
@@ -37,12 +39,9 @@ import java.io.PrintStream;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.net.InetAddress;
-import java.nio.ByteBuffer;
-import java.nio.channels.SeekableByteChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -57,19 +56,19 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.Optional;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class KeeplyAgentApp extends Application {
     private static final Logger log = LoggerFactory.getLogger(KeeplyAgentApp.class);
-    private static final long DAEMON_LOG_READ_LIMIT_BYTES = 256L * 1024;
     private static final int VISIBLE_LOG_LIMIT_CHARS = 300_000;
     private BackendClient backend;
     private LocalDatabase db;
     private UUID deviceId;
     private DeviceAuthStore deviceAuthStore;
+    private AgentConfigReader configReader;
+    private AgentConfigWriter configWriter;
     private final TextArea logs = new TextArea();
 
     private TextField backendUrl;
@@ -81,16 +80,16 @@ public class KeeplyAgentApp extends Application {
     private StackPane contentHost;
     private Label shellPageLabel;
     private com.keeply.agent.ui.MainShellController mainShellController;
+    private com.keeply.agent.ui.DashboardController dashboardController;
     private final Map<String, Node> appViews = new LinkedHashMap<>();
     private final Map<String, Button> navButtons = new LinkedHashMap<>();
     private Runnable restoreRefresh = () -> {};
-    private final Path daemonLogPath = AgentPaths.resolveLogPath();
-    private final AtomicLong daemonLogOffset = new AtomicLong(0L);
 
     @Override
     public void start(Stage stage) {
         redirectSystemErrToTextArea();
         log.info("Iniciando Keeply Agent UI...");
+        stage.initStyle(StageStyle.UNDECORATED);
         
         Path uiDbPath = AgentPaths.resolveUiDbPath();
         try {
@@ -102,6 +101,8 @@ public class KeeplyAgentApp extends Application {
         }
         db = new LocalDatabase(uiDbPath.toString());
         deviceAuthStore = new DeviceAuthStore(AgentPaths.resolveDeviceAuthPath());
+        configReader = new AgentConfigReader(AgentPaths.resolveDefaultConfigPath());
+        configWriter = new AgentConfigWriter(AgentPaths.resolveDefaultConfigPath());
 
         
         backendUrl = new TextField("http://localhost:8080");
@@ -121,23 +122,56 @@ public class KeeplyAgentApp extends Application {
         appViews.put("Restore", restoreView(stage)); // Meus arquivos
         logs.getStyleClass().add("log-surface");
         appViews.put("Logs", logs);
-        appShell = buildAppShell();
+        appShell = buildAppShell(stage);
 
-        // Tenta auto-login
-        Optional<DeviceSession> saved = deviceAuthStore.load();
-        boolean authenticated = saved.isPresent();
-        if (saved.isPresent()) {
-            DeviceSession session = saved.get();
-            backend = new BackendClient(backendUrl.getText().trim());
-            backend.setSession(session);
-            deviceId = session.deviceId();
-            status.setText("Conectado. Device: " + deviceId);
-            if (mainShellController != null && session.email() != null) {
-                mainShellController.setProfile(session.email());
+        // Tenta auto-login de forma assíncrona
+        status.setText("Verificando credenciais locais...");
+        Thread.startVirtualThread(() -> {
+            try {
+                Optional<DeviceSession> saved = deviceAuthStore.load();
+                boolean authenticated = saved.isPresent();
+                if (authenticated) {
+                    DaemonLauncher.ensureRunning(this::log);
+                }
+
+                Platform.runLater(() -> {
+                    if (saved.isPresent()) {
+                        DeviceSession session = saved.get();
+                        backend = new BackendClient(backendUrl.getText().trim(), deviceAuthStore);
+                        backend.setSession(session);
+                        deviceId = session.deviceId();
+                        status.setText("Conectado. Device: " + deviceId);
+                        if (mainShellController != null && session.email() != null) {
+                            mainShellController.setProfile(session.email());
+                        }
+                    } else {
+                        status.setText("Desconectado");
+                    }
+                    updateAuthenticationNavigation(authenticated);
+                    showView(authenticated ? "Dashboard" : "Login");
+                });
+            } catch (IllegalStateException e) {
+                log.error("Erro crítico ao carregar sessão: ", e);
+                Platform.runLater(() -> {
+                    status.setText("Erro de sessão");
+                    Alert alert = new Alert(Alert.AlertType.ERROR);
+                    alert.setTitle("Erro Crítico de Segurança");
+                    alert.setHeaderText("Falha no Fallback de Criptografia");
+                    alert.setContentText(e.getMessage());
+                    alert.showAndWait();
+
+                    updateAuthenticationNavigation(false);
+                    showView("Login");
+                });
+            } catch (Exception e) {
+                log.error("Erro desconhecido ao carregar sessão: ", e);
+                Platform.runLater(() -> {
+                    status.setText("Desconectado");
+                    updateAuthenticationNavigation(false);
+                    showView("Login");
+                });
             }
-        }
-        updateAuthenticationNavigation(authenticated);
-        showView(authenticated ? "Dashboard" : "Login");
+        });
 
         Scene scene = new Scene(appShell, 1240, 760);
         scene.getStylesheets().add(getClass().getResource("/keeply-theme.css").toExternalForm());
@@ -145,8 +179,7 @@ public class KeeplyAgentApp extends Application {
         stage.setScene(scene);
         stage.show();
 
-        Thread.startVirtualThread(() -> DaemonProcessManager.ensureDaemonRunning(this::log));
-        Thread.startVirtualThread(this::streamDaemonLogs);
+        Thread.startVirtualThread(new DaemonLogStreamer(AgentPaths.resolveLogPath(), this::appendLogs));
     }
 
     private Pane loginView() {
@@ -180,13 +213,16 @@ public class KeeplyAgentApp extends Application {
                 log("event=ui.login status=started email=" + userEmail);
                 try {
                     String hostname = InetAddress.getLocalHost().getHostName();
-                    backend = new BackendClient(backendUrl.getText().trim());
+                    backend = new BackendClient(backendUrl.getText().trim(), deviceAuthStore);
                     String installationId = DeviceIdentity.getOrCreate();
                     DeviceSession session = backend.loginDevice(userEmail, userPass, installationId, hostname, System.getProperty("os.name"), "0.1.0");
                     deviceId = session.deviceId();
-                    deviceAuthStore.save(session);
-                    synchronizePlanAfterLogin();
-                    DaemonProcessManager.ensureDaemonRunning(this::log);
+                    synchronizePlanAfterLogin(userPass);
+                    if (backend.hasPersistedSession()) {
+                        DaemonLauncher.ensureRunning(this::log, true);
+                    } else {
+                        log("event=daemon.start status=skipped reason=session_not_persisted");
+                    }
 
                     ui(() -> {
                         status.setText("Conectado. Device: " + deviceId);
@@ -212,12 +248,13 @@ public class KeeplyAgentApp extends Application {
         return box;
     }
 
-    private BorderPane buildAppShell() {
+    private BorderPane buildAppShell(Stage stage) {
         try {
             javafx.fxml.FXMLLoader loader = new javafx.fxml.FXMLLoader(getClass().getResource("/fxml/MainShell.fxml"));
             BorderPane shell = loader.load();
             this.mainShellController = loader.getController();
             this.mainShellController.setNavigationHandler(this::showView);
+            this.mainShellController.bindWindow(stage);
             this.contentHost = this.mainShellController.getContentHost();
             if (this.contentHost == null) {
                  log("Erro: contentHost não encontrado no MainShell.fxml");
@@ -261,6 +298,9 @@ public class KeeplyAgentApp extends Application {
         if ("Restore".equals(view)) {
             restoreRefresh.run();
         }
+        if ("Dashboard".equals(view)) {
+            refreshDashboard();
+        }
     }
 
     private void updateAuthenticationNavigation(boolean authenticated) {
@@ -277,47 +317,56 @@ public class KeeplyAgentApp extends Application {
         try {
             javafx.fxml.FXMLLoader loader = new javafx.fxml.FXMLLoader(getClass().getResource("/fxml/Dashboard.fxml"));
             Pane root = loader.load();
-            com.keeply.agent.ui.DashboardController controller = loader.getController();
-            controller.setOnNavigate(this::showView);
-            
-            // Simula um refresh de dados (opcional, pode ser movido para Timeline)
-            Thread.startVirtualThread(() -> {
-                if (backend != null && deviceId != null) {
-                    try {
-                        var snapshots = backend.listSnapshots();
-                        long totalFiles = snapshots.stream().mapToLong(com.keeply.agent.model.SnapshotSummary::totalFiles).sum();
-                        String lastDate = snapshots.isEmpty() ? "Nunca" : snapshots.getFirst().startedAt().toString().substring(0, 10);
-                        
-                        var optPlan = backend.getDevicePlan(deviceId);
-                        List<String> currentSources = optPlan.isPresent() ? optPlan.get().sources() : parseSources(backupSourcesConfig.getText());
-
-                        // Pegamos o tamanho real deduplicado do banco local
-                        long totalSize = db.totalDistinctCompressedSize();
-                        String sizeStr = String.format("%.2f", totalSize / (1024.0 * 1024.0 * 1024.0));
-
-                        javafx.application.Platform.runLater(() -> {
-                            controller.updateStats(lastDate, String.valueOf(snapshots.size()), sizeStr);
-                            controller.setFolders(currentSources);
-                            controller.setSnapshotsList(snapshots);
-
-                            // Atualiza também o card da barra lateral se estiver disponível
-                            if (mainShellController != null) {
-                                double totalCapacityGb = 1024.0; // Mock 1TB
-                                double usedGb = totalSize / (1024.0 * 1024.0 * 1024.0);
-                                mainShellController.updateStorageInfo(sizeStr, Math.min(1.0, usedGb / totalCapacityGb));
-                            }
-                        });
-                    } catch (Exception e) {
-                        e.printStackTrace();
-                    }
-                }
-            });
-
+            dashboardController = loader.getController();
+            dashboardController.setOnNavigate(this::showView);
             return root;
         } catch (Exception e) {
             e.printStackTrace();
             return new VBox(new Label("Erro ao carregar Dashboard.fxml"));
         }
+    }
+
+    private void refreshDashboard() {
+        if (backend == null || deviceId == null || dashboardController == null) {
+            return;
+        }
+        Thread.startVirtualThread(() -> {
+            try {
+                var snapshots = backend.listSnapshots();
+                String lastDate = snapshots.isEmpty() ? "Nunca" : snapshots.getFirst().startedAt().toString().substring(0, 10);
+                var optPlan = backend.getDevicePlan(deviceId);
+                List<String> currentSources = optPlan.isPresent() ? optPlan.get().sources() : parseSources(backupSourcesConfig.getText());
+                long usedBytes = backend.getStorageUsedBytes();
+                String storageDisplay = formatStorageSize(usedBytes);
+                double capacityBytes = 1024.0 * 1024 * 1024 * 1024;
+                double storagePercent = Math.min(1.0, usedBytes / capacityBytes);
+
+                ui(() -> {
+                    dashboardController.updateStats(lastDate, String.valueOf(snapshots.size()), storageDisplay);
+                    dashboardController.setFolders(currentSources);
+                    dashboardController.setSnapshotsList(snapshots);
+                    if (mainShellController != null) {
+                        mainShellController.updateStorageInfo(storageDisplay, storagePercent);
+                    }
+                });
+            } catch (Exception e) {
+                log("Falha ao atualizar dashboard: " + e.getMessage());
+            }
+        });
+    }
+
+    private static String formatStorageSize(long bytes) {
+        if (bytes < 1024) {
+            return bytes + " B";
+        }
+        String[] units = {"KB", "MB", "GB", "TB"};
+        double value = bytes;
+        int unitIndex = -1;
+        while (value >= 1024 && unitIndex < units.length - 1) {
+            value /= 1024;
+            unitIndex++;
+        }
+        return String.format(Locale.ROOT, "%.2f %s", value, units[unitIndex]);
     }
 
     private Pane backupView(Stage stage) {
@@ -886,7 +935,7 @@ public class KeeplyAgentApp extends Application {
         saveSchedule.setOnAction(e -> runAsync(() -> saveScheduleToYaml(dayChecks, startTime, scheduleStatus)));
         Button startDaemonLocal = new Button("Tentar start local do daemon");
         startDaemonLocal.setOnAction(e -> runAsync(() -> {
-            DaemonProcessManager.ensureDaemonRunning(this::log);
+            DaemonLauncher.ensureRunning(this::log, true);
             log("Solicitação de start local do daemon enviada.");
         }));
 
@@ -934,114 +983,27 @@ public class KeeplyAgentApp extends Application {
                 ? "*"
                 : selectedDays.stream().map(String::valueOf).reduce((a, b) -> a + "," + b).orElse("*");
         String cron = "%d %d * * %s".formatted(parsedTime.getMinute(), parsedTime.getHour(), dow);
-
-        Path configPath = AgentPaths.resolveDefaultConfigPath();
-        Files.createDirectories(configPath.getParent());
-        ObjectMapper yaml = new ObjectMapper(new YAMLFactory());
-
-        Map<String, Object> root;
-        if (Files.exists(configPath)) {
-            root = yaml.readValue(Files.readString(configPath), new TypeReference<LinkedHashMap<String, Object>>() {});
-            if (root == null) root = new LinkedHashMap<>();
-        } else {
-            root = new LinkedHashMap<>();
-        }
-
         String backendValue = backendUrl.getText() != null ? backendUrl.getText().trim() : "";
         String emailValue = email.getText() != null ? email.getText().trim() : "";
-        String passwordValue = ""; // Senha removida por segurança
+        String passwordValue = password.getText() != null ? password.getText() : "";
         List<String> sources = parseSources(backupSourcesConfig.getText());
-
-        if (backendValue.isBlank()) {
-            throw new IllegalStateException("Backend URL é obrigatório.");
-        }
-        if (sources.isEmpty()) {
-            throw new IllegalStateException("Informe pelo menos uma pasta em 'Pastas de backup'.");
-        }
-
-        Map<String, Object> backendSection = new LinkedHashMap<>();
-        backendSection.put("url", backendValue);
-        root.put("backend", backendSection);
-
-        Map<String, Object> authSection = new LinkedHashMap<>();
-        authSection.put("email", emailValue);
-        authSection.put("password", passwordValue);
-        root.put("auth", authSection);
-
-        Map<String, Object> backupSection = new LinkedHashMap<>();
-        backupSection.put("sources", sources);
-        root.put("backup", backupSection);
-
-        @SuppressWarnings("unchecked")
-        Map<String, Object> schedule = root.get("schedule") instanceof Map<?, ?> existing
-                ? new LinkedHashMap<>((Map<String, Object>) existing)
-                : new LinkedHashMap<>();
-        schedule.put("cron", cron);
-        root.put("schedule", schedule);
-
-        yaml.writeValue(configPath.toFile(), root);
-        ui(() -> statusLabel.setText("Agendamento salvo em " + configPath + " | cron=" + cron));
+        configWriter.saveSchedule(backendValue, emailValue, passwordValue, sources, cron);
+        DaemonLauncher.ensureRunning(this::log, true);
+        ui(() -> statusLabel.setText("Agendamento salvo e daemon reiniciado em " + configWriter.path() + " | cron=" + cron));
         log("Agendamento salvo: " + cron);
     }
 
-    private void synchronizePlanAfterLogin() {
+    private void synchronizePlanAfterLogin(String userPass) {
         Optional<ProtectionPlan> maybePlan = backend.getDevicePlan(deviceId);
         ProtectionPlan plan = maybePlan.orElseGet(this::createPlanFromWizard);
-        
+
         try {
-            saveFullConfigAfterLogin(plan);
+            configWriter.savePlan(backendUrl.getText().trim(), email.getText().trim(), userPass, plan);
             ui(() -> backupSourcesConfig.setText(String.join("\n", plan.sources())));
-            log("Plano sincronizado e agent.yaml configurado com sucesso.");
-        } catch (Exception e) {
+            log("Plano sincronizado e agent.yaml configurado com sucesso.");        } catch (Exception e) {
             log("Erro ao salvar configuração após login: " + e.getMessage());
             e.printStackTrace();
         }
-    }
-
-    private void saveFullConfigAfterLogin(ProtectionPlan plan) throws Exception {
-        Path configPath = AgentPaths.resolveDefaultConfigPath();
-        Files.createDirectories(configPath.getParent());
-        ObjectMapper yaml = new ObjectMapper(new YAMLFactory());
-
-        Map<String, Object> root;
-        if (Files.exists(configPath)) {
-            root = yaml.readValue(Files.readString(configPath), new TypeReference<LinkedHashMap<String, Object>>() {});
-            if (root == null) root = new LinkedHashMap<>();
-        } else {
-            root = new LinkedHashMap<>();
-        }
-
-        // Backend
-        Map<String, Object> backendSection = root.get("backend") instanceof Map<?, ?> existing 
-                ? new LinkedHashMap<>((Map<String, Object>) existing) 
-                : new LinkedHashMap<>();
-        backendSection.put("url", backendUrl.getText().trim());
-        root.put("backend", backendSection);
-
-        // Auth
-        Map<String, Object> authSection = root.get("auth") instanceof Map<?, ?> existingAuth 
-                ? new LinkedHashMap<>((Map<String, Object>) existingAuth) 
-                : new LinkedHashMap<>();
-        authSection.put("email", email.getText().trim());
-        authSection.put("password", ""); // Senha removida por segurança
-        root.put("auth", authSection);
-
-        // Backup
-        Map<String, Object> backupSection = root.get("backup") instanceof Map<?, ?> existing 
-                ? new LinkedHashMap<>((Map<String, Object>) existing) 
-                : new LinkedHashMap<>();
-        backupSection.put("sources", new ArrayList<>(plan.sources()));
-        root.put("backup", backupSection);
-
-        // Schedule (Garante padrão se não existir)
-        if (!root.containsKey("schedule") || !(root.get("schedule") instanceof Map)) {
-            Map<String, Object> schedule = new LinkedHashMap<>();
-            schedule.put("cron", "0 2 * * *"); // 2 AM diário
-            schedule.put("runOnStartup", true);
-            root.put("schedule", schedule);
-        }
-
-        yaml.writeValue(configPath.toFile(), root);
     }
 
     private ProtectionPlan createPlanFromWizard() {
@@ -1112,47 +1074,25 @@ public class KeeplyAgentApp extends Application {
 
 
     private void loadScheduleFromYaml(Map<Integer, CheckBox> dayChecks, TextField startTime, Label statusLabel) throws Exception {
-        Path configPath = AgentPaths.resolveDefaultConfigPath();
-        if (!Files.exists(configPath)) {
+        Optional<AgentConfigReader.UiConfig> loaded = configReader.read();
+        if (loaded.isEmpty()) {
             ui(() -> {
                 dayChecks.values().forEach(cb -> cb.setSelected(true));
                 startTime.setText("02:00");
-                statusLabel.setText("Primeiro uso: clique em Salvar agendamento para criar " + configPath);
+                statusLabel.setText("Primeiro uso: clique em Salvar agendamento para criar " + configReader.path());
             });
             return;
         }
-
-        ObjectMapper yaml = new ObjectMapper(new YAMLFactory());
-        Map<String, Object> root = yaml.readValue(Files.readString(configPath), new TypeReference<LinkedHashMap<String, Object>>() {});
-        if (root == null) {
-            ui(() -> statusLabel.setText("Config vazia em " + configPath));
-            return;
-        }
-
-        if (root.get("backend") instanceof Map<?, ?> backendSection && backendSection.get("url") != null) {
-            ui(() -> backendUrl.setText(backendSection.get("url").toString()));
-        }
-        if (root.get("auth") instanceof Map<?, ?> authSection) {
-            Object loadedEmail = authSection.get("email");
-            Object loadedPassword = authSection.get("password");
-            ui(() -> {
-                if (loadedEmail != null) email.setText(loadedEmail.toString());
-                if (loadedPassword != null) password.setText(loadedPassword.toString());
-            });
-        }
-        if (root.get("backup") instanceof Map<?, ?> backupSection && backupSection.get("sources") instanceof List<?> loadedSources) {
-            String sourcesText = loadedSources.stream().map(String::valueOf).reduce((a, b) -> a + "\n" + b).orElse("");
-            ui(() -> backupSourcesConfig.setText(sourcesText));
-        }
-
-        if (!(root.get("schedule") instanceof Map<?, ?> schedule)) {
-            ui(() -> statusLabel.setText("Seção schedule não encontrada em " + configPath));
-            return;
-        }
-
-        String cron = schedule.get("cron") != null ? schedule.get("cron").toString() : null;
+        AgentConfigReader.UiConfig config = loaded.get();
+        ui(() -> {
+            if (config.backendUrl() != null) backendUrl.setText(config.backendUrl());
+            if (config.email() != null) email.setText(config.email());
+            if (config.password() != null) password.setText(config.password());
+            backupSourcesConfig.setText(String.join("\n", config.sources()));
+        });
+        String cron = config.cron();
         if (cron == null || cron.isBlank()) {
-            ui(() -> statusLabel.setText("schedule.cron vazio em " + configPath));
+            ui(() -> statusLabel.setText("schedule.cron vazio em " + configReader.path()));
             return;
         }
 
@@ -1337,53 +1277,6 @@ public class KeeplyAgentApp extends Application {
 
     private void log(String message) {
         appendLogs(message + "\n");
-    }
-
-    private void streamDaemonLogs() {
-        while (true) {
-            try {
-                if (Files.exists(daemonLogPath)) {
-                    long fileSize = Files.size(daemonLogPath);
-                    long offset = daemonLogOffset.get();
-                    if (fileSize < offset) {
-                        daemonLogOffset.set(0L);
-                        offset = 0L;
-                    }
-                    if (fileSize > offset) {
-                        long readStart = Math.max(offset, fileSize - DAEMON_LOG_READ_LIMIT_BYTES);
-                        boolean skipped = readStart > offset;
-                        String chunk;
-                        try (SeekableByteChannel channel = Files.newByteChannel(daemonLogPath, StandardOpenOption.READ)) {
-                            ByteBuffer buffer = ByteBuffer.allocate(Math.toIntExact(fileSize - readStart));
-                            channel.position(readStart);
-                            while (buffer.hasRemaining() && channel.read(buffer) >= 0) {
-                            }
-                            buffer.flip();
-                            chunk = StandardCharsets.UTF_8.decode(buffer).toString();
-                        }
-                        daemonLogOffset.set(fileSize);
-                        StringBuilder visibleChunk = new StringBuilder();
-                        if (skipped) {
-                            visibleChunk.append("[daemon] ... eventos anteriores omitidos da visualizacao ...\n");
-                        }
-                        for (String line : chunk.split("\\R")) {
-                            String trimmed = line.trim();
-                            if (!trimmed.isEmpty()) {
-                                visibleChunk.append("[daemon] ").append(trimmed).append('\n');
-                            }
-                        }
-                        if (!visibleChunk.isEmpty()) {
-                            appendLogs(visibleChunk.toString());
-                        }
-                    }
-                }
-                Thread.sleep(2000);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                return;
-            } catch (Exception ignored) {
-            }
-        }
     }
 
     private void appendLogs(String text) {

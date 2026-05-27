@@ -11,9 +11,9 @@ import java.util.Arrays;
 
 public class ContentDefinedChunker {
     private static final Logger log = LoggerFactory.getLogger(ContentDefinedChunker.class);
-    public static final int MIN_SIZE = 512 * 1024;
-    public static final int AVG_SIZE = 1024 * 1024;
-    public static final int MAX_SIZE = 4 * 1024 * 1024;
+    public static final int MIN_SIZE = 1024 * 1024;
+    public static final int AVG_SIZE = 4 * 1024 * 1024;
+    public static final int MAX_SIZE = 8 * 1024 * 1024;
 
     private static final int CUT_MASK = AVG_SIZE - 1;
 

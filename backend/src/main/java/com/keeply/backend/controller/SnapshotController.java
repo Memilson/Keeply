@@ -6,6 +6,7 @@ import com.keeply.backend.service.ManifestReaderService;
 import com.keeply.backend.service.SnapshotService;
 import com.keeply.backend.service.TransferCredentialBroker;
 import com.keeply.backend.util.CurrentUser;
+import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -25,14 +26,14 @@ public class SnapshotController {
     }
 
     @PostMapping("/start")
-    public SnapshotDtos.StartSnapshotResponse start(@RequestBody SnapshotDtos.StartSnapshotRequest request) {
+    public SnapshotDtos.StartSnapshotResponse start(@Valid @RequestBody SnapshotDtos.StartSnapshotRequest request) {
         return snapshots.start(CurrentUser.get(), request);
     }
 
     @PostMapping("/{snapshotId}/complete")
     public SnapshotDtos.SnapshotResponse complete(
             @PathVariable UUID snapshotId,
-            @RequestBody SnapshotDtos.CompleteSnapshotRequest request
+            @Valid @RequestBody SnapshotDtos.CompleteSnapshotRequest request
     ) {
         return snapshots.complete(CurrentUser.get(), snapshotId, request);
     }
@@ -50,7 +51,7 @@ public class SnapshotController {
     @PostMapping("/{snapshotId}/fail")
     public SnapshotDtos.SnapshotResponse fail(
             @PathVariable UUID snapshotId,
-            @RequestBody SnapshotDtos.FailSnapshotRequest request
+            @Valid @RequestBody SnapshotDtos.FailSnapshotRequest request
     ) {
         return snapshots.fail(CurrentUser.get().userId(), snapshotId, request);
     }

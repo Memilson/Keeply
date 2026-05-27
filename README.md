@@ -12,7 +12,7 @@ Este pacote entrega a base inicial em Java 25:
 - Agente JavaFX com telas mínimas e núcleo de backup/restore.
 - Content-Defined Chunking simplificado.
 - SHA-256 por chunk e por arquivo.
-- Compressão GZIP.
+- Compressão Zstandard (Zstd), nível 3.
 - Manifesto JSON.
 - Docker Compose para PostgreSQL e MinIO.
 
@@ -73,6 +73,18 @@ O daemon executa:
 3. Sem concorrência entre execuções (tick sobreposto é ignorado e logado).
 4. A UI JavaFX mostra status/instruções e permite "tentar start local" manualmente (fallback para dev).
 5. O daemon segue ativo mesmo após fechar a UI.
+
+## Corte Para Zstd
+
+A troca de GZIP para Zstd e do perfil CDC para `1 MB / 4 MB / 8 MB` e destrutiva. Snapshots, chunks,
+objetos MinIO e caches locais antigos não podem ser restaurados nem auditados por esta versão.
+
+Antes do primeiro backup com Zstd:
+
+1. Pare agente/daemon e backend.
+2. Execute `./debug/reset_env.sh`; ele remove volumes PostgreSQL/MinIO e dados locais do agente.
+3. Suba o backend atualizado e registre ou autentique novamente o agente.
+4. Inicie um novo backup; apenas objetos `.zst` serao produzidos.
 
 ## Configuração do Backend (.env)
 

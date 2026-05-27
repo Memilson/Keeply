@@ -6,8 +6,8 @@ import java.util.UUID;
 
 public interface TransferObjectClient {
     UUID sessionId();
-    void uploadChunk(String hash, Path gzipFile);
-    void uploadManifest(Path gzipFile);
+    void uploadChunk(String hash, Path zstdFile);
+    void uploadManifest(Path zstdFile);
     InputStream openManifest(UUID snapshotId);
     InputStream openChunk(String hash);
 }

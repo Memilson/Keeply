@@ -39,17 +39,24 @@ public class ChunkService {
         
         hashes.forEach(ChunkService::validateHash);
         
-        Set<String> existing = new HashSet<>(
-                chunks.findByUserIdAndHashIn(userId, hashes).stream().map(c -> c.hash).toList()
-        );
-        List<String> missing = hashes.stream().filter(h -> !existing.contains(h)).toList();
-        return new ChunkDtos.CheckChunksResponse(existing.stream().sorted().toList(), missing);
+        List<ChunkDtos.ChunkMetadata> existing = chunks.findByUserIdAndHashIn(userId, hashes).stream()
+                .map(c -> new ChunkDtos.ChunkMetadata(c.hash, c.originalSize, c.compressedSize))
+                .sorted(Comparator.comparing(ChunkDtos.ChunkMetadata::hash))
+                .toList();
+        Set<String> existingHashes = existing.stream().map(ChunkDtos.ChunkMetadata::hash).collect(java.util.stream.Collectors.toSet());
+        List<String> missing = hashes.stream().filter(h -> !existingHashes.contains(h)).toList();
+        return new ChunkDtos.CheckChunksResponse(existing, missing);
+    }
+
+    @Transactional(readOnly = true)
+    public ChunkDtos.StorageUsageResponse storageUsage(UUID userId) {
+        return new ChunkDtos.StorageUsageResponse(chunks.totalCompressedSizeByUserId(userId));
     }
 
     public static String chunkKey(UUID userId, String hash) {
         validateHash(hash);
         String a = hash.substring(0, 2);
         String b = hash.substring(2, 4);
-        return "users/%s/chunks/%s/%s/%s.gz".formatted(userId, a, b, hash);
+        return "users/%s/chunks/%s/%s/%s.zst".formatted(userId, a, b, hash);
     }
 }
