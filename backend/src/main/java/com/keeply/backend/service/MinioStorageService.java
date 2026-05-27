@@ -3,6 +3,7 @@ package com.keeply.backend.service;
 
 import io.minio.*;
 import io.minio.errors.ErrorResponseException;
+import io.minio.messages.DeleteObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -94,12 +95,28 @@ public class MinioStorageService implements ObjectStorageService {
     @Override
     public void deletePrefix(String prefix) {
         try {
+            java.util.List<DeleteObject> batch = new java.util.ArrayList<>(1000);
             for (Result<io.minio.messages.Item> result : minio.listObjects(
                     ListObjectsArgs.builder().bucket(bucket).prefix(prefix).recursive(true).build())) {
-                minio.removeObject(RemoveObjectArgs.builder().bucket(bucket).object(result.get().objectName()).build());
+                batch.add(new DeleteObject(result.get().objectName()));
+                if (batch.size() == 1000) {
+                    removeBatch(batch);
+                    batch.clear();
+                }
+            }
+            if (!batch.isEmpty()) {
+                removeBatch(batch);
             }
         } catch (Exception e) {
             throw new IllegalStateException("Falha ao limpar staging MinIO: " + prefix, e);
+        }
+    }
+
+    private void removeBatch(java.util.List<DeleteObject> objects) throws Exception {
+        for (Result<io.minio.messages.DeleteError> result : minio.removeObjects(
+                RemoveObjectsArgs.builder().bucket(bucket).objects(new java.util.ArrayList<>(objects)).build())) {
+            io.minio.messages.DeleteError error = result.get();
+            throw new IllegalStateException("Falha ao remover objeto MinIO: " + error.objectName());
         }
     }
 }

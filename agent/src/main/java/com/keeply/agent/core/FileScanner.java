@@ -2,6 +2,9 @@ package com.keeply.agent.core;
 
 import java.io.IOException;
 import java.nio.file.*;
+import java.nio.file.attribute.BasicFileAttributes;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
 import java.util.stream.Stream;
 
@@ -26,11 +29,41 @@ public final class FileScanner {
     }
 
     public static Stream<Path> scan(Path root) {
+        List<Path> files = new ArrayList<>();
+        walk(root, files::add);
+        return files.stream();
+    }
+
+    public static ScanStats walk(Path root, FileHandler handler) {
+        Path normalizedRoot = root.toAbsolutePath().normalize();
+        MutableStats stats = new MutableStats();
         try {
-            Path normalizedRoot = root.toAbsolutePath().normalize();
-            return Files.walk(root, FileVisitOption.FOLLOW_LINKS)
-                    .filter(Files::isRegularFile)
-                    .filter(path -> !isExcluded(normalizedRoot, path.toAbsolutePath().normalize()));
+            Files.walkFileTree(normalizedRoot, new SimpleFileVisitor<>() {
+                @Override
+                public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) {
+                    if (!dir.equals(normalizedRoot) && isExcluded(normalizedRoot, dir)) {
+                        stats.prunedDirectories++;
+                        return FileVisitResult.SKIP_SUBTREE;
+                    }
+                    return FileVisitResult.CONTINUE;
+                }
+
+                @Override
+                public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
+                    if (attrs.isRegularFile() && !attrs.isSymbolicLink()) {
+                        handler.accept(file);
+                        stats.files++;
+                    }
+                    return FileVisitResult.CONTINUE;
+                }
+
+                @Override
+                public FileVisitResult visitFileFailed(Path file, IOException exc) {
+                    stats.unreadableEntries++;
+                    return FileVisitResult.CONTINUE;
+                }
+            });
+            return new ScanStats(stats.files, stats.prunedDirectories, stats.unreadableEntries);
         } catch (IOException e) {
             throw new IllegalStateException("Falha ao escanear pasta: " + root, e);
         }
@@ -44,5 +77,19 @@ public final class FileScanner {
             }
         }
         return false;
+    }
+
+    @FunctionalInterface
+    public interface FileHandler {
+        void accept(Path path) throws IOException;
+    }
+
+    public record ScanStats(long files, long prunedDirectories, long unreadableEntries) {
+    }
+
+    private static final class MutableStats {
+        long files;
+        long prunedDirectories;
+        long unreadableEntries;
     }
 }

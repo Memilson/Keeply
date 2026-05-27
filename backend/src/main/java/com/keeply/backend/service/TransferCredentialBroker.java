@@ -151,7 +151,7 @@ public class TransferCredentialBroker {
                     + ",{\"Effect\":\"Allow\",\"Action\":[\"s3:PutObject\",\"s3:AbortMultipartUpload\",\"s3:ListMultipartUploadParts\"],\"Resource\":[\""
                     + arn + "\"]}]}";
         }
-        String manifest = "%s/users/%s/manifests/%s.json.gz".formatted(bucketArn, session.userId, session.snapshotId);
+        String manifest = "%s/users/%s/manifests/%s.json.zst".formatted(bucketArn, session.userId, session.snapshotId);
         String chunks = "%s/users/%s/chunks/*".formatted(bucketArn, session.userId);
         return "{\"Version\":\"2012-10-17\",\"Statement\":[" + bucketLocation
                 + ",{\"Effect\":\"Allow\",\"Action\":[\"s3:GetObject\"],\"Resource\":[\"" + manifest + "\",\"" + chunks + "\"]}]}";

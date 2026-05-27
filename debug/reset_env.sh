@@ -5,7 +5,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "$PROJECT_ROOT"
 
-echo "🚀 Iniciando reset do ambiente Keeply..."
+echo "🚀 Iniciando reset destrutivo do ambiente Keeply para Zstd..."
+echo "⚠️  Este procedimento remove snapshots, chunks, objetos MinIO e caches locais GZIP existentes."
 
 # Resolver caminhos XDG dinamicamente
 KEEPLY_CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/keeply"

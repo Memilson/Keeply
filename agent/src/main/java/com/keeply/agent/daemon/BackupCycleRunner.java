@@ -38,7 +38,7 @@ public final class BackupCycleRunner {
 
     public BackupCycleRunner(AgentConfig config, LocalDatabase db, DeviceAuthStore authStore) {
         this.config = config;
-        this.backend = new BackendClient(config.backend().url());
+        this.backend = new BackendClient(config.backend().url(), authStore);
         this.db = db;
         this.authStore = authStore;
         this.sourceBackupExecutor = (id, source) -> new BackupEngine(backend, db).backup(id, source);
@@ -46,7 +46,7 @@ public final class BackupCycleRunner {
 
     BackupCycleRunner(AgentConfig config, DeviceAuthStore authStore, SourceBackupExecutor sourceBackupExecutor) {
         this.config = config;
-        this.backend = new BackendClient(config.backend().url());
+        this.backend = new BackendClient(config.backend().url(), authStore);
         this.db = null;
         this.authStore = authStore;
         this.sourceBackupExecutor = sourceBackupExecutor;
@@ -144,7 +144,6 @@ public final class BackupCycleRunner {
             backend.setSession(saved);
             try {
                 DeviceSession refreshed = backend.refreshSession();
-                authStore.save(refreshed);
                 deviceId = refreshed.deviceId();
                 return;
             } catch (Exception e) {
@@ -175,7 +174,6 @@ public final class BackupCycleRunner {
                     System.getProperty("os.name"),
                     "0.1.0-daemon"
             );
-            authStore.save(session);
             deviceId = session.deviceId();
         } catch (Exception e) {
             if (isNetworkError(e)) {

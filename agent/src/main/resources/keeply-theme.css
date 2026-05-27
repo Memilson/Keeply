@@ -69,6 +69,24 @@
     -fx-padding: 15 22;
 }
 
+.window-close-button {
+    -fx-background-color: transparent;
+    -fx-background-radius: 18px;
+    -fx-text-fill: #64748B;
+    -fx-font-size: 21px;
+    -fx-font-weight: 400;
+    -fx-padding: 0;
+    -fx-min-width: 32px;
+    -fx-min-height: 32px;
+    -fx-pref-width: 32px;
+    -fx-pref-height: 32px;
+}
+
+.window-close-button:hover {
+    -fx-background-color: #EF4444;
+    -fx-text-fill: white;
+}
+
 .app-context {
     -fx-font-size: 13px;
     -fx-font-weight: 600;

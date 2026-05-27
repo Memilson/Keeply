@@ -66,8 +66,7 @@
                 <VBox>
                     <Label text="Armazenamento" styleClass="card-label"/>
                     <HBox alignment="BASELINE_LEFT" spacing="4">
-                        <Label fx:id="lblStorageUsed" text="256" styleClass="card-value"/>
-                        <Label text="GB" style="-fx-font-size: 16px; -fx-font-weight: 700; -fx-text-fill: #0F172A;"/>
+                        <Label fx:id="lblStorageUsed" text="0 B" styleClass="card-value"/>
                     </HBox>
                 </VBox>
             </HBox>

@@ -11,6 +11,7 @@ dependencies {
     implementation 'org.xerial:sqlite-jdbc:3.49.1.0'
     implementation 'org.slf4j:slf4j-simple:2.0.13'
     implementation 'io.minio:minio:8.5.17'
+    implementation 'com.github.luben:zstd-jni:1.5.7-4'
     
     // Security & Keyring
     implementation 'com.github.javakeyring:java-keyring:1.0.2'
@@ -25,17 +26,18 @@ dependencies {
 
 application {
     mainClass = 'com.keeply.agent.KeeplyAgentApp'
-    applicationDefaultJvmArgs = ['--enable-native-access=ALL-UNNAMED']
+    applicationDefaultJvmArgs = ['--enable-native-access=ALL-UNNAMED,javafx.graphics', '--sun-misc-unsafe-memory-access=allow']
 }
 
 // Configura o diretório de trabalho para a tarefa 'run' padrão (GUI)
 tasks.named('run') {
     workingDir = rootProject.projectDir
-    jvmArgs '--enable-native-access=ALL-UNNAMED'
+    jvmArgs '--enable-native-access=ALL-UNNAMED,javafx.graphics', '--sun-misc-unsafe-memory-access=allow'
+    environment 'GDK_BACKEND', 'x11'
 }
 
 javafx {
-    version = '25'
+    version = '21'
     modules = [ 'javafx.controls', 'javafx.fxml' ]
 }
 

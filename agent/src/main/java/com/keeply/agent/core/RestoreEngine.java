@@ -3,6 +3,7 @@ package com.keeply.agent.core;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonToken;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.luben.zstd.ZstdInputStream;
 import com.keeply.agent.api.BackendClient;
 import com.keeply.agent.model.FileManifest;
 import com.keeply.agent.model.ManifestChunk;
@@ -23,7 +24,6 @@ import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.HexFormat;
-import java.util.zip.GZIPInputStream;
 
 public class RestoreEngine {
     private static final Logger log = LoggerFactory.getLogger(RestoreEngine.class);
@@ -57,7 +57,7 @@ public class RestoreEngine {
             credentials = backend.startRestoreSession(snapshotId);
             TransferObjectClient storage = storageFactory.create(backend, credentials);
             try (var compressedManifest = storage.openManifest(snapshotId);
-                 var stream = new GZIPInputStream(compressedManifest);
+                 var stream = new ZstdInputStream(compressedManifest);
                  JsonParser parser = mapper.getFactory().createParser(stream)) {
                 Path originalRoot = null;
                 while (parser.nextToken() != null) {
@@ -126,7 +126,7 @@ public class RestoreEngine {
                         MessageDigest digest = MessageDigest.getInstance("SHA-256");
                         long size;
                         try (InputStream compressed = storage.openChunk(chunk.hash());
-                             GZIPInputStream original = new GZIPInputStream(compressed);
+                             ZstdInputStream original = new ZstdInputStream(compressed);
                              DigestInputStream validated = new DigestInputStream(original, digest)) {
                             size = validated.transferTo(out);
                         }

@@ -14,6 +14,8 @@ public final class ChunkDtos {
             @NotEmpty @Size(max = 1000) 
             List<@Pattern(regexp = "^[a-fA-F0-9]{64}$") String> hashes
     ) {}
-    public record CheckChunksResponse(List<String> existing, List<String> missing) {}
+    public record ChunkMetadata(String hash, long originalSize, long compressedSize) {}
+    public record CheckChunksResponse(List<ChunkMetadata> existing, List<String> missing) {}
+    public record StorageUsageResponse(long usedBytes) {}
     public record ChunkUploadResponse(String hash, boolean stored) {}
 }

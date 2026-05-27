@@ -6,8 +6,11 @@ import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.ProgressBar;
 import javafx.scene.control.TextField;
+import javafx.scene.input.MouseButton;
+import javafx.scene.layout.HBox;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
+import javafx.stage.Stage;
 import java.util.function.Consumer;
 
 public class MainShellController {
@@ -17,6 +20,8 @@ public class MainShellController {
     @FXML private Button btnMeusArquivos;
     @FXML private Button btnBackups;
     @FXML private Button btnAtividade;
+    @FXML private Button btnClose;
+    @FXML private HBox appHeader;
     @FXML private TextField searchField;
     @FXML private StackPane contentHost;
     @FXML private Label lblProfileInitials;
@@ -27,6 +32,8 @@ public class MainShellController {
     @FXML private Label lblStoragePercent;
 
     private Consumer<String> onNavigate;
+    private double windowDragOffsetX;
+    private double windowDragOffsetY;
 
     @FXML
     public void initialize() {
@@ -38,6 +45,22 @@ public class MainShellController {
 
     public void setNavigationHandler(Consumer<String> handler) {
         this.onNavigate = handler;
+    }
+
+    public void bindWindow(Stage stage) {
+        btnClose.setOnAction(e -> stage.close());
+        appHeader.setOnMousePressed(e -> {
+            if (e.getButton() == MouseButton.PRIMARY) {
+                windowDragOffsetX = e.getScreenX() - stage.getX();
+                windowDragOffsetY = e.getScreenY() - stage.getY();
+            }
+        });
+        appHeader.setOnMouseDragged(e -> {
+            if (e.isPrimaryButtonDown()) {
+                stage.setX(e.getScreenX() - windowDragOffsetX);
+                stage.setY(e.getScreenY() - windowDragOffsetY);
+            }
+        });
     }
 
     public StackPane getContentHost() {

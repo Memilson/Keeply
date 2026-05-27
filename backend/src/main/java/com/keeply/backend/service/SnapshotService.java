@@ -62,7 +62,7 @@ public class SnapshotService {
         }
 
         TransferSession session = transferBroker.processing(principal, request.transferSessionId(), snapshotId);
-        String stagedManifest = session.stagingPrefix + "manifest.json.gz";
+        String stagedManifest = session.stagingPrefix + "manifest.json.zst";
         if (!storage.exists(stagedManifest)) {
             throw new IllegalStateException("Manifesto staged não encontrado");
         }
@@ -70,7 +70,7 @@ public class SnapshotService {
         s.totalFiles = request.totalFiles();
         s.totalOriginalSize = request.totalOriginalSize();
         s.totalCompressedSize = request.totalCompressedSize();
-        s.manifestKey = "users/%s/manifests/%s.json.gz".formatted(principal.userId(), snapshotId);
+        s.manifestKey = "users/%s/manifests/%s.json.zst".formatted(principal.userId(), snapshotId);
         s.status = SnapshotStatus.PROCESSING;
         s.completedAt = Instant.now();
         snapshots.save(s);

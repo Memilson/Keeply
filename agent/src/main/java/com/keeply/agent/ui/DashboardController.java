@@ -11,9 +11,13 @@ import javafx.scene.shape.SVGPath;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.Region;
 import javafx.geometry.Pos;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.function.Consumer;
 
 public class DashboardController {
+    private static final DateTimeFormatter SNAPSHOT_DATE_FORMAT =
+            DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm").withZone(ZoneId.systemDefault());
 
     @FXML private Label lblLastBackup;
     @FXML private Label lblSnapshotCount;
@@ -47,21 +51,24 @@ public class DashboardController {
                     StackPane dot = new StackPane(new javafx.scene.shape.Circle(3, javafx.scene.paint.Color.web("#6D47FF")));
                     
                     VBox textInfo = new VBox(2);
-                    Label name = new Label(item.sourcePath());
-                    name.setStyle("-fx-font-weight: 600; -fx-text-fill: #0F172A; -fx-font-size: 11px;");
-                    Label date = new Label(item.startedAt().toString().substring(0, 16).replace("T", " "));
-                    date.setStyle("-fx-text-fill: #64748B; -fx-font-size: 10px;");
-                    textInfo.getChildren().addAll(name, date);
+                    Label date = new Label(item.startedAt() == null ? "-" : SNAPSHOT_DATE_FORMAT.format(item.startedAt()));
+                    date.setStyle("-fx-font-weight: 600; -fx-text-fill: #0F172A; -fx-font-size: 11px;");
+                    Label status = new Label(statusLabel(item.status()));
+                    status.setStyle("-fx-text-fill: " + statusColor(item.status()) + "; -fx-font-size: 10px; -fx-font-weight: bold;");
+                    textInfo.getChildren().addAll(date, status);
                     
                     Region spacer = new Region();
                     HBox.setHgrow(spacer, javafx.scene.layout.Priority.ALWAYS);
-                    
-                    Label status = new Label(item.status());
-                    status.setStyle("-fx-text-fill: " + ("COMPLETED".equals(item.status()) ? "#16A34A" : "#6D47FF") + "; -fx-font-size: 10px; -fx-font-weight: bold;");
-                    
+
                     Label files = new Label(item.totalFiles() + " arq");
                     files.setStyle("-fx-text-fill: #64748B; -fx-font-size: 11px;");
-                    
+
+                    row.getChildren().addAll(dot, textInfo, spacer, files);
+                    if (!"COMPLETED".equals(item.status())) {
+                        setGraphic(row);
+                        return;
+                    }
+
                     SVGPath downloadIcon = new SVGPath();
                     downloadIcon.setContent("M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z");
                     downloadIcon.setStyle("-fx-fill: #94A3B8;");
@@ -69,11 +76,35 @@ public class DashboardController {
                     dlBox.setScaleX(0.7);
                     dlBox.setScaleY(0.7);
 
-                    row.getChildren().addAll(dot, textInfo, spacer, status, files, dlBox);
+                    row.getChildren().add(dlBox);
                     setGraphic(row);
                 }
             }
         });
+    }
+
+    private static String statusLabel(String status) {
+        if (status == null) {
+            return "Desconhecido";
+        }
+        return switch (status) {
+            case "COMPLETED" -> "Completo";
+            case "IN_PROGRESS" -> "Em progresso";
+            case "PROCESSING" -> "Processando";
+            case "FAILED" -> "Falhou";
+            default -> status;
+        };
+    }
+
+    private static String statusColor(String status) {
+        if (status == null) {
+            return "#64748B";
+        }
+        return switch (status) {
+            case "COMPLETED" -> "#16A34A";
+            case "FAILED" -> "#DC2626";
+            default -> "#6D47FF";
+        };
     }
 
     public void setOnNavigate(Consumer<String> onNavigate) {

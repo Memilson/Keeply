@@ -5,6 +5,7 @@ import com.keeply.backend.dto.DeviceDtos;
 import com.keeply.backend.service.ProtectionPlanService;
 import com.keeply.backend.service.DeviceService;
 import com.keeply.backend.util.CurrentUser;
+import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -22,7 +23,7 @@ public class DeviceController {
     }
 
     @PostMapping("/register")
-    public DeviceDtos.DeviceResponse register(@RequestBody DeviceDtos.RegisterDeviceRequest request) {
+    public DeviceDtos.DeviceResponse register(@Valid @RequestBody DeviceDtos.RegisterDeviceRequest request) {
         return devices.register(CurrentUser.get().userId(), request);
     }
 
@@ -42,7 +43,7 @@ public class DeviceController {
     }
 
     @PutMapping("/{deviceId}/plan")
-    public DeviceDtos.PlanResponse upsertPlan(@PathVariable UUID deviceId, @RequestBody DeviceDtos.PlanRequest request) {
+    public DeviceDtos.PlanResponse upsertPlan(@PathVariable UUID deviceId, @Valid @RequestBody DeviceDtos.PlanRequest request) {
         return plans.upsert(CurrentUser.get().userId(), deviceId, request);
     }
 }

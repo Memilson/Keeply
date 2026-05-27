@@ -20,4 +20,9 @@ public class ChunkController {
     public ChunkDtos.CheckChunksResponse check(@Valid @RequestBody ChunkDtos.CheckChunksRequest request) {
         return chunks.check(CurrentUser.get().userId(), request.hashes());
     }
+
+    @GetMapping("/storage-usage")
+    public ChunkDtos.StorageUsageResponse storageUsage() {
+        return chunks.storageUsage(CurrentUser.get().userId());
+    }
 }

@@ -29,26 +29,26 @@ public class DirectTransferStorage implements TransferObjectClient {
     }
 
     @Override
-    public void uploadChunk(String hash, Path gzipFile) {
+    public void uploadChunk(String hash, Path zstdFile) {
         String key = credentials.stagingPrefix() + "chunks/" + hash.substring(0, 2) + "/"
-                + hash.substring(2, 4) + "/" + hash + ".gz";
-        put(key, gzipFile);
+                + hash.substring(2, 4) + "/" + hash + ".zst";
+        put(key, zstdFile);
     }
 
     @Override
-    public void uploadManifest(Path gzipFile) {
-        put(credentials.stagingPrefix() + "manifest.json.gz", gzipFile);
+    public void uploadManifest(Path zstdFile) {
+        put(credentials.stagingPrefix() + "manifest.json.zst", zstdFile);
     }
 
     @Override
     public InputStream openManifest(UUID snapshotId) {
-        return get("users/" + backend.getSession().userId() + "/manifests/" + snapshotId + ".json.gz");
+        return get("users/" + backend.getSession().userId() + "/manifests/" + snapshotId + ".json.zst");
     }
 
     @Override
     public InputStream openChunk(String hash) {
         return get("users/" + backend.getSession().userId() + "/chunks/" + hash.substring(0, 2) + "/"
-                + hash.substring(2, 4) + "/" + hash + ".gz");
+                + hash.substring(2, 4) + "/" + hash + ".zst");
     }
 
     private void put(String key, Path source) {
@@ -59,7 +59,7 @@ public class DirectTransferStorage implements TransferObjectClient {
                         .bucket(credentials.bucket())
                         .object(key)
                         .stream(input, Files.size(source), -1)
-                        .contentType("application/gzip")
+                        .contentType("application/zstd")
                         .build());
             }
         } catch (Exception e) {
@@ -75,13 +75,11 @@ public class DirectTransferStorage implements TransferObjectClient {
             throw new IllegalStateException("Falha no download direto MinIO: " + key, e);
         }
     }
-
     private synchronized void ensureRenewed() {
         if (!Instant.now().isBefore(credentials.renewAfter())) {
             update(backend.renewTransferSession(credentials.transferSessionId()));
         }
     }
-
     private void update(TransferCredentials credentials) {
         this.credentials = credentials;
         this.minio = MinioClient.builder()

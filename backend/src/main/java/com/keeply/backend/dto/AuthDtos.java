@@ -19,23 +19,23 @@ public final class AuthDtos {
 
     public record LoginRequest(
             @NotBlank @Email @Size(max = 255) String email,
-            @NotBlank String password
+            @NotBlank @Size(max = 128) String password
     ) {
     }
 
     public record DeviceLoginRequest(
             @NotBlank @Email @Size(max = 255) String email,
-            @NotBlank String password,
-            @NotBlank String deviceInstallationId,
-            @NotBlank String hostname,
-            @NotBlank String osName,
-            @NotBlank String agentVersion
+            @NotBlank @Size(max = 128) String password,
+            @NotBlank @Size(max = 255) String deviceInstallationId,
+            @NotBlank @Size(max = 255) String hostname,
+            @NotBlank @Size(max = 100) String osName,
+            @NotBlank @Size(max = 100) String agentVersion
     ) {
     }
 
     public record RefreshRequest(
-            @NotBlank String refreshToken,
-            @NotBlank String deviceInstallationId
+            @NotBlank @Size(max = 4096) String refreshToken,
+            @NotBlank @Size(max = 255) String deviceInstallationId
     ) {
     }
 
