@@ -62,47 +62,51 @@ public class ManifestParserService {
 
     @Async
     @Transactional
-    public void auditAndPromoteAsync(UUID snapshotId, UUID sessionId, String stagingPrefix) {
+    public void auditAndPromoteAsync(UUID snapshotId, UUID sessionId, String stagingPrefix, UUID userId) {
         log.info("event=snapshot.audit status=started snapshot_id={} session_id={}", snapshotId, sessionId);
-        Snapshot snapshot = snapshots.findById(snapshotId)
-                .orElseThrow(() -> new IllegalArgumentException("Snapshot não encontrado: " + snapshotId));
-        UUID userId = snapshot.device.user.id;
         String stagedManifest = stagingPrefix + "manifest.json.gz";
+        Snapshot snapshot = null;
 
-        try (InputStream is = storage.getStream(stagedManifest);
+        try {
+            snapshot = snapshots.findById(snapshotId)
+                    .orElseThrow(() -> new IllegalArgumentException("Snapshot não encontrado: " + snapshotId));
+            try (InputStream is = storage.getStream(stagedManifest);
              GZIPInputStream gis = new GZIPInputStream(is)) {
-            snapshotFiles.deleteBySnapshotId(snapshotId);
-            JsonParser parser = mapper.getFactory().createParser(gis);
-            List<FileChunk> chunkBatch = new ArrayList<>(250);
-            Set<String> checkedChunks = new HashSet<>();
-            int count = 0;
+                snapshotFiles.deleteBySnapshotId(snapshotId);
+                JsonParser parser = mapper.getFactory().createParser(gis);
+                List<FileChunk> chunkBatch = new ArrayList<>(250);
+                Set<String> checkedChunks = new HashSet<>();
+                int count = 0;
 
-            while (parser.nextToken() != null) {
-                if (parser.currentToken() == JsonToken.FIELD_NAME && "files".equals(parser.currentName())) {
-                    parser.nextToken();
-                    while (parser.nextToken() != JsonToken.END_ARRAY) {
-                        parseFile(parser, snapshot, userId, stagingPrefix, checkedChunks, chunkBatch);
-                        count++;
+                while (parser.nextToken() != null) {
+                    if (parser.currentToken() == JsonToken.FIELD_NAME && "files".equals(parser.currentName())) {
+                        parser.nextToken();
+                        while (parser.nextToken() != JsonToken.END_ARRAY) {
+                            parseFile(parser, snapshot, userId, stagingPrefix, checkedChunks, chunkBatch);
+                            count++;
+                        }
                     }
                 }
-            }
-            
-            if (!chunkBatch.isEmpty()) {
-                saveChunkBatch(chunkBatch);
-            }
 
-            storage.copy(stagedManifest, snapshot.manifestKey);
-            snapshot.status = SnapshotStatus.COMPLETED;
-            snapshots.save(snapshot);
-            transferBroker.completeProcessing(sessionId, true, "Auditoria concluída");
-            storage.deletePrefix(stagingPrefix);
-            log.info("event=snapshot.audit status=completed snapshot_id={} session_id={} files={}", snapshotId, sessionId, count);
+                if (!chunkBatch.isEmpty()) {
+                    saveChunkBatch(chunkBatch);
+                }
+
+                storage.copy(stagedManifest, snapshot.manifestKey);
+                snapshot.status = SnapshotStatus.COMPLETED;
+                snapshots.save(snapshot);
+                transferBroker.completeProcessing(sessionId, true, "Auditoria concluída");
+                storage.deletePrefix(stagingPrefix);
+                log.info("event=snapshot.audit status=completed snapshot_id={} session_id={} files={}", snapshotId, sessionId, count);
+            }
 
         } catch (Exception e) {
             log.error("event=snapshot.audit status=failed snapshot_id={} session_id={} cause={}", snapshotId, sessionId, e.getMessage(), e);
-            snapshot.status = SnapshotStatus.FAILED;
-            snapshot.errorMessage = e.getMessage();
-            snapshots.save(snapshot);
+            if (snapshot != null) {
+                snapshot.status = SnapshotStatus.FAILED;
+                snapshot.errorMessage = e.getMessage();
+                snapshots.save(snapshot);
+            }
             transferBroker.completeProcessing(sessionId, false, e.getMessage());
             storage.deletePrefix(stagingPrefix);
         }

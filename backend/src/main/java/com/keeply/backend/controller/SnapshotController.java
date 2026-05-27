@@ -65,11 +65,12 @@ public class SnapshotController {
             @PathVariable UUID snapshotId,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "100") int size,
-            @RequestParam(required = false) String search
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) String prefix
     ) {
         // Limite de segurança para o tamanho da página
         int pageSize = Math.min(size, 200);
-        return manifestReader.listFiles(CurrentUser.get().userId(), snapshotId, page, pageSize, search);
+        return manifestReader.listFiles(CurrentUser.get().userId(), snapshotId, page, pageSize, search, prefix);
     }
 
 }

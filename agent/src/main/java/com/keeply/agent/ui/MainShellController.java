@@ -3,6 +3,8 @@ package com.keeply.agent.ui;
 import javafx.fxml.FXML;
 import javafx.scene.Node;
 import javafx.scene.control.Button;
+import javafx.scene.control.Label;
+import javafx.scene.control.ProgressBar;
 import javafx.scene.control.TextField;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
@@ -14,24 +16,23 @@ public class MainShellController {
     @FXML private Button btnInicio;
     @FXML private Button btnMeusArquivos;
     @FXML private Button btnBackups;
-    @FXML private Button btnSnapshots;
-    @FXML private Button btnRestaurar;
-    @FXML private Button btnCompartilhado;
     @FXML private Button btnAtividade;
-    @FXML private Button btnConfiguracoes;
     @FXML private TextField searchField;
     @FXML private StackPane contentHost;
-    @FXML private javafx.scene.control.Label lblProfileInitials;
-    @FXML private javafx.scene.control.Label lblProfileName;
+    @FXML private Label lblProfileInitials;
+    @FXML private Label lblProfileName;
+
+    @FXML private Label lblStorageUsed;
+    @FXML private ProgressBar pbStorage;
+    @FXML private Label lblStoragePercent;
 
     private Consumer<String> onNavigate;
 
     @FXML
     public void initialize() {
         btnInicio.setOnAction(e -> navigateTo("Dashboard", btnInicio));
+        btnMeusArquivos.setOnAction(e -> navigateTo("Restore", btnMeusArquivos));
         btnBackups.setOnAction(e -> navigateTo("Backup", btnBackups));
-        btnRestaurar.setOnAction(e -> navigateTo("Restore", btnRestaurar));
-        btnConfiguracoes.setOnAction(e -> navigateTo("Configurações", btnConfiguracoes));
         btnAtividade.setOnAction(e -> navigateTo("Logs", btnAtividade));
     }
 
@@ -56,6 +57,12 @@ public class MainShellController {
         } else {
             lblProfileInitials.setText(name.substring(0, Math.min(2, name.length())).toUpperCase());
         }
+    }
+
+    public void updateStorageInfo(String usedGb, double percent) {
+        if (lblStorageUsed != null) lblStorageUsed.setText(usedGb);
+        if (pbStorage != null) pbStorage.setProgress(percent);
+        if (lblStoragePercent != null) lblStoragePercent.setText(String.format("%.0f%% usado", percent * 100));
     }
 
     public void setContent(Node node) {

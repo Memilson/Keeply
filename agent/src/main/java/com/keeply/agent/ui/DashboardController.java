@@ -1,6 +1,7 @@
 package com.keeply.agent.ui;
 
 import javafx.fxml.FXML;
+import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
@@ -10,43 +11,56 @@ import javafx.scene.shape.SVGPath;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.Region;
 import javafx.geometry.Pos;
+import java.util.function.Consumer;
 
 public class DashboardController {
 
     @FXML private Label lblLastBackup;
     @FXML private Label lblSnapshotCount;
     @FXML private Label lblStorageUsed;
-    @FXML private ListView<String> listSnapshots;
+    @FXML private ListView<com.keeply.agent.model.SnapshotSummary> listSnapshots;
     @FXML private HBox foldersContainer;
     @FXML private VBox btnAddFolder;
+    @FXML private Button btnRestaurar;
+
+    private Consumer<String> onNavigate;
 
     @FXML
     public void initialize() {
-        // Setup initial dummy data or styling for the list
-        listSnapshots.setCellFactory(param -> new ListCell<String>() {
+        if (btnRestaurar != null) {
+            btnRestaurar.setOnAction(e -> {
+                if (onNavigate != null) onNavigate.accept("Restore");
+            });
+        }
+
+        listSnapshots.setCellFactory(param -> new ListCell<>() {
             @Override
-            protected void updateItem(String item, boolean empty) {
+            protected void updateItem(com.keeply.agent.model.SnapshotSummary item, boolean empty) {
                 super.updateItem(item, empty);
                 if (empty || item == null) {
                     setText(null);
                     setGraphic(null);
                 } else {
-                    // Create custom layout for list items matching the visual identity
                     HBox row = new HBox(12);
                     row.setAlignment(Pos.CENTER_LEFT);
                     
                     StackPane dot = new StackPane(new javafx.scene.shape.Circle(3, javafx.scene.paint.Color.web("#6D47FF")));
-                    Label name = new Label(item.split("\\|")[0].trim());
+                    
+                    VBox textInfo = new VBox(2);
+                    Label name = new Label(item.sourcePath());
                     name.setStyle("-fx-font-weight: 600; -fx-text-fill: #0F172A; -fx-font-size: 11px;");
+                    Label date = new Label(item.startedAt().toString().substring(0, 16).replace("T", " "));
+                    date.setStyle("-fx-text-fill: #64748B; -fx-font-size: 10px;");
+                    textInfo.getChildren().addAll(name, date);
                     
                     Region spacer = new Region();
                     HBox.setHgrow(spacer, javafx.scene.layout.Priority.ALWAYS);
                     
-                    Label type = new Label("Automático");
-                    type.setStyle("-fx-text-fill: #6D47FF; -fx-font-size: 10px;");
+                    Label status = new Label(item.status());
+                    status.setStyle("-fx-text-fill: " + ("COMPLETED".equals(item.status()) ? "#16A34A" : "#6D47FF") + "; -fx-font-size: 10px; -fx-font-weight: bold;");
                     
-                    Label size = new Label("2.4 GB");
-                    size.setStyle("-fx-text-fill: #64748B; -fx-font-size: 11px;");
+                    Label files = new Label(item.totalFiles() + " arq");
+                    files.setStyle("-fx-text-fill: #64748B; -fx-font-size: 11px;");
                     
                     SVGPath downloadIcon = new SVGPath();
                     downloadIcon.setContent("M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z");
@@ -55,11 +69,15 @@ public class DashboardController {
                     dlBox.setScaleX(0.7);
                     dlBox.setScaleY(0.7);
 
-                    row.getChildren().addAll(dot, name, spacer, type, size, dlBox);
+                    row.getChildren().addAll(dot, textInfo, spacer, status, files, dlBox);
                     setGraphic(row);
                 }
             }
         });
+    }
+
+    public void setOnNavigate(Consumer<String> onNavigate) {
+        this.onNavigate = onNavigate;
     }
 
     public void updateStats(String lastBackup, String count, String storage) {
@@ -101,7 +119,7 @@ public class DashboardController {
         }
     }
     
-    public void setSnapshotsList(java.util.List<String> snapshots) {
+    public void setSnapshotsList(java.util.List<com.keeply.agent.model.SnapshotSummary> snapshots) {
         listSnapshots.getItems().setAll(snapshots);
     }
 }
