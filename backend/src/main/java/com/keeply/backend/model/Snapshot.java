@@ -26,13 +26,13 @@ public class Snapshot {
     public String sourcePath;
 
     @Column(name = "total_files")
-    public long totalFiles;
+    public Long totalFiles;
 
     @Column(name = "total_original_size")
-    public long totalOriginalSize;
+    public Long totalOriginalSize;
 
     @Column(name = "total_compressed_size")
-    public long totalCompressedSize;
+    public Long totalCompressedSize;
 
     @Column(name = "manifest_key", columnDefinition = "TEXT")
     public String manifestKey;

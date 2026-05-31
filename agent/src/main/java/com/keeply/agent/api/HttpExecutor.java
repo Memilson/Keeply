@@ -72,17 +72,19 @@ public final class HttpExecutor {
             return;
         }
         String message = "HTTP " + response.statusCode();
+        String error = null;
         try {
-            Map<String, Object> error = mapper.readValue(response.body(), new TypeReference<>() {});
-            if (error.containsKey("error")) {
-                message = String.valueOf(error.get("error"));
+            Map<String, Object> errorMap = mapper.readValue(response.body(), new TypeReference<>() {});
+            if (errorMap.containsKey("error")) {
+                error = String.valueOf(errorMap.get("error"));
+                message = error;
             }
         } catch (Exception ignored) {
             if (response.body() != null && !response.body().isBlank()) {
                 message += ": " + response.body();
             }
         }
-        throw new IllegalStateException(message);
+        throw new ApiException(response.statusCode(), message, error);
     }
 
     private HttpRequest.Builder authorized(String path, String traceId) {

@@ -29,6 +29,7 @@ public class BackupEngine {
     private static final long DEFAULT_AUDIT_TIMEOUT_SECONDS = 3_600L;
     private final BackendClient backend;
     private final LocalDatabase db;
+    private static volatile boolean backingUp = false;
 
     public BackupEngine(BackendClient backend, LocalDatabase db) {
         this.backend = backend;
@@ -36,218 +37,245 @@ public class BackupEngine {
     }
 
     public UUID backup(UUID deviceId, Path sourceRoot) {
-        long startTotal = System.nanoTime();
-        String sourcePath = sourceRoot.toAbsolutePath().normalize().toString();
-        autoSyncCache(deviceId, sourceRoot);
-
-        StartedSnapshot started = backend.startSnapshot(deviceId, sourcePath);
-        UUID snapshotId = started.snapshot().id();
-        DirectTransferStorage transferStorage = new DirectTransferStorage(backend, started.transfer());
-
+        if (backingUp) {
+            log.warn("event=backup status=skipped reason=already_running");
+            return null;
+        }
+        backingUp = true;
         try {
-            log.info("event=backup.snapshot status=started snapshot_id={} source_path={}", snapshotId, sourcePath);
+            long startTotal = System.nanoTime();
+            String sourcePath = sourceRoot.toAbsolutePath().normalize().toString();
+            autoSyncCache(deviceId, sourceRoot);
 
-            db.clearBackupManifest();
+            StartedSnapshot started = backend.startSnapshot(deviceId, sourcePath);
+            UUID snapshotId = started.snapshot().id();
+            DirectTransferStorage transferStorage = new DirectTransferStorage(backend, started.transfer());
 
-            AtomicInteger sentCount = new AtomicInteger(0);
-            AtomicInteger failedBatchItems = new AtomicInteger(0);
-            AtomicInteger totalFiles = new AtomicInteger(0);
-            AtomicInteger filesCached = new AtomicInteger(0);
-            AtomicInteger filesChanged = new AtomicInteger(0);
-            AtomicInteger chunksSeen = new AtomicInteger(0);
-            AtomicInteger chunksCompressed = new AtomicInteger(0);
-            AtomicInteger chunksReused = new AtomicInteger(0);
-            AtomicLong totalOriginalSize = new AtomicLong(0);
-            AtomicLong bytesCompressed = new AtomicLong(0);
-            AtomicLong bytesUploaded = new AtomicLong(0);
-            AtomicLong cacheValidationNanos = new AtomicLong(0);
-            AtomicLong compressionNanos = new AtomicLong(0);
-            AtomicLong uploadNanos = new AtomicLong(0);
-            ContentDefinedChunker chunker = new ContentDefinedChunker();
-            Map<String, ChunkMetadata> sessionChunks = new ConcurrentHashMap<>();
+            try {
+                log.info("event=backup.snapshot status=started snapshot_id={} source_path={}", snapshotId, sourcePath);
 
-            int uploadWorkers = Integer.getInteger("keeply.agent.upload.workers", DEFAULT_CHUNK_UPLOAD_WORKERS);
-            int uploadQueueSize = Integer.getInteger("keeply.agent.upload.queue-size", DEFAULT_CHUNK_UPLOAD_QUEUE_SIZE);
-            java.util.concurrent.ThreadPoolExecutor uploaderPool = new java.util.concurrent.ThreadPoolExecutor(
-                    uploadWorkers,
-                    uploadWorkers,
-                    0L,
-                    java.util.concurrent.TimeUnit.MILLISECONDS,
-                    new java.util.concurrent.ArrayBlockingQueue<>(uploadQueueSize),
-                    new java.util.concurrent.ThreadPoolExecutor.CallerRunsPolicy()
-            );
-            java.util.concurrent.ConcurrentLinkedQueue<Exception> uploadErrors =
-                    new java.util.concurrent.ConcurrentLinkedQueue<>();
-            AtomicInteger maxQueueDepth = new AtomicInteger();
-            log.info("event=backup.scan status=started");
-            long startProcessing = System.nanoTime();
-            FileScanner.ScanStats scanStats = FileScanner.walk(sourceRoot, file -> {
-                    String relativePath = sourceRoot.relativize(file).toString().replace("\\", "/");
-                    try {
-                        int currentTotal = totalFiles.incrementAndGet();
-                        if (currentTotal % 1000 == 0) {
-                            log.info("event=backup.progress files_processed={} bytes_processed={}",
-                                    currentTotal, totalOriginalSize.get());
-                        }
+                db.clearBackupManifest();
 
-                        long size = Files.size(file);
-                        long mtime = Files.getLastModifiedTime(file).toMillis();
-                        totalOriginalSize.addAndGet(size);
+                AtomicInteger sentCount = new AtomicInteger(0);
+                AtomicInteger failedBatchItems = new AtomicInteger(0);
+                AtomicInteger totalFiles = new AtomicInteger(0);
+                AtomicInteger filesCached = new AtomicInteger(0);
+                AtomicInteger filesChanged = new AtomicInteger(0);
+                AtomicInteger chunksSeen = new AtomicInteger(0);
+                AtomicInteger chunksCompressed = new AtomicInteger(0);
+                AtomicInteger chunksReused = new AtomicInteger(0);
+                AtomicLong totalOriginalSize = new AtomicLong(0);
+                AtomicLong bytesCompressed = new AtomicLong(0);
+                AtomicLong bytesUploaded = new AtomicLong(0);
+                AtomicLong cacheValidationNanos = new AtomicLong(0);
+                AtomicLong compressionNanos = new AtomicLong(0);
+                AtomicLong uploadNanos = new AtomicLong(0);
+                ContentDefinedChunker chunker = new ContentDefinedChunker();
+                ChunkCodec writeCodec = new CompressionService().writeCodec();
+                Map<String, ChunkMetadata> sessionChunks = new ConcurrentHashMap<>();
 
-                        long cacheStart = System.nanoTime();
-                        int cachedChunks = reuseCachedFile(sourcePath, relativePath, size, mtime, sessionChunks);
-                        cacheValidationNanos.addAndGet(System.nanoTime() - cacheStart);
-                        if (cachedChunks >= 0) {
-                            log.debug("📄 Cache hit: {}", relativePath);
-                            filesCached.incrementAndGet();
-                            chunksReused.addAndGet(cachedChunks);
-                        } else {
-                            log.debug("📄 Cache miss: {}", relativePath);
-                            filesChanged.incrementAndGet();
-                            List<PendingChunk> pending = new ArrayList<>();
-                            String fileHash = chunker.process(file, chunkData -> {
-                                String chunkHash = Sha256Hasher.hashBytes(chunkData.data());
-                                pending.add(new PendingChunk(chunkData.index(), chunkHash, chunkData.originalSize()));
-                                chunksSeen.incrementAndGet();
-                            });
-                            confirmRemoteChunks(pending, sessionChunks);
-                            chunker.process(file, chunkData -> {
-                                PendingChunk reference = pending.get(chunkData.index());
-                                String chunkHash = reference.hash();
-                                int originalSize = reference.originalSize();
-                                ChunkMetadata reusable = sessionChunks.get(chunkHash);
-                                if (reusable != null) {
-                                    db.addManifestChunk(relativePath, chunkData.index(), chunkHash,
-                                            reusable.originalSize(), reusable.compressedSize());
-                                    chunksReused.incrementAndGet();
-                                    return;
-                                }
-                                Path compressedFile = Files.createTempFile("keeply-chunk-", ".zst");
-                                long compressedSize;
-                                long compressStart = System.nanoTime();
-                                try {
-                                    compressedSize = ZstdCompressor.compressToFile(chunkData.data(), compressedFile);
-                                    compressionNanos.addAndGet(System.nanoTime() - compressStart);
-                                } catch (Exception e) {
-                                    Files.deleteIfExists(compressedFile);
-                                    throw e;
-                                }
-                                ChunkMetadata metadata = new ChunkMetadata(chunkHash, originalSize, compressedSize);
-                                sessionChunks.put(chunkHash, metadata);
-                                chunksCompressed.incrementAndGet();
-                                bytesCompressed.addAndGet(compressedSize);
-                                db.addManifestChunk(relativePath, chunkData.index(), chunkHash, originalSize, compressedSize);
+                int uploadWorkers = Integer.getInteger("keeply.agent.upload.workers", DEFAULT_CHUNK_UPLOAD_WORKERS);
+                int uploadQueueSize = Integer.getInteger("keeply.agent.upload.queue-size", DEFAULT_CHUNK_UPLOAD_QUEUE_SIZE);
+                java.util.concurrent.ThreadPoolExecutor uploaderPool = new java.util.concurrent.ThreadPoolExecutor(
+                        uploadWorkers,
+                        uploadWorkers,
+                        0L,
+                        java.util.concurrent.TimeUnit.MILLISECONDS,
+                        new java.util.concurrent.ArrayBlockingQueue<>(uploadQueueSize),
+                        new java.util.concurrent.ThreadPoolExecutor.CallerRunsPolicy()
+                );
+                java.util.concurrent.ConcurrentLinkedQueue<Exception> uploadErrors =
+                        new java.util.concurrent.ConcurrentLinkedQueue<>();
+                java.util.concurrent.ConcurrentLinkedQueue<FileProcessingFailure> fileFailures =
+                        new java.util.concurrent.ConcurrentLinkedQueue<>();
+                AtomicInteger maxQueueDepth = new AtomicInteger();
+                log.info("event=backup.scan status=started");
+                long startProcessing = System.nanoTime();
+                FileScanner.ScanStats scanStats = FileScanner.walk(sourceRoot, file -> {
+                        String relativePath = sourceRoot.relativize(file).toString().replace('\\', '/');
+                        try {
+                            int currentTotal = totalFiles.incrementAndGet();
+                            if (currentTotal % 1000 == 0) {
+                                log.info("event=backup.progress files_processed={} bytes_processed={}",
+                                        currentTotal, totalOriginalSize.get());
+                            }
 
-                                if (db.claimChunkForSession(chunkHash)) {
-                                    Path uploadFile = compressedFile;
-                                    uploaderPool.execute(() -> {
-                                        try {
-                                            long uploadStart = System.nanoTime();
-                                            transferStorage.uploadChunk(chunkHash, uploadFile);
-                                            sentCount.incrementAndGet();
-                                            bytesUploaded.addAndGet(compressedSize);
-                                            db.addKnownChunks(List.of(metadata));
-                                            uploadNanos.addAndGet(System.nanoTime() - uploadStart);
-                                            long latencyMs = (System.nanoTime() - uploadStart) / 1_000_000;
-                                            log.debug("event=chunk.upload hash={} compressed_bytes={} stored={} latency_ms={} in_flight={}",
-                                                    chunkHash, compressedSize, true, latencyMs,
-                                                    uploaderPool.getActiveCount());
-                                        } catch (Exception e) {
-                                            failedBatchItems.incrementAndGet();
-                                            uploadErrors.add(e);
-                                            log.error("event=chunk.upload status=failed hash={} message={}", chunkHash, e.getMessage(), e);
-                                        } finally {
+                            long size = Files.size(file);
+                            long mtime = Files.getLastModifiedTime(file).toMillis();
+                            totalOriginalSize.addAndGet(size);
+
+                            long cacheStart = System.nanoTime();
+                            int cachedChunks = reuseCachedFile(sourcePath, relativePath, size, mtime, sessionChunks);
+                            cacheValidationNanos.addAndGet(System.nanoTime() - cacheStart);
+                            if (cachedChunks >= 0) {
+                                log.debug("Cache hit: {}", relativePath);
+                                filesCached.incrementAndGet();
+                                chunksReused.addAndGet(cachedChunks);
+                            } else {
+                                log.debug("Cache miss: {}", relativePath);
+                                filesChanged.incrementAndGet();
+                                List<PendingChunk> pending = new ArrayList<>();
+                                String fileHash = chunker.process(file, chunkData -> {
+                                    String chunkHash = Sha256Hasher.hashBytes(chunkData.data());
+                                    pending.add(new PendingChunk(chunkData.index(), chunkHash, chunkData.originalSize()));
+                                    chunksSeen.incrementAndGet();
+                                });
+                                confirmRemoteChunks(pending, sessionChunks);
+                                chunker.process(file, chunkData -> {
+                                    PendingChunk reference = pending.get(chunkData.index());
+                                    String chunkHash = reference.hash();
+                                    int originalSize = reference.originalSize();
+                                    ChunkMetadata reusable = sessionChunks.get(chunkHash);
+                                    if (reusable != null) {
+                                        db.addManifestChunk(relativePath, chunkData.index(), chunkHash,
+                                                reusable.originalSize(), reusable.storedSize());
+                                        chunksReused.incrementAndGet();
+                                        return;
+                                    }
+                                    Path compressedFile = Files.createTempFile("keeply-chunk-", writeCodec.extension());
+                                    long compressedSize;
+                                    long compressStart = System.nanoTime();
+                                    try {
+                                        compressedSize = writeCodec.compressToFile(chunkData.data(), compressedFile);
+                                        compressionNanos.addAndGet(System.nanoTime() - compressStart);
+                                    } catch (Exception e) {
+                                        Files.deleteIfExists(compressedFile);
+                                        throw e;
+                                    }
+                                    ChunkMetadata metadata = new ChunkMetadata(chunkHash, originalSize, compressedSize, writeCodec.algorithm(), writeCodec.level());
+                                    sessionChunks.put(chunkHash, metadata);
+                                    chunksCompressed.incrementAndGet();
+                                    bytesCompressed.addAndGet(compressedSize);
+                                    db.addManifestChunk(relativePath, chunkData.index(), chunkHash, originalSize, compressedSize);
+
+                                    if (db.claimChunkForSession(chunkHash)) {
+                                        Path uploadFile = compressedFile;
+                                        uploaderPool.execute(() -> {
                                             try {
-                                                Files.deleteIfExists(uploadFile);
+                                                long uploadStart = System.nanoTime();
+                                                transferStorage.uploadChunk(chunkHash, uploadFile, writeCodec);
+                                                sentCount.incrementAndGet();
+                                                bytesUploaded.addAndGet(compressedSize);
+                                                db.addKnownChunks(List.of(metadata));
+                                                uploadNanos.addAndGet(System.nanoTime() - uploadStart);
+                                                long latencyMs = (System.nanoTime() - uploadStart) / 1_000_000;
+                                                log.debug("event=chunk.upload hash={} compressed_bytes={} stored={} latency_ms={} in_flight={}",
+                                                        chunkHash, compressedSize, true, latencyMs,
+                                                        uploaderPool.getActiveCount());
                                             } catch (Exception e) {
-                                                log.warn("event=chunk.temp_file status=cleanup_failed path={} message={}", uploadFile, e.getMessage());
+                                                failedBatchItems.incrementAndGet();
+                                                uploadErrors.add(e);
+                                                log.error("event=chunk.upload status=failed hash={} message={}", chunkHash, e.getMessage(), e);
+                                            } finally {
+                                                try {
+                                                    Files.deleteIfExists(uploadFile);
+                                                } catch (Exception e) {
+                                                    log.warn("event=chunk.temp_file status=cleanup_failed path={} message={}", uploadFile, e.getMessage());
+                                                }
                                             }
-                                        }
-                                    });
-                                    maxQueueDepth.accumulateAndGet(uploaderPool.getQueue().size(), Math::max);
-                                } else {
-                                    chunksReused.incrementAndGet();
-                                    Files.deleteIfExists(compressedFile);
-                                }
-                            });
+                                        });
+                                        maxQueueDepth.accumulateAndGet(uploaderPool.getQueue().size(), Math::max);
+                                    } else {
+                                        chunksReused.incrementAndGet();
+                                        Files.deleteIfExists(compressedFile);
+                                    }
+                                });
 
-                            db.addManifestFile(relativePath, size, mtime, fileHash);
+                                db.addManifestFile(relativePath, size, mtime, fileHash);
+                            }
+                        } catch (java.nio.file.NoSuchFileException e) {
+                            log.warn("event=backup.file status=failed reason=changed_during_read path={}", relativePath);
+                            fileFailures.add(new FileProcessingFailure(relativePath, "changed_during_read", e));
+                        } catch (Exception e) {
+                            if (e.getCause() instanceof java.nio.file.NoSuchFileException) {
+                                log.warn("event=backup.file status=failed reason=changed_during_read path={}", relativePath);
+                                fileFailures.add(new FileProcessingFailure(relativePath, "changed_during_read", e));
+                            } else {
+                                log.error("event=backup.file status=failed path={} message={}", relativePath, e.getMessage());
+                                fileFailures.add(new FileProcessingFailure(relativePath, "processing_failed", e));
+                            }
                         }
-                    } catch (java.nio.file.NoSuchFileException e) {
-                        log.warn("event=backup.file status=skipped reason=removed_during_scan path={}", relativePath);
-                    } catch (Exception e) {
-                        if (e.getCause() instanceof java.nio.file.NoSuchFileException) {
-                            log.warn("event=backup.file status=skipped reason=removed_during_processing path={}", relativePath);
-                        } else {
-                            log.error("event=backup.file status=failed path={} message={}", relativePath, e.getMessage());
-                        }
-                    }
-                });
-            log.info("event=backup.scan status=completed files={} directories_pruned={} unreadable_entries={} traversal_seconds={}",
-                    scanStats.files(), scanStats.prunedDirectories(), scanStats.unreadableEntries(),
-                    secondsSince(startProcessing));
-            
-            // Finaliza o processamento em background
-            uploaderPool.shutdown();
-            while (!uploaderPool.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS)) {
-                log.info("event=backup.upload status=waiting_for_pending_workers");
+                    });
+                for (FileScanner.ScanFailure failure : scanStats.unreadableFailures()) {
+                    String failedPath = relativePath(sourceRoot, failure.path());
+                    log.error("event=backup.file status=failed reason=unreadable_entry path={} message={}",
+                            failedPath, failure.cause().getMessage());
+                    fileFailures.add(new FileProcessingFailure(failedPath, "unreadable_entry", failure.cause()));
+                }
+                log.info("event=backup.scan status=completed files={} ignored_directories={} failed_entries={} traversal_seconds={}",
+                        scanStats.files(), scanStats.ignoredDirectories(), scanStats.unreadableEntries(),
+                        secondsSince(startProcessing));
+                
+                // Finaliza o processamento em background
+                uploaderPool.shutdown();
+                while (!uploaderPool.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS)) {
+                    log.info("event=backup.upload status=waiting_for_pending_workers");
+                }
+                if (!uploadErrors.isEmpty()) {
+                    throw new IllegalStateException("Falha ao enviar um ou mais chunks", uploadErrors.peek());
+                }
+                if (!fileFailures.isEmpty()) {
+                    throw incompleteSnapshotFailure(snapshotId, transferStorage.sessionId(), sourcePath, fileFailures);
+                }
+                long totalCompressedSize = db.totalDistinctCompressedSize();
+
+                double processDuration = (System.nanoTime() - startProcessing) / 1_000_000_000.0;
+                double throughputOriginal = (totalOriginalSize.get() / 1024.0 / 1024.0) / processDuration;
+
+                log.info("event=backup.summary files_total={} files_cached={} files_changed={}",
+                        totalFiles.get(), filesCached.get(), filesChanged.get());
+                log.info("event=backup.summary chunks_seen={} chunks_compressed={} chunks_reused={} chunks_uploaded={} chunks_failed={}",
+                        chunksSeen.get(), chunksCompressed.get(), chunksReused.get(), sentCount.get(), failedBatchItems.get());
+                log.info("event=backup.summary size_original_mb={} size_compressed_mb={}",
+                        totalOriginalSize.get() / 1024 / 1024, totalCompressedSize / 1024 / 1024);
+                log.info("event=backup.summary processing_seconds={} throughput_mb_s={} cache_validation_ms={} compression_ms={} upload_ms={} compressed_bytes={} uploaded_bytes={} upload_queue_max={}",
+                        String.format(java.util.Locale.ROOT, "%.2f", processDuration),
+                        String.format(java.util.Locale.ROOT, "%.2f", throughputOriginal),
+                        cacheValidationNanos.get() / 1_000_000, compressionNanos.get() / 1_000_000,
+                        uploadNanos.get() / 1_000_000, bytesCompressed.get(), bytesUploaded.get(), maxQueueDepth.get());
+
+                long startManifest = System.nanoTime();
+
+                Path manifestFile = Files.createTempFile("keeply-manifest-" + snapshotId, ".json.zst");
+                try {
+                    db.writeManifestZstd(manifestFile, snapshotId.toString(), sourcePath);
+                    transferStorage.uploadManifest(manifestFile);
+                    backend.completeSnapshot(snapshotId, transferStorage.sessionId(), totalFiles.get(), totalOriginalSize.get(), totalCompressedSize);
+                    awaitSnapshotAudit(snapshotId);
+                } finally {
+                    Files.deleteIfExists(manifestFile);
+                }
+                db.saveManifestToCache(sourcePath);
+
+                double manifestDuration = (System.nanoTime() - startManifest) / 1_000_000_000.0;
+                log.info("event=backup.manifest status=completed files={} duration_seconds={}",
+                        totalFiles.get(),
+                        String.format(java.util.Locale.ROOT, "%.2f", manifestDuration));
+
+                db.setLastSyncedSnapshot(deviceId, sourcePath, snapshotId.toString());
+                db.clearBackupManifest(); 
+
+                double totalDuration = (System.nanoTime() - startTotal) / 1_000_000_000.0;
+                log.info("event=backup.snapshot status=uploads_completed_pending_audit snapshot_id={} total_duration_seconds={} chunks_sent={}",
+                        snapshotId,
+                        String.format(java.util.Locale.ROOT, "%.2f", totalDuration),
+                        sentCount.get());
+
+                return snapshotId;
+            } catch (Exception e) {
+                try {
+                    backend.cancelTransferSession(transferStorage.sessionId());
+                } catch (Exception cancelError) {
+                    log.warn("event=backup.transfer_session status=cancel_failed message={}", cancelError.getMessage());
+                }
+                if (e instanceof BackupSnapshotException backupError) {
+                    throw backupError;
+                }
+                throw new BackupSnapshotException(snapshotId, transferStorage.sessionId(), sourcePath,
+                        "Backup falhou antes da conclusao do snapshot: " + safeMessage(e), e);
             }
-            if (!uploadErrors.isEmpty()) {
-                throw new IllegalStateException("Falha ao enviar um ou mais chunks", uploadErrors.peek());
-            }
-            long totalCompressedSize = db.totalDistinctCompressedSize();
-
-            double processDuration = (System.nanoTime() - startProcessing) / 1_000_000_000.0;
-            double throughputOriginal = (totalOriginalSize.get() / 1024.0 / 1024.0) / processDuration;
-
-            log.info("event=backup.summary files_total={} files_cached={} files_changed={}",
-                    totalFiles.get(), filesCached.get(), filesChanged.get());
-            log.info("event=backup.summary chunks_seen={} chunks_compressed={} chunks_reused={} chunks_uploaded={} chunks_failed={}",
-                    chunksSeen.get(), chunksCompressed.get(), chunksReused.get(), sentCount.get(), failedBatchItems.get());
-            log.info("event=backup.summary size_original_mb={} size_compressed_mb={}",
-                    totalOriginalSize.get() / 1024 / 1024, totalCompressedSize / 1024 / 1024);
-            log.info("event=backup.summary processing_seconds={} throughput_mb_s={} cache_validation_ms={} compression_ms={} upload_ms={} compressed_bytes={} uploaded_bytes={} upload_queue_max={}",
-                    String.format(java.util.Locale.ROOT, "%.2f", processDuration),
-                    String.format(java.util.Locale.ROOT, "%.2f", throughputOriginal),
-                    cacheValidationNanos.get() / 1_000_000, compressionNanos.get() / 1_000_000,
-                    uploadNanos.get() / 1_000_000, bytesCompressed.get(), bytesUploaded.get(), maxQueueDepth.get());
-
-            long startManifest = System.nanoTime();
-
-            Path manifestFile = Files.createTempFile("keeply-manifest-" + snapshotId, ".json.zst");
-            try {
-                db.writeManifestZstd(manifestFile, snapshotId.toString(), sourcePath);
-                transferStorage.uploadManifest(manifestFile);
-                backend.completeSnapshot(snapshotId, transferStorage.sessionId(), totalFiles.get(), totalOriginalSize.get(), totalCompressedSize);
-                awaitSnapshotAudit(snapshotId);
-            } finally {
-                Files.deleteIfExists(manifestFile);
-            }
-            db.saveManifestToCache(sourcePath);
-
-            double manifestDuration = (System.nanoTime() - startManifest) / 1_000_000_000.0;
-            log.info("event=backup.manifest status=completed files={} duration_seconds={}",
-                    totalFiles.get(),
-                    String.format(java.util.Locale.ROOT, "%.2f", manifestDuration));
-
-            db.setLastSyncedSnapshot(deviceId, sourcePath, snapshotId.toString());
-            db.clearBackupManifest(); 
-
-            double totalDuration = (System.nanoTime() - startTotal) / 1_000_000_000.0;
-            log.info("event=backup.snapshot status=uploads_completed_pending_audit snapshot_id={} total_duration_seconds={} chunks_sent={}",
-                    snapshotId,
-                    String.format(java.util.Locale.ROOT, "%.2f", totalDuration),
-                    sentCount.get());
-
-            return snapshotId;
-        } catch (Exception e) {
-            try {
-                backend.cancelTransferSession(transferStorage.sessionId());
-            } catch (Exception cancelError) {
-                log.warn("event=backup.transfer_session status=cancel_failed message={}", cancelError.getMessage());
-            }
-            backend.failSnapshot(snapshotId, e.getMessage());
-            throw new IllegalStateException("Backup falhou", e);
+        } finally {
+            backingUp = false;
         }
     }
 
@@ -298,6 +326,32 @@ public class BackupEngine {
         }
     }
 
+    private BackupSnapshotException incompleteSnapshotFailure(UUID snapshotId, UUID transferSessionId, String sourcePath,
+                                                              java.util.Queue<FileProcessingFailure> fileFailures) {
+        FileProcessingFailure firstFailure = fileFailures.peek();
+        String firstFailureDetail = firstFailure == null
+                ? "sem detalhes do primeiro arquivo"
+                : firstFailure.path() + " (" + firstFailure.reason() + ")";
+        String message = "Snapshot incompleto: "
+                + fileFailures.size() + " erro(s) real(is) impediram a leitura/processamento dos arquivos. "
+                + "Primeira falha: " + firstFailureDetail;
+        return new BackupSnapshotException(snapshotId, transferSessionId, sourcePath, message,
+                firstFailure == null ? null : firstFailure.cause());
+    }
+
+    private static String relativePath(Path root, Path path) {
+        try {
+            return root.toAbsolutePath().normalize().relativize(path.toAbsolutePath().normalize())
+                    .toString().replace('\\', '/');
+        } catch (Exception e) {
+            return path.toString();
+        }
+    }
+
+    private static String safeMessage(Throwable throwable) {
+        return throwable.getMessage() == null ? throwable.getClass().getSimpleName() : throwable.getMessage();
+    }
+
     private static String secondsSince(long start) {
         return String.format(java.util.Locale.ROOT, "%.2f", (System.nanoTime() - start) / 1_000_000_000.0);
     }
@@ -328,6 +382,9 @@ public class BackupEngine {
     }
 
     private record PendingChunk(int index, String hash, int originalSize) {
+    }
+
+    private record FileProcessingFailure(String path, String reason, Exception cause) {
     }
 
     private void autoSyncCache(UUID deviceId, Path sourceRoot) {

@@ -4,5 +4,5 @@ public record ManifestChunk(
         int index,
         String hash,
         long originalSize,
-        long compressedSize
+        long storedSize
 ) {}

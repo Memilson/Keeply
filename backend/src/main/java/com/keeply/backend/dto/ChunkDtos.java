@@ -11,10 +11,11 @@ public final class ChunkDtos {
     private ChunkDtos() {}
 
     public record CheckChunksRequest(
-            @NotEmpty @Size(max = 1000) 
+            @NotEmpty @Size(max = 1000)
             List<@Pattern(regexp = "^[a-fA-F0-9]{64}$") String> hashes
     ) {}
-    public record ChunkMetadata(String hash, long originalSize, long compressedSize) {}
+    public record ChunkMetadata(String hash, long originalSize, long storedSize,
+                                String compressionAlgorithm, Integer compressionLevel) {}
     public record CheckChunksResponse(List<ChunkMetadata> existing, List<String> missing) {}
     public record StorageUsageResponse(long usedBytes) {}
     public record ChunkUploadResponse(String hash, boolean stored) {}

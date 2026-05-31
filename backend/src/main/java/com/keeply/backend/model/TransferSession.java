@@ -2,6 +2,8 @@ package com.keeply.backend.model;
 
 import jakarta.persistence.*;
 
+import org.springframework.data.domain.Persistable;
+
 import java.time.Instant;
 import java.util.UUID;
 
@@ -10,10 +12,13 @@ import java.util.UUID;
         @Index(name = "idx_transfer_session_expiry", columnList = "status, expires_at"),
         @Index(name = "idx_transfer_session_snapshot", columnList = "snapshot_id")
 })
-public class TransferSession {
+public class TransferSession implements Persistable<UUID> {
     @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
     public UUID id;
+
+    @Version
+    @Column(nullable = false)
+    public long version;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
@@ -32,9 +37,6 @@ public class TransferSession {
     @Column(name = "snapshot_id", nullable = false)
     public UUID snapshotId;
 
-    @Column(name = "minio_access_key")
-    public String minioAccessKey;
-
     @Column(name = "expires_at")
     public Instant expiresAt;
 
@@ -50,8 +52,27 @@ public class TransferSession {
     @Column(name = "created_at", nullable = false, updatable = false)
     public Instant createdAt;
 
+    @Transient
+    private boolean isNew = true;
+
+    @Override
+    public UUID getId() {
+        return id;
+    }
+
+    @Override
+    public boolean isNew() {
+        return isNew;
+    }
+
     @PrePersist
     void onCreate() {
         createdAt = Instant.now();
+        isNew = false;
+    }
+
+    @PostLoad
+    void onPostLoad() {
+        isNew = false;
     }
 }

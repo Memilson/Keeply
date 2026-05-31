@@ -17,7 +17,6 @@ public final class LocalSchemaManager {
                         size INTEGER NOT NULL,
                         last_modified INTEGER NOT NULL,
                         hash TEXT NOT NULL,
-                        chunks_json TEXT NOT NULL,
                         PRIMARY KEY (source_path, path)
                     )
                     """);

@@ -27,6 +27,12 @@ public class ChunkEntity {
     @Column(name = "compressed_size")
     public long compressedSize;
 
+    @Column(name = "compression_algorithm", nullable = false, length = 16)
+    public String compressionAlgorithm = "ZSTD";
+
+    @Column(name = "compression_level")
+    public Integer compressionLevel = 3;
+
     @Column(name = "storage_key", nullable = false, columnDefinition = "TEXT")
     public String storageKey;
 

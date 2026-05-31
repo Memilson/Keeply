@@ -2,8 +2,10 @@ package com.keeply.backend.service;
 
 import com.keeply.backend.dto.AuthDtos;
 import com.keeply.backend.exception.UnauthorizedException;
+import com.keeply.backend.model.AuditLog;
 import com.keeply.backend.model.Device;
 import com.keeply.backend.model.UserAccount;
+import com.keeply.backend.repository.AuditLogRepository;
 import com.keeply.backend.repository.DeviceRepository;
 import com.keeply.backend.repository.UserRepository;
 import com.keeply.backend.security.JwtService;
@@ -14,26 +16,35 @@ import org.springframework.transaction.annotation.Transactional;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Instant;
+import java.util.Optional;
 
 @Service
 public class AuthService {
     private final UserRepository users;
     private final DeviceRepository devices;
+    private final AuditLogRepository auditLogs;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
+    private final RateLimitService rateLimit;
 
-    public AuthService(UserRepository users, DeviceRepository devices, PasswordEncoder passwordEncoder, JwtService jwtService) {
+    public AuthService(UserRepository users, DeviceRepository devices, AuditLogRepository auditLogs,
+                       PasswordEncoder passwordEncoder, JwtService jwtService, RateLimitService rateLimit) {
         this.users = users;
         this.devices = devices;
+        this.auditLogs = auditLogs;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
+        this.rateLimit = rateLimit;
     }
 
     @Transactional
-    public AuthDtos.AuthResponse register(AuthDtos.RegisterRequest request) {
+    public AuthDtos.AuthResponse register(AuthDtos.RegisterRequest request, String ip) {
+        rateLimit.checkRateLimit(ip, request.email());
         String email = normalizedEmail(request.email());
         if (users.existsByEmail(email)) {
-            throw new IllegalArgumentException("Email já cadastrado");
+            recordAudit(null, null, "REGISTER_FAILED", "Tentativa de registro com email ja existente: " + email, ip);
+            rateLimit.recordFailure(ip, email);
+            throw new IllegalArgumentException("Email ja cadastrado");
         }
 
         UserAccount user = new UserAccount();
@@ -42,27 +53,46 @@ public class AuthService {
         user.passwordHash = passwordEncoder.encode(request.password());
         users.save(user);
 
-        String accessToken = jwtService.generateAccessToken(user.id, user.email);
-        return new AuthDtos.AuthResponse(accessToken, null, user.id, user.email, null);
-    }
-
-    @Transactional(readOnly = true)
-    public AuthDtos.AuthResponse login(AuthDtos.LoginRequest request) {
-        UserAccount user = authenticateUser(request.email(), request.password());
+        rateLimit.recordSuccess(email);
+        recordAudit(user, null, "REGISTER_SUCCESS", "Usuario registrado com sucesso", ip);
         String accessToken = jwtService.generateAccessToken(user.id, user.email);
         return new AuthDtos.AuthResponse(accessToken, null, user.id, user.email, null);
     }
 
     @Transactional
-    public AuthDtos.AuthResponse loginDevice(AuthDtos.DeviceLoginRequest request) {
+    public AuthDtos.AuthResponse login(AuthDtos.LoginRequest request, String ip) {
+        rateLimit.checkRateLimit(ip, request.email());
+        try {
+            UserAccount user = authenticateUser(request.email(), request.password(), ip);
+            rateLimit.recordSuccess(request.email());
+            recordAudit(user, null, "LOGIN_SUCCESS", "Login realizado via Web/API", ip);
+            String accessToken = jwtService.generateAccessToken(user.id, user.email);
+            return new AuthDtos.AuthResponse(accessToken, null, user.id, user.email, null);
+        } catch (Exception e) {
+            rateLimit.recordFailure(ip, request.email());
+            throw e;
+        }
+    }
+
+    @Transactional
+    public AuthDtos.AuthResponse loginDevice(AuthDtos.DeviceLoginRequest request, String ip) {
+        rateLimit.checkRateLimit(ip, request.email());
         if (isBlank(request.deviceInstallationId())) {
-            throw new IllegalArgumentException("deviceInstallationId é obrigatório");
+            throw new IllegalArgumentException("deviceInstallationId e obrigatorio");
         }
         if (isBlank(request.hostname())) {
-            throw new IllegalArgumentException("hostname é obrigatório");
+            throw new IllegalArgumentException("hostname e obrigatorio");
         }
 
-        UserAccount user = authenticateUser(request.email(), request.password());
+        UserAccount user;
+        try {
+            user = authenticateUser(request.email(), request.password(), ip);
+            rateLimit.recordSuccess(request.email());
+        } catch (Exception e) {
+            rateLimit.recordFailure(ip, request.email());
+            throw e;
+        }
+
         String installationId = request.deviceInstallationId().trim();
 
         Device device = devices.findByUserIdAndDeviceInstallationId(user.id, installationId)
@@ -80,32 +110,37 @@ public class AuthService {
         device.refreshTokenHash = passwordEncoder.encode(normalizeRefreshToken(refreshToken));
         devices.save(device);
 
+        recordAudit(user, device, "DEVICE_LOGIN_SUCCESS", "Login de dispositivo realizado: " + device.hostname, ip);
+
         String accessToken = jwtService.generateDeviceAccessToken(user.id, user.email, device.id);
         return new AuthDtos.AuthResponse(accessToken, refreshToken, user.id, user.email, device.id);
     }
 
     @Transactional
-    public AuthDtos.AuthResponse refresh(AuthDtos.RefreshRequest request) {
+    public AuthDtos.AuthResponse refresh(AuthDtos.RefreshRequest request, String ip) {
+        rateLimit.checkAndRecordRefreshAttempt(ip);
+
         if (isBlank(request.refreshToken()) || isBlank(request.deviceInstallationId())) {
-            throw new UnauthorizedException("Refresh token inválido");
+            throw new UnauthorizedException("Refresh token invalido");
         }
 
         JwtService.RefreshPrincipal principal;
         try {
             principal = jwtService.parseRefreshToken(request.refreshToken().trim());
         } catch (Exception ex) {
-            throw new UnauthorizedException("Refresh token inválido");
+            throw new UnauthorizedException("Refresh token invalido");
         }
 
         String installationId = request.deviceInstallationId().trim();
         if (!installationId.equals(principal.deviceInstallationId())) {
-            throw new UnauthorizedException("Refresh token inválido");
+            throw new UnauthorizedException("Refresh token invalido");
         }
 
         Device device = devices.findByUserIdAndDeviceInstallationId(principal.userId(), installationId)
-                .orElseThrow(() -> new UnauthorizedException("Refresh token inválido"));
+                .orElseThrow(() -> new UnauthorizedException("Refresh token invalido"));
 
         if (isBlank(device.refreshTokenHash) || !passwordEncoder.matches(normalizeRefreshToken(request.refreshToken()), device.refreshTokenHash)) {
+            recordAudit(device.user, device, "REFRESH_FAILED", "Tentativa de refresh com token revogado ou invalido", ip);
             throw new UnauthorizedException("Refresh token revogado");
         }
 
@@ -118,14 +153,31 @@ public class AuthService {
         return new AuthDtos.AuthResponse(accessToken, newRefreshToken, principal.userId(), principal.email(), device.id);
     }
 
-    private UserAccount authenticateUser(String email, String password) {
+    private UserAccount authenticateUser(String email, String password, String ip) {
         String normalizedEmail = normalizedEmail(email);
-        UserAccount user = users.findByEmail(normalizedEmail)
-                .orElseThrow(() -> new IllegalArgumentException("Credenciais inválidas"));
+        Optional<UserAccount> userOpt = users.findByEmail(normalizedEmail);
+
+        if (userOpt.isEmpty()) {
+            recordAudit(null, null, "LOGIN_FAILED", "Email nao encontrado: " + normalizedEmail, ip);
+            throw new IllegalArgumentException("Credenciais invalidas");
+        }
+
+        UserAccount user = userOpt.get();
         if (!passwordEncoder.matches(password, user.passwordHash)) {
-            throw new IllegalArgumentException("Credenciais inválidas");
+            recordAudit(user, null, "LOGIN_FAILED", "Senha incorreta para o usuario: " + normalizedEmail, ip);
+            throw new IllegalArgumentException("Credenciais invalidas");
         }
         return user;
+    }
+
+    private void recordAudit(UserAccount user, Device device, String type, String message, String ip) {
+        AuditLog log = new AuditLog();
+        log.user = user;
+        log.device = device;
+        log.eventType = type;
+        log.message = message;
+        log.metadataJson = "{\"ip\": \"" + ip + "\"}";
+        auditLogs.save(log);
     }
 
     private String normalizedEmail(String email) {

@@ -38,6 +38,18 @@ logging:
     console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
 
 keeply:
+  security:
+    trust-proxy-headers: ${KEEPLY_TRUST_PROXY_HEADERS:false}
+    trusted-proxy-ips: ${KEEPLY_TRUSTED_PROXY_IPS:}
+    rate-limit:
+      login:
+        ip:
+          max-attempts: ${KEEPLY_RATE_LOGIN_IP_MAX_ATTEMPTS:20}
+        email:
+          max-attempts: ${KEEPLY_RATE_LOGIN_EMAIL_MAX_ATTEMPTS:5}
+      refresh:
+        ip:
+          max-attempts: ${KEEPLY_RATE_REFRESH_IP_MAX_ATTEMPTS:30}
   jwt:
     secret: ${KEEPLY_JWT_SECRET}
     expiration-minutes: 120

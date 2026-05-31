@@ -127,6 +127,10 @@ public class LocalDatabase implements AutoCloseable {
         syncState.setLastSyncedSnapshot(deviceId, sourcePath, snapshotId);
     }
 
+    public synchronized void setLastFailedSnapshot(UUID deviceId, String sourcePath, String snapshotId, String errorMessage) {
+        syncState.setLastFailedSnapshot(deviceId, sourcePath, snapshotId, errorMessage);
+    }
+
     public synchronized void reconstructIndex(String sourcePath, InputStream manifestStream) {
         clearCacheForPath(sourcePath);
         fileCache.reconstructIndex(sourcePath, manifestStream);

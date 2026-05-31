@@ -111,6 +111,12 @@ public class BackendClient {
         String traceId = traceId();
         try {
             return snapshots.start(deviceId, sourcePath, traceId);
+        } catch (ApiException e) {
+            if (e.getStatusCode() == 409 || (e.getError() != null && e.getError().contains("já existe um snapshot"))) {
+                log.warn("[{}] Tentativa de snapshot duplicado para o dispositivo {}: {}", traceId, deviceId, e.getMessage());
+                throw new IllegalStateException("Um backup já está em andamento para este dispositivo. Por favor, aguarde a conclusão ou falha do ciclo atual.", e);
+            }
+            throw failure("Falha ao iniciar snapshot", traceId, e);
         } catch (Exception e) {
             throw failure("Falha ao iniciar snapshot", traceId, e);
         }

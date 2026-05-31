@@ -47,7 +47,7 @@ public class TransferCredentialBroker {
     @Transactional
     public TransferSessionDtos.Credentials openBackup(JwtPrincipal principal, UUID deviceId, UUID snapshotId) {
         requireDevice(principal, deviceId);
-        TransferSession session = newSession(principal.userId(), deviceId, snapshotId, TransferSessionType.BACKUP_UPLOAD);
+        TransferSession session = newSessionUnsaved(principal.userId(), deviceId, snapshotId, TransferSessionType.BACKUP_UPLOAD);
         session.stagingPrefix = "users/%s/transfer-sessions/%s/".formatted(principal.userId(), session.id);
         return issue(session);
     }
@@ -55,7 +55,8 @@ public class TransferCredentialBroker {
     @Transactional
     public TransferSessionDtos.Credentials openRestore(JwtPrincipal principal, UUID deviceId, UUID snapshotId) {
         requireDevice(principal, deviceId);
-        return issue(newSession(principal.userId(), deviceId, snapshotId, TransferSessionType.RESTORE_READ));
+        TransferSession session = newSessionUnsaved(principal.userId(), deviceId, snapshotId, TransferSessionType.RESTORE_READ);
+        return issue(session);
     }
 
     @Transactional
@@ -116,14 +117,15 @@ public class TransferCredentialBroker {
         }
     }
 
-    private TransferSession newSession(UUID userId, UUID deviceId, UUID snapshotId, TransferSessionType type) {
+    private TransferSession newSessionUnsaved(UUID userId, UUID deviceId, UUID snapshotId, TransferSessionType type) {
         TransferSession session = new TransferSession();
+        session.id = UUID.randomUUID();
         session.type = type;
         session.status = TransferSessionStatus.OPEN;
         session.userId = userId;
         session.deviceId = deviceId;
         session.snapshotId = snapshotId;
-        return sessions.save(session);
+        return session;
     }
 
     private TransferSessionDtos.Credentials issue(TransferSession session) {
@@ -132,7 +134,6 @@ public class TransferCredentialBroker {
         session.lastRenewedAt = now;
         TemporaryCredentialIssuer.IssuedCredential credential =
                 issuer.issue(policy(session), session.expiresAt);
-        session.minioAccessKey = credential.accessKey();
         sessions.save(session);
         log.info("event=transfer_session.issued type={} session_id={} snapshot_id={} expires_at={}",
                 session.type, session.id, session.snapshotId, session.expiresAt);
@@ -176,10 +177,8 @@ public class TransferCredentialBroker {
     }
 
     private void revokeCurrent(TransferSession session) {
-        if (session.minioAccessKey != null) {
-            issuer.revoke(session.minioAccessKey);
-            session.minioAccessKey = null;
-        }
+        // MinIO STS credentials are bounded by expiration and policy. The access key is not
+        // persisted because storing it does not provide reliable server-side revocation here.
     }
 
     private void close(TransferSession session, TransferSessionStatus status, String reason) {

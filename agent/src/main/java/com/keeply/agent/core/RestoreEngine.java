@@ -5,6 +5,7 @@ import com.fasterxml.jackson.core.JsonToken;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.luben.zstd.ZstdInputStream;
 import com.keeply.agent.api.BackendClient;
+import com.keeply.agent.model.ChunkCompression;
 import com.keeply.agent.model.FileManifest;
 import com.keeply.agent.model.ManifestChunk;
 import com.keeply.agent.model.TransferCredentials;
@@ -52,24 +53,44 @@ public class RestoreEngine {
 
         TransferCredentials credentials = null;
         try {
-            log.info("📥 Iniciando restauração do snapshot: {}", snapshotId);
+            log.info("Iniciando restauracao do snapshot: {}", snapshotId);
             Set<String> selected = selectedPaths == null ? null : new HashSet<>(selectedPaths);
             credentials = backend.startRestoreSession(snapshotId);
             TransferObjectClient storage = storageFactory.create(backend, credentials);
+            CompressionService compression = new CompressionService();
+            ChunkCodec chunkCodec = null;
+            Integer manifestVersion = null;
             try (var compressedManifest = storage.openManifest(snapshotId);
                  var stream = new ZstdInputStream(compressedManifest);
                  JsonParser parser = mapper.getFactory().createParser(stream)) {
                 Path originalRoot = null;
                 while (parser.nextToken() != null) {
+                    if (parser.currentToken() == JsonToken.FIELD_NAME && "manifestVersion".equals(parser.currentName())) {
+                        parser.nextToken();
+                        manifestVersion = parser.getIntValue();
+                        continue;
+                    }
                     if (parser.currentToken() == JsonToken.FIELD_NAME && "sourcePath".equals(parser.currentName())) {
                         parser.nextToken();
                         originalRoot = Path.of(parser.getValueAsString());
+                        continue;
+                    }
+                    if (parser.currentToken() == JsonToken.FIELD_NAME && "chunkCompression".equals(parser.currentName())) {
+                        parser.nextToken();
+                        ChunkCompression chunkCompression = mapper.readValue(parser, ChunkCompression.class);
+                        requireManifestCompression(chunkCompression);
+                        chunkCodec = compression.chunkCodec(chunkCompression.algorithm());
+                        continue;
                     }
                     if (parser.currentToken() != JsonToken.FIELD_NAME || !"files".equals(parser.currentName())) continue;
+                    requireManifestVersion(manifestVersion);
+                    if (chunkCodec == null) {
+                        throw new IllegalStateException("Manifesto v2 deve declarar chunkCompression");
+                    }
                     parser.nextToken();
                     while (parser.nextToken() != JsonToken.END_ARRAY) {
                         FileManifest file = mapper.readValue(parser, FileManifest.class);
-                        restoreFile(storage, file, originalRoot, destinationRoot, selected, overwritePolicy,
+                        restoreFile(storage, chunkCodec, file, originalRoot, destinationRoot, selected, overwritePolicy,
                                 totalFiles, skippedFiles, totalRestoredSize);
                     }
                 }
@@ -78,12 +99,14 @@ public class RestoreEngine {
             double totalDuration = (System.nanoTime() - startTotal) / 1_000_000_000.0;
             double throughput = (totalRestoredSize.get() / 1024.0 / 1024.0) / totalDuration;
 
-            log.info("📊 [PERF] files.total={} files.skipped={} size.restored={}MB",
+            log.info("[PERF] files.total={} files.skipped={} size.restored={}MB",
                     totalFiles.get(), skippedFiles.get(), totalRestoredSize.get() / 1024 / 1024);
-            log.info("📊 [PERF] total.duration={.2f}s throughput={.2f}MB/s", totalDuration, throughput);
-            log.info("✅ Restore concluído com integridade validada.");
+            log.info("[PERF] total.duration={}s throughput={}MB/s",
+                    String.format(java.util.Locale.ROOT, "%.2f", totalDuration),
+                    String.format(java.util.Locale.ROOT, "%.2f", throughput));
+            log.info("Restore concluido com integridade validada.");
         } catch (Exception e) {
-            log.error("❌ Restore falhou: {}", e.getMessage(), e);
+            log.error("Restore falhou: {}", e.getMessage(), e);
             throw new IllegalStateException("Restore falhou", e);
         } finally {
             if (credentials != null) {
@@ -96,37 +119,47 @@ public class RestoreEngine {
         }
     }
 
-    private void restoreFile(TransferObjectClient storage, FileManifest file, Path originalRoot, Path destinationRoot, Set<String> selected,
+    private void requireManifestVersion(Integer manifestVersion) {
+        if (manifestVersion == null || manifestVersion != 2) {
+            throw new IllegalStateException("Restore exige manifesto v2");
+        }
+    }
+
+    private void requireManifestCompression(ChunkCompression compression) {
+        if (compression == null || !"ZSTD".equalsIgnoreCase(compression.algorithm())
+                || compression.level() == null || compression.level() != 3) {
+            throw new IllegalStateException("Restore exige chunks ZSTD level 3");
+        }
+    }
+
+    private void restoreFile(TransferObjectClient storage, ChunkCodec chunkCodec, FileManifest file, Path originalRoot, Path destinationRoot, Set<String> selected,
                              OverwritePolicy overwritePolicy, AtomicInteger totalFiles,
                              AtomicInteger skippedFiles, AtomicLong totalRestoredSize) throws Exception {
                 if (selected != null && !selected.contains(file.path())) {
                     return;
                 }
                 totalFiles.incrementAndGet();
-                Path target;
-                if (selected != null && destinationRoot != null) {
-                    target = safeResolve(destinationRoot, Path.of(file.path()).getFileName().toString());
-                } else {
-                    target = destinationRoot == null
-                            ? safeResolveOriginalRoot(originalRoot, file.path())
-                            : safeResolve(destinationRoot, file.path());
-                }
+                Path target = destinationRoot == null
+                        ? safeResolveOriginalRoot(originalRoot, file.path())
+                        : safeResolve(destinationRoot, file.path());
 
                 if (!shouldRestore(target, file.lastModified(), overwritePolicy)) {
-                    log.debug("📄 Ignorado pela política ({}): {}", overwritePolicy.label, file.path());
+                    log.debug("Ignorado pela politica ({}): {}", overwritePolicy.label, file.path());
                     skippedFiles.incrementAndGet();
                     return;
                 }
 
-                log.info("📄 Restaurando: {}", file.path());
+                log.info("Restaurando: {}", file.path());
                 Files.createDirectories(target.getParent());
 
-                try (OutputStream out = Files.newOutputStream(target)) {
+                Path tempTarget = Files.createTempFile(target.getParent(), target.getFileName().toString(), ".restore.tmp");
+                boolean completed = false;
+                try (OutputStream out = Files.newOutputStream(tempTarget)) {
                     for (ManifestChunk chunk : file.chunks()) {
                         MessageDigest digest = MessageDigest.getInstance("SHA-256");
                         long size;
-                        try (InputStream compressed = storage.openChunk(chunk.hash());
-                             ZstdInputStream original = new ZstdInputStream(compressed);
+                        try (InputStream compressed = storage.openChunk(chunk.hash(), chunkCodec);
+                             InputStream original = chunkCodec.openDecompressing(compressed);
                              DigestInputStream validated = new DigestInputStream(original, digest)) {
                             size = validated.transferTo(out);
                         }
@@ -136,21 +169,31 @@ public class RestoreEngine {
                         }
                         totalRestoredSize.addAndGet(size);
                     }
-                }
 
-                String finalHash = Sha256Hasher.hashFile(target);
-                if (!finalHash.equals(file.sha256())) {
-                    throw new IllegalStateException("Hash final inválido no arquivo " + file.path());
-                }
+                    String finalHash = Sha256Hasher.hashFile(tempTarget);
+                    if (!finalHash.equals(file.sha256())) {
+                        throw new IllegalStateException("Hash final inválido no arquivo " + file.path());
+                    }
 
-                Files.setLastModifiedTime(target, FileTime.from(file.lastModified()));
+                    Files.setLastModifiedTime(tempTarget, FileTime.from(file.lastModified()));
+                    try {
+                        Files.move(tempTarget, target,
+                                java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+                                java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                    } catch (java.nio.file.AtomicMoveNotSupportedException e) {
+                        Files.move(tempTarget, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                    }
+                    completed = true;
+                } finally {
+                    if (!completed) {
+                        Files.deleteIfExists(tempTarget);
+                    }
+                }
     }
 
     private Path safeResolve(Path root, String relativePath) {
         try {
-            if (relativePath.startsWith("/") || relativePath.contains("..")) {
-                throw new IllegalArgumentException("Caminho inválido no manifesto: " + relativePath);
-            }
+            validateRelativeManifestPath(relativePath);
 
             Path normalizedRoot = root.toAbsolutePath().normalize();
             Path target = normalizedRoot.resolve(relativePath).normalize();
@@ -167,9 +210,7 @@ public class RestoreEngine {
 
     private Path safeResolveOriginalRoot(Path sourceRoot, String relativePath) {
         try {
-            if (relativePath.startsWith("/") || relativePath.contains("..")) {
-                throw new IllegalArgumentException("Caminho inválido no manifesto: " + relativePath);
-            }
+            validateRelativeManifestPath(relativePath);
             Path normalizedRoot = sourceRoot.toAbsolutePath().normalize();
             Path target = normalizedRoot.resolve(relativePath).normalize();
             if (!target.startsWith(normalizedRoot)) {
@@ -178,6 +219,21 @@ public class RestoreEngine {
             return target;
         } catch (Exception e) {
             throw new IllegalArgumentException("Caminho inseguro no restore: " + relativePath, e);
+        }
+    }
+
+    private void validateRelativeManifestPath(String relativePath) {
+        if (relativePath == null || relativePath.isBlank()) {
+            throw new IllegalArgumentException("Caminho vazio no manifesto");
+        }
+        Path path = Path.of(relativePath);
+        if (path.isAbsolute()) {
+            throw new IllegalArgumentException("Caminho absoluto no manifesto: " + relativePath);
+        }
+        for (Path component : path) {
+            if ("..".equals(component.toString())) {
+                throw new IllegalArgumentException("Path traversal bloqueado: " + relativePath);
+            }
         }
     }
 

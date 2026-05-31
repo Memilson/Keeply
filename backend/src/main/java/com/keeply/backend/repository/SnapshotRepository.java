@@ -15,4 +15,5 @@ public interface SnapshotRepository extends JpaRepository<Snapshot, UUID> {
     List<Snapshot> findByDeviceUserIdOrderByCreatedAtDesc(UUID userId);
     List<Snapshot> findByDeviceUserIdAndDeviceIdAndStatusOrderByCreatedAtDesc(UUID userId, UUID deviceId, SnapshotStatus status);
     Optional<Snapshot> findByIdAndDeviceUserId(UUID id, UUID userId);
+    boolean existsByDeviceIdAndStatusIn(UUID deviceId, java.util.Collection<SnapshotStatus> statuses);
 }

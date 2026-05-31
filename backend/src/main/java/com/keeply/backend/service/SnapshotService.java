@@ -40,6 +40,10 @@ public class SnapshotService {
         Device device = devices.findByIdAndUserId(request.deviceId(), principal.userId())
                 .orElseThrow(() -> new IllegalArgumentException("Device inválido"));
 
+        if (snapshots.existsByDeviceIdAndStatusIn(device.id, List.of(SnapshotStatus.IN_PROGRESS, SnapshotStatus.PROCESSING))) {
+            throw new IllegalStateException("Já existe um snapshot em execução para este dispositivo");
+        }
+
         Snapshot s = new Snapshot();
         s.device = device;
         s.sourcePath = request.sourcePath();
@@ -70,12 +74,13 @@ public class SnapshotService {
         s.totalFiles = request.totalFiles();
         s.totalOriginalSize = request.totalOriginalSize();
         s.totalCompressedSize = request.totalCompressedSize();
-        s.manifestKey = "users/%s/manifests/%s.json.zst".formatted(principal.userId(), snapshotId);
+        String manifestKey = "users/%s/manifests/%s.json.zst".formatted(principal.userId(), snapshotId);
+        s.manifestKey = manifestKey;
         s.status = SnapshotStatus.PROCESSING;
         s.completedAt = Instant.now();
         snapshots.save(s);
 
-        manifestParser.auditAndPromoteAsync(s.id, session.id, session.stagingPrefix, principal.userId());
+        manifestParser.auditAndPromoteAsync(s.id, session.id, session.stagingPrefix, principal.userId(), manifestKey);
 
         return toResponse(s);
     }
@@ -118,9 +123,9 @@ public class SnapshotService {
                 deviceId,
                 s.status,
                 s.sourcePath,
-                s.totalFiles,
-                s.totalOriginalSize,
-                s.totalCompressedSize,
+                s.totalFiles != null ? s.totalFiles : 0L,
+                s.totalOriginalSize != null ? s.totalOriginalSize : 0L,
+                s.totalCompressedSize != null ? s.totalCompressedSize : 0L,
                 s.startedAt,
                 s.completedAt,
                 s.errorMessage

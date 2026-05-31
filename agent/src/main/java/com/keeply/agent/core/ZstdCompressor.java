@@ -5,11 +5,10 @@ import com.github.luben.zstd.ZstdOutputStream;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
-import java.nio.file.Files;
 import java.nio.file.Path;
 
 public final class ZstdCompressor {
-    public static final int COMPRESSION_LEVEL = 3;
+    public static final int COMPRESSION_LEVEL = ZstdChunkCodec.DEFAULT_LEVEL;
 
     private ZstdCompressor() {
     }
@@ -27,17 +26,7 @@ public final class ZstdCompressor {
     }
 
     public static long compressToFile(byte[] input, Path output) {
-        try (var out = Files.newOutputStream(output);
-             ZstdOutputStream zstd = new ZstdOutputStream(out, COMPRESSION_LEVEL)) {
-            zstd.write(input);
-        } catch (Exception e) {
-            throw new IllegalStateException("Falha ao comprimir ZSTD para arquivo", e);
-        }
-        try {
-            return Files.size(output);
-        } catch (Exception e) {
-            throw new IllegalStateException("Falha ao obter tamanho do chunk ZSTD", e);
-        }
+        return new ZstdChunkCodec().compressToFile(input, output);
     }
 
     public static byte[] decompress(byte[] input) {

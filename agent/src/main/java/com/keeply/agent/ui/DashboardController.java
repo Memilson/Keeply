@@ -26,14 +26,25 @@ public class DashboardController {
     @FXML private HBox foldersContainer;
     @FXML private VBox btnAddFolder;
     @FXML private Button btnRestaurar;
+    @FXML private Button btnProtegerAgora;
 
     private Consumer<String> onNavigate;
+    private Runnable onBackupNow;
+    private boolean backupInProgress = false;
 
     @FXML
     public void initialize() {
         if (btnRestaurar != null) {
             btnRestaurar.setOnAction(e -> {
                 if (onNavigate != null) onNavigate.accept("Restore");
+            });
+        }
+        
+        if (btnProtegerAgora != null) {
+            btnProtegerAgora.setOnAction(e -> {
+                if (!backupInProgress && onBackupNow != null) {
+                    onBackupNow.run();
+                }
             });
         }
 
@@ -110,6 +121,10 @@ public class DashboardController {
     public void setOnNavigate(Consumer<String> onNavigate) {
         this.onNavigate = onNavigate;
     }
+    
+    public void setOnBackupNow(Runnable onBackupNow) {
+        this.onBackupNow = onBackupNow;
+    }
 
     public void updateStats(String lastBackup, String count, String storage) {
         lblLastBackup.setText("Último backup: " + lastBackup);
@@ -152,5 +167,14 @@ public class DashboardController {
     
     public void setSnapshotsList(java.util.List<com.keeply.agent.model.SnapshotSummary> snapshots) {
         listSnapshots.getItems().setAll(snapshots);
+    }
+
+    public void setBackupInProgress(boolean inProgress) {
+        this.backupInProgress = inProgress;
+        if (btnProtegerAgora != null) {
+            btnProtegerAgora.setDisable(inProgress);
+            btnProtegerAgora.setText(inProgress ? "Protegendo..." : "Proteger Agora");
+            btnProtegerAgora.setOpacity(inProgress ? 0.6 : 1.0);
+        }
     }
 }

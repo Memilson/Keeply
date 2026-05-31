@@ -15,12 +15,14 @@ import com.keeply.backend.repository.SnapshotRepository;
 import com.keeply.backend.repository.ChunkRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import java.io.InputStream;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -68,7 +70,7 @@ public class ManifestParserService {
     }
 
     @Async
-    public void auditAndPromoteAsync(UUID snapshotId, UUID sessionId, String stagingPrefix, UUID userId) {
+    public void auditAndPromoteAsync(UUID snapshotId, UUID sessionId, String stagingPrefix, UUID userId, String manifestKey) {
         long auditStart = System.nanoTime();
         log.info("event=snapshot.audit status=started snapshot_id={} session_id={}", snapshotId, sessionId);
         String stagedManifest = stagingPrefix + "manifest.json.zst";
@@ -82,15 +84,14 @@ public class ManifestParserService {
             int count = parseManifestWithRetries(snapshotId, stagedManifest, snapshot, references);
             long parseMs = elapsedMillis(parseStart);
             long promotionStart = System.nanoTime();
-            Set<String> existing = findExistingHashes(userId, new ArrayList<>(references.keySet()));
-            List<ChunkReference> fresh = references.entrySet().stream()
-                    .filter(entry -> !existing.contains(entry.getKey()))
-                    .map(Map.Entry::getValue)
-                    .toList();
-            promoteNewChunks(userId, stagingPrefix, fresh);
+            Set<String> existing = findExistingHashes(userId, references.keySet());
+            int promoted = promoteNewChunks(userId, stagingPrefix, references.values(), existing);
             long promotionMs = elapsedMillis(promotionStart);
 
-            storage.copy(stagedManifest, snapshot.manifestKey);
+            if (manifestKey == null || manifestKey.isBlank()) {
+                throw new IllegalStateException("Manifest key ausente para snapshot " + snapshotId);
+            }
+            storage.copy(stagedManifest, manifestKey);
             snapshot.status = SnapshotStatus.COMPLETED;
             snapshot.completedAt = Instant.now();
             snapshots.save(snapshot);
@@ -98,7 +99,7 @@ public class ManifestParserService {
             long cleanupStart = System.nanoTime();
             storage.deletePrefix(stagingPrefix);
             log.info("event=snapshot.audit status=completed snapshot_id={} session_id={} files={} chunks_reused={} chunks_new={} parse_persist_ms={} promote_ms={} cleanup_ms={} total_ms={}",
-                    snapshotId, sessionId, count, existing.size(), fresh.size(), parseMs, promotionMs,
+                    snapshotId, sessionId, count, existing.size(), promoted, parseMs, promotionMs,
                     elapsedMillis(cleanupStart), elapsedMillis(auditStart));
 
         } catch (Exception e) {
@@ -148,22 +149,27 @@ public class ManifestParserService {
              JsonParser parser = mapper.getFactory().createParser(zstd)) {
             snapshotFiles.deleteBySnapshotId(snapshot.id);
             List<FileChunk> chunkBatch = new ArrayList<>(250);
-            String compression = null;
+            Integer manifestVersion = null;
+            ChunkEncoding chunkEncoding = null;
 
             while (parser.nextToken() != null) {
-                if (parser.currentToken() == JsonToken.FIELD_NAME && "compression".equals(parser.currentName())) {
+                if (parser.currentToken() == JsonToken.FIELD_NAME && "manifestVersion".equals(parser.currentName())) {
                     parser.nextToken();
-                    compression = parser.getValueAsString();
+                    manifestVersion = parser.getIntValue();
+                } else if (parser.currentToken() == JsonToken.FIELD_NAME && "chunkCompression".equals(parser.currentName())) {
+                    chunkEncoding = parseChunkEncoding(parser);
                 } else if (parser.currentToken() == JsonToken.FIELD_NAME && "files".equals(parser.currentName())) {
-                    requireZstdCompression(compression);
+                    requireManifestVersion(manifestVersion);
+                    requireZstdLevel3(chunkEncoding);
                     parser.nextToken();
                     while (parser.nextToken() != JsonToken.END_ARRAY) {
-                        parseFile(parser, snapshot, references, chunkBatch);
+                        parseFile(parser, snapshot, references, chunkBatch, chunkEncoding);
                         count++;
                     }
                 }
             }
-            requireZstdCompression(compression);
+            requireManifestVersion(manifestVersion);
+            requireZstdLevel3(chunkEncoding);
 
             if (!chunkBatch.isEmpty()) {
                 saveChunkBatch(chunkBatch);
@@ -190,9 +196,10 @@ public class ManifestParserService {
     }
 
     private void parseFile(JsonParser parser, Snapshot snapshot, Map<String, ChunkReference> references,
-                           List<FileChunk> chunkBatch) throws java.io.IOException {
+                           List<FileChunk> chunkBatch, ChunkEncoding chunkEncoding) throws java.io.IOException {
         SnapshotFile file = new SnapshotFile();
         file.snapshot = snapshot;
+        Map<Integer, FileChunk> chunksByIndex = new java.util.HashMap<>();
         while (parser.nextToken() != JsonToken.END_OBJECT) {
             if (parser.currentToken() != JsonToken.FIELD_NAME) {
                 continue;
@@ -207,9 +214,19 @@ public class ManifestParserService {
                 case "chunks" -> {
                     snapshotFiles.save(file);
                     while (parser.nextToken() != JsonToken.END_ARRAY) {
-                        FileChunk chunk = parseChunk(parser, file);
+                        FileChunk chunk = parseChunk(parser, file, chunkEncoding);
+                        FileChunk previous = chunksByIndex.putIfAbsent(chunk.chunkIndex, chunk);
+                        if (previous != null) {
+                            if (isEquivalentChunk(previous, chunk)) {
+                                log.warn("event=snapshot.audit.manifest status=duplicate_chunk_ignored path={} chunk_index={} hash={}",
+                                        file.path, chunk.chunkIndex, chunk.chunkHash);
+                                continue;
+                            }
+                            throw new IllegalStateException("Manifesto inválido: chunk duplicado com conteúdo divergente em "
+                                    + file.path + " index=" + chunk.chunkIndex);
+                        }
                         references.putIfAbsent(chunk.chunkHash.toLowerCase(),
-                                new ChunkReference(chunk.chunkHash.toLowerCase(), chunk.originalSize, chunk.compressedSize));
+                                new ChunkReference(chunk.chunkHash.toLowerCase(), chunk.originalSize, chunk.compressedSize, chunk.compressionAlgorithm, chunk.compressionLevel));
                         chunkBatch.add(chunk);
                         if (chunkBatch.size() >= 250) {
                             saveChunkBatch(chunkBatch);
@@ -225,9 +242,17 @@ public class ManifestParserService {
         }
     }
 
-    private FileChunk parseChunk(JsonParser parser, SnapshotFile file) throws java.io.IOException {
+    private boolean isEquivalentChunk(FileChunk left, FileChunk right) {
+        return left.chunkHash.equalsIgnoreCase(right.chunkHash)
+                && left.originalSize == right.originalSize
+                && left.compressedSize == right.compressedSize;
+    }
+
+    private FileChunk parseChunk(JsonParser parser, SnapshotFile file, ChunkEncoding chunkEncoding) throws java.io.IOException {
         FileChunk chunk = new FileChunk();
         chunk.snapshotFile = file;
+        chunk.compressionAlgorithm = chunkEncoding.algorithm();
+        chunk.compressionLevel = chunkEncoding.level();
         while (parser.nextToken() != JsonToken.END_OBJECT) {
             if (parser.currentToken() != JsonToken.FIELD_NAME) continue;
             String name = parser.currentName();
@@ -236,17 +261,26 @@ public class ManifestParserService {
                 case "index" -> chunk.chunkIndex = parser.getIntValue();
                 case "hash" -> chunk.chunkHash = parser.getValueAsString();
                 case "originalSize" -> chunk.originalSize = parser.getLongValue();
-                case "compressedSize" -> chunk.compressedSize = parser.getLongValue();
+                case "storedSize" -> chunk.compressedSize = parser.getLongValue();
                 default -> parser.skipChildren();
             }
         }
         return chunk;
     }
 
-    private Set<String> findExistingHashes(UUID userId, List<String> hashes) {
+    private Set<String> findExistingHashes(UUID userId, Iterable<String> hashes) {
         java.util.HashSet<String> existing = new java.util.HashSet<>();
-        for (int from = 0; from < hashes.size(); from += 1000) {
-            List<String> page = hashes.subList(from, Math.min(from + 1000, hashes.size()));
+        List<String> page = new ArrayList<>(1000);
+        for (String hash : hashes) {
+            page.add(hash);
+            if (page.size() == 1000) {
+                chunks.findByUserIdAndHashIn(userId, page).stream()
+                        .map(chunk -> chunk.hash.toLowerCase())
+                        .forEach(existing::add);
+                page.clear();
+            }
+        }
+        if (!page.isEmpty()) {
             chunks.findByUserIdAndHashIn(userId, page).stream()
                     .map(chunk -> chunk.hash.toLowerCase())
                     .forEach(existing::add);
@@ -254,19 +288,30 @@ public class ManifestParserService {
         return existing;
     }
 
-    private void promoteNewChunks(UUID userId, String stagingPrefix, List<ChunkReference> references) {
+    private int promoteNewChunks(UUID userId, String stagingPrefix, Collection<ChunkReference> references, Set<String> existing) {
         ThreadPoolExecutor pool = new ThreadPoolExecutor(auditWorkers, auditWorkers, 0L, TimeUnit.MILLISECONDS,
                 new ArrayBlockingQueue<>(auditQueueSize), new ThreadPoolExecutor.CallerRunsPolicy());
         AtomicInteger queueMax = new AtomicInteger();
+        int maxInFlight = Math.max(1, auditWorkers + auditQueueSize);
+        int promoted = 0;
         try {
-            List<CompletableFuture<Void>> tasks = new ArrayList<>(references.size());
+            List<CompletableFuture<Void>> tasks = new ArrayList<>(maxInFlight);
             for (ChunkReference reference : references) {
+                if (existing.contains(reference.hash())) {
+                    continue;
+                }
+                promoted++;
                 tasks.add(CompletableFuture.runAsync(() -> promoteChunk(userId, stagingPrefix, reference), pool));
                 queueMax.accumulateAndGet(pool.getQueue().size(), Math::max);
+                if (tasks.size() >= maxInFlight) {
+                    CompletableFuture.anyOf(tasks.toArray(CompletableFuture[]::new)).join();
+                    tasks.removeIf(CompletableFuture::isDone);
+                }
             }
             CompletableFuture.allOf(tasks.toArray(CompletableFuture[]::new)).join();
             log.info("event=snapshot.audit.promotion status=completed chunks_new={} queue_max={} workers={}",
-                    references.size(), queueMax.get(), auditWorkers);
+                    promoted, queueMax.get(), auditWorkers);
+            return promoted;
         } finally {
             pool.shutdown();
         }
@@ -283,20 +328,52 @@ public class ManifestParserService {
         if (!storage.exists(definitiveKey)) {
             storage.copy(stagedKey, definitiveKey);
         }
-        if (chunks.findByUserIdAndHash(userId, hash).isEmpty()) {
-            ChunkEntity entity = new ChunkEntity();
-            entity.userId = userId;
-            entity.hash = hash;
-            entity.originalSize = reference.originalSize();
-            entity.compressedSize = reference.compressedSize();
-            entity.storageKey = definitiveKey;
+        ChunkEntity entity = new ChunkEntity();
+        entity.userId = userId;
+        entity.hash = hash;
+        entity.originalSize = reference.originalSize();
+        entity.compressedSize = reference.compressedSize();
+        entity.compressionAlgorithm = reference.compressionAlgorithm();
+        entity.compressionLevel = reference.compressionLevel();
+        entity.storageKey = definitiveKey;
+        try {
             chunks.save(entity);
+        } catch (DataIntegrityViolationException duplicate) {
+            log.debug("event=snapshot.audit.promotion.duplicate user_id={} hash={}", userId, hash);
         }
     }
 
-    private void requireZstdCompression(String compression) {
-        if (!"ZSTD".equals(compression)) {
-            throw new IllegalStateException("Manifesto deve declarar compression=ZSTD");
+    private ChunkEncoding parseChunkEncoding(JsonParser parser) throws java.io.IOException {
+        String algorithm = null;
+        Integer level = null;
+        parser.nextToken();
+        while (parser.nextToken() != JsonToken.END_OBJECT) {
+            if (parser.currentToken() != JsonToken.FIELD_NAME) {
+                continue;
+            }
+            String name = parser.currentName();
+            parser.nextToken();
+            switch (name) {
+                case "algorithm" -> algorithm = parser.getValueAsString();
+                case "level" -> level = parser.currentToken() == JsonToken.VALUE_NULL ? null : parser.getIntValue();
+                default -> parser.skipChildren();
+            }
+        }
+        ChunkEncoding encoding = new ChunkEncoding(algorithm, level);
+        requireZstdLevel3(encoding);
+        return encoding;
+    }
+
+    private void requireManifestVersion(Integer manifestVersion) {
+        if (manifestVersion == null || manifestVersion != 2) {
+            throw new IllegalStateException("Manifesto deve declarar manifestVersion=2");
+        }
+    }
+
+    private void requireZstdLevel3(ChunkEncoding encoding) {
+        if (encoding == null || !"ZSTD".equalsIgnoreCase(encoding.algorithm())
+                || encoding.level() == null || encoding.level() != 3) {
+            throw new IllegalStateException("Manifesto deve declarar chunkCompression ZSTD level 3");
         }
     }
 
@@ -308,6 +385,10 @@ public class ManifestParserService {
         return (System.nanoTime() - start) / 1_000_000;
     }
 
-    private record ChunkReference(String hash, long originalSize, long compressedSize) {
+    private record ChunkReference(String hash, long originalSize, long compressedSize,
+                                  String compressionAlgorithm, Integer compressionLevel) {
+    }
+
+    private record ChunkEncoding(String algorithm, Integer level) {
     }
 }

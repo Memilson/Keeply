@@ -1,10 +1,40 @@
 # Keeply Java 25 Starter
 
-Starter kit do MVP definido na arquitetura:
+Starter kit do MVP de backup com agente Java e backend Spring Boot.
+
+## Arquitetura (atualizada)
 
 ```text
-Agente JavaFX -> Spring Boot Backend -> PostgreSQL + MinIO <- React Dashboard
+Keeply Agent (JavaFX + Daemon) -> Backend Spring Boot -> PostgreSQL + MinIO
 ```
+
+Fluxo principal:
+
+1. O agente autentica no backend e abre uma `transfer_session`.
+2. O agente executa scan + chunking + compressão e envia objetos para staging no MinIO.
+3. O backend audita manifesto/chunks, promove para storage definitivo e finaliza o snapshot.
+4. No restore, o agente recebe credenciais temporárias read-only e reconstrói os arquivos.
+
+Documentação detalhada:
+
+- [Arquitetura do Agente](docs/agent.md)
+- [Arquitetura do Backend](docs/backend.md)
+- [Arquitetura do Banco](docs/database.md)
+- [Arquitetura MinIO](docs/minio.md)
+
+Resumo dos gargalos e legados atuais:
+
+- Promoção de chunks no backend com alto fan-out (`exists + copy + save` por chunk).
+- Polling de status de auditoria no agente (loop de `listSnapshots`).
+- Lacunas de constraints/índices no schema (`transfer_sessions` sem FKs).
+- Compatibilidades legadas no agente (auth store V1/plaintext e migração tardia de cache local).
+- Rate limit em memória local (não distribuído).
+
+## Evolução recomendada (concisa)
+
+1. Hardening imediato: auth/rate-limit, escopo de credenciais MinIO, FKs/índices críticos.
+2. Remoção de legado: compatibilidade antiga no agente e APIs internas duplicadas.
+3. Otimização: pipeline de auditoria/promoção mais idempotente, menos roundtrips e melhor observabilidade.
 
 Este pacote entrega a base inicial em Java 25:
 

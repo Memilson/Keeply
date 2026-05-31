@@ -40,7 +40,7 @@ public class ChunkService {
         hashes.forEach(ChunkService::validateHash);
         
         List<ChunkDtos.ChunkMetadata> existing = chunks.findByUserIdAndHashIn(userId, hashes).stream()
-                .map(c -> new ChunkDtos.ChunkMetadata(c.hash, c.originalSize, c.compressedSize))
+                .map(c -> new ChunkDtos.ChunkMetadata(c.hash, c.originalSize, c.compressedSize, c.compressionAlgorithm, c.compressionLevel))
                 .sorted(Comparator.comparing(ChunkDtos.ChunkMetadata::hash))
                 .toList();
         Set<String> existingHashes = existing.stream().map(ChunkDtos.ChunkMetadata::hash).collect(java.util.stream.Collectors.toSet());

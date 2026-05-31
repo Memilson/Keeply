@@ -7,6 +7,7 @@ import com.keeply.agent.auth.DeviceIdentity;
 import com.keeply.agent.config.AgentConfig;
 import com.keeply.agent.model.ProtectionPlan;
 import com.keeply.agent.core.BackupEngine;
+import com.keeply.agent.core.BackupSnapshotException;
 import com.keeply.agent.core.LocalDatabase;
 import com.keeply.agent.model.DeviceSession;
 import org.slf4j.Logger;
@@ -94,7 +95,9 @@ public final class BackupCycleRunner {
                 UUID snapshotId = sourceBackupExecutor.run(currentDeviceId, source);
                 log.info("event=backup.source status=completed source={} snapshot_id={}", sourceName, snapshotId);
             } catch (Exception e) {
-                if (isInvalidDeviceError(e)) {
+                if (e instanceof BackupSnapshotException backupError) {
+                    markSnapshotFailed(currentDeviceId, backupError);
+                } else if (isInvalidDeviceError(e)) {
                     log.warn("event=backup.source status=retrying source={} reason=invalid_device message={}", sourceName, e.getMessage());
                     try {
                         deviceId = null;
@@ -104,7 +107,11 @@ public final class BackupCycleRunner {
                         log.info("event=backup.source status=completed_after_reregister source={} snapshot_id={}", sourceName, retriedSnapshotId);
                         continue;
                     } catch (Exception retryError) {
-                        LogUtils.logError(log, "event=backup.source status=failed_after_reregister source=" + sourceName, retryError);
+                        if (retryError instanceof BackupSnapshotException backupError) {
+                            markSnapshotFailed(deviceId, backupError);
+                        } else {
+                            LogUtils.logError(log, "event=backup.source status=failed_after_reregister source=" + sourceName, retryError);
+                        }
                     }
                 } else if (isNetworkError(e)) {
                     log.warn("event=backup.source status=skipped source={} reason=network_error message={}", sourceName, e.getMessage());
@@ -112,6 +119,25 @@ public final class BackupCycleRunner {
                     LogUtils.logError(log, "event=backup.source status=failed source=" + sourceName, e);
                 }
             }
+        }
+    }
+
+    private void markSnapshotFailed(UUID currentDeviceId, BackupSnapshotException error) {
+        Exception failSnapshotError = null;
+        try {
+            backend.failSnapshot(error.snapshotId(), error.userMessage());
+        } catch (Exception e) {
+            failSnapshotError = e;
+            log.warn("event=backup.snapshot status=fail_report_failed snapshot_id={} message={}",
+                    error.snapshotId(), e.getMessage());
+        }
+        if (db != null) {
+            db.setLastFailedSnapshot(currentDeviceId, error.sourcePath(), error.snapshotId().toString(), error.userMessage());
+        }
+        log.error("event=backup.source status=failed snapshot_id={} source_path={} message={}",
+                error.snapshotId(), error.sourcePath(), error.userMessage(), error);
+        if (failSnapshotError != null) {
+            throw new IllegalStateException("Falha ao marcar snapshot como falho no backend", failSnapshotError);
         }
     }
 
