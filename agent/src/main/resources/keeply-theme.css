@@ -364,6 +364,72 @@
     -fx-text-fill: white;
 }
 
+.restore-shell .restore-nav-line {
+    -fx-background-color: transparent;
+    -fx-text-fill: #26325e;
+    -fx-background-radius: 9px;
+    -fx-padding: 10 12;
+    -fx-font-size: 13px;
+    -fx-font-weight: 600;
+    -fx-graphic-text-gap: 12;
+    -fx-alignment: CENTER_LEFT;
+}
+
+.restore-shell .restore-nav-line:hover {
+    -fx-background-color: #f5f3ff;
+}
+
+.restore-shell .restore-nav-line:armed,
+.restore-shell .restore-nav-line:focused {
+    -fx-background-color: #eeebff;
+    -fx-text-fill: #4e39df;
+}
+
+.restore-shell .restore-nav-line:disabled {
+    -fx-opacity: 0.45;
+}
+
+.restore-shell .restore-nav-line .nav-icon {
+    -fx-fill: #6D47FF;
+}
+
+.restore-destination-dialog {
+    -fx-background-color: #f3f4f6;
+}
+
+.restore-destination-dialog .header-panel {
+    -fx-background-color: #f3f4f6;
+}
+
+.restore-destination-dialog .content.label {
+    -fx-text-fill: #1f2937;
+}
+
+.restore-destination-title {
+    -fx-font-size: 16px;
+    -fx-font-weight: 700;
+    -fx-text-fill: #1f2937;
+}
+
+.restore-destination-label {
+    -fx-font-size: 13px;
+    -fx-font-weight: 600;
+    -fx-text-fill: #374151;
+}
+
+.restore-destination-dialog .combo-box {
+    -fx-background-color: #ffffff;
+    -fx-border-color: #cfd6ee;
+    -fx-border-radius: 4px;
+    -fx-background-radius: 4px;
+}
+
+.restore-destination-dialog .button-bar .button {
+    -fx-min-width: 92px;
+    -fx-background-radius: 6px;
+    -fx-font-weight: 600;
+}
+
 .restore-shell .list-cell:selected {
     -fx-background-color: #eef3ff;
     -fx-text-fill: #102048;

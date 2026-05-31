@@ -2,7 +2,6 @@ package com.keeply.agent.core.db;
 
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonToken;
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.keeply.agent.model.ChunkMetadata;
 import com.keeply.agent.model.ManifestChunk;
@@ -60,8 +59,8 @@ public final class FileCacheRepository {
                  PreparedStatement clearFiles = connection.prepareStatement(
                          "DELETE FROM file_cache WHERE source_path = ?");
                  PreparedStatement copyFiles = connection.prepareStatement(
-                         "INSERT INTO file_cache (source_path, path, size, last_modified, hash, chunks_json) " +
-                                 "SELECT ?, path, size, last_modified, hash, '[]' FROM backup_manifest_files");
+                         "INSERT INTO file_cache (source_path, path, size, last_modified, hash) " +
+                                 "SELECT ?, path, size, last_modified, hash FROM backup_manifest_files");
                  PreparedStatement copyChunks = connection.prepareStatement(
                          "INSERT INTO file_cache_chunks (source_path, file_path, chunk_index, chunk_hash, original_size, compressed_size) " +
                                  "SELECT ?, file_path, chunk_index, chunk_hash, original_size, compressed_size FROM backup_manifest_chunks")) {
@@ -80,7 +79,7 @@ public final class FileCacheRepository {
     public void save(String sourcePath, String relativePath, long size, long lastModified,
                      String hash, List<ManifestChunk> chunks) {
         String fileSql = "INSERT OR REPLACE INTO file_cache " +
-                "(source_path, path, size, last_modified, hash, chunks_json) VALUES (?, ?, ?, ?, ?, '[]')";
+                "(source_path, path, size, last_modified, hash) VALUES (?, ?, ?, ?, ?)";
         try (PreparedStatement file = database.get().prepareStatement(fileSql);
              PreparedStatement deleteChunks = database.get().prepareStatement(
                      "DELETE FROM file_cache_chunks WHERE source_path = ? AND file_path = ?");
@@ -102,7 +101,7 @@ public final class FileCacheRepository {
                     insertChunk.setInt(3, chunk.index());
                     insertChunk.setString(4, chunk.hash());
                     insertChunk.setLong(5, chunk.originalSize());
-                    insertChunk.setLong(6, chunk.compressedSize());
+                    insertChunk.setLong(6, chunk.storedSize());
                     insertChunk.addBatch();
                 }
                 insertChunk.executeBatch();
@@ -113,7 +112,7 @@ public final class FileCacheRepository {
     }
 
     public int copyToManifestIfValid(String sourcePath, String relativePath, long size, long lastModified) {
-        String fileSql = "SELECT hash, chunks_json FROM file_cache " +
+        String fileSql = "SELECT hash FROM file_cache " +
                 "WHERE source_path = ? AND path = ? AND size = ? AND last_modified = ?";
         try (PreparedStatement fileQuery = database.get().prepareStatement(fileSql)) {
             fileQuery.setString(1, sourcePath);
@@ -124,8 +123,6 @@ public final class FileCacheRepository {
                 if (!file.next()) {
                     return -1;
                 }
-                migrateLegacyChunksIfNeeded(sourcePath, relativePath, size, lastModified,
-                        file.getString(1), file.getString(2));
                 if (hasChunkOutsideSession(sourcePath, relativePath)) {
                     return -1;
                 }
@@ -160,7 +157,7 @@ public final class FileCacheRepository {
 
     public void reconstructIndex(String sourcePath, InputStream manifestStream) {
         String fileSql = "INSERT OR REPLACE INTO file_cache " +
-                "(source_path, path, size, last_modified, hash, chunks_json) VALUES (?, ?, ?, ?, ?, '[]')";
+                "(source_path, path, size, last_modified, hash) VALUES (?, ?, ?, ?, ?)";
         String chunkSql = "INSERT OR REPLACE INTO file_cache_chunks " +
                 "(source_path, file_path, chunk_index, chunk_hash, original_size, compressed_size) VALUES (?, ?, ?, ?, ?, ?)";
         String knownSql = "INSERT OR REPLACE INTO known_chunks " +
@@ -232,29 +229,14 @@ public final class FileCacheRepository {
         cached.setInt(3, chunk.index());
         cached.setString(4, chunk.hash());
         cached.setLong(5, chunk.originalSize());
-        cached.setLong(6, chunk.compressedSize());
+        cached.setLong(6, chunk.storedSize());
         cached.addBatch();
         known.setString(1, chunk.hash());
         known.setLong(2, now);
         known.setLong(3, chunk.originalSize());
-        known.setLong(4, chunk.compressedSize());
+        known.setLong(4, chunk.storedSize());
         known.setLong(5, now);
         known.addBatch();
-    }
-
-    private void migrateLegacyChunksIfNeeded(String sourcePath, String relativePath, long size,
-                                             long lastModified, String hash, String json) throws Exception {
-        try (PreparedStatement count = database.get().prepareStatement(
-                "SELECT COUNT(*) FROM file_cache_chunks WHERE source_path = ? AND file_path = ?")) {
-            count.setString(1, sourcePath);
-            count.setString(2, relativePath);
-            try (ResultSet rows = count.executeQuery()) {
-                if (rows.next() && rows.getInt(1) == 0 && json != null && !"[]".equals(json)) {
-                    List<ManifestChunk> legacy = mapper.readValue(json, new TypeReference<>() {});
-                    save(sourcePath, relativePath, size, lastModified, hash, legacy);
-                }
-            }
-        }
     }
 
     private boolean hasChunkOutsideSession(String sourcePath, String relativePath) throws SQLException {

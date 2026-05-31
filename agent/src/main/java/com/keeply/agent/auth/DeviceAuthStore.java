@@ -33,9 +33,8 @@ import java.util.Optional;
  * Utiliza AES/GCM/NoPadding (256 bits).
  * A chave mestre é armazenada no chaveiro do sistema operacional (Keychain/DPAPI/SecretService).
  *
- * ATENÇÃO: Se o chaveiro não estiver disponível, utiliza um fallback para PBKDF2 com o ID do
- * dispositivo como base. Este fallback deve ser explicitamente classificado como
- * "proteção fraca/local only", pois o ID do dispositivo é armazenado no mesmo sistema de arquivos.
+ * Se o chaveiro não estiver disponível, exige KEEPLY_MASTER_KEY ou -Dkeeply.master.key
+ * para derivar uma chave local com PBKDF2.
  */
 public class DeviceAuthStore {
     private static final Logger logger = LoggerFactory.getLogger(DeviceAuthStore.class);
@@ -93,25 +92,10 @@ public class DeviceAuthStore {
             String content = Files.readString(authPath).trim();
             if (content.isBlank()) return Optional.empty();
 
-            if (content.startsWith("{")) {
-                // Legado: Texto puro (apenas em dev muito antigo)
-                DeviceSession legacy = mapper.readValue(content, DeviceSession.class);
-                saveUnlocked(legacy);
-                return Optional.of(legacy);
-            }
-
             if (!content.startsWith(V2_PREFIX)) {
-                // Legado V1: AES/ECB (formato base64 sem prefixo)
-                try {
-                    String decrypted = decryptV1(content);
-                    DeviceSession session = mapper.readValue(decrypted, DeviceSession.class);
-                    saveUnlocked(session); // Migra para V2
-                    return Optional.of(session);
-                } catch (Exception e) {
-                    // Se falhar a decriptação V1, limpa e força novo login
-                    clearUnlocked();
-                    return Optional.empty();
-                }
+                logger.warn("Sessão local em formato legado removido; forçando novo login.");
+                clearUnlocked();
+                return Optional.empty();
             }
 
             // Formato V2: v2:[S_TYPE]:[BASE64(SALT? + IV + CIPHERTEXT + TAG)]
@@ -216,7 +200,9 @@ public class DeviceAuthStore {
 
     private String decryptV2(String data) throws Exception {
         String[] parts = data.split(":");
-        String type = parts[0];
+        if (parts.length != 2 || (!"K".equals(parts[0]) && !"P".equals(parts[0]))) {
+            throw new IllegalArgumentException("Formato de sessão local inválido");
+        }
         byte[] combined = Base64.getDecoder().decode(parts[1]);
         
         ByteBuffer bb = ByteBuffer.wrap(combined);
@@ -299,18 +285,4 @@ public class DeviceAuthStore {
         }
     }
 
-    // --- Métodos de compatibilidade V1 ---
-
-    private String decryptV1(String encrypted) throws Exception {
-        Cipher cipher = Cipher.getInstance("AES");
-        String installationId = DeviceIdentity.getOrCreate();
-        byte[] keyBytes = java.util.Arrays.copyOf(java.security.MessageDigest.getInstance("SHA-1")
-                .digest(installationId.getBytes(StandardCharsets.UTF_8)), 16);
-        SecretKeySpec key = new SecretKeySpec(keyBytes, "AES");
-        
-        cipher.init(Cipher.DECRYPT_MODE, key);
-        byte[] decoded = Base64.getDecoder().decode(encrypted);
-        byte[] decrypted = cipher.doFinal(decoded);
-        return new String(decrypted, StandardCharsets.UTF_8);
-    }
 }

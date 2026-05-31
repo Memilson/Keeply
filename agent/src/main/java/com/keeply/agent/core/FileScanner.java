@@ -4,12 +4,13 @@ import java.io.IOException;
 import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Stream;
 
 public final class FileScanner {
-    private static final Set<String> EXCLUDED_DIRS = Set.of(
+    private static final Set<String> DEFAULT_EXCLUDED_DIRS = Set.of(
             ".cache",
             ".gradle",
             ".m2",
@@ -22,7 +23,7 @@ public final class FileScanner {
             ".vscode",
             "Trash",
             ".local/share/Trash",
-            ".codex" // Ignorando diretório de metadados internos que mudam muito
+            ".codex"
     );
 
     private FileScanner() {
@@ -36,13 +37,14 @@ public final class FileScanner {
 
     public static ScanStats walk(Path root, FileHandler handler) {
         Path normalizedRoot = root.toAbsolutePath().normalize();
+        ExcludedPaths excludedPaths = excludedPaths();
         MutableStats stats = new MutableStats();
         try {
             Files.walkFileTree(normalizedRoot, new SimpleFileVisitor<>() {
                 @Override
                 public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) {
-                    if (!dir.equals(normalizedRoot) && isExcluded(normalizedRoot, dir)) {
-                        stats.prunedDirectories++;
+                    if (!dir.equals(normalizedRoot) && isExcluded(normalizedRoot, dir, excludedPaths)) {
+                        stats.ignoredDirectories++;
                         return FileVisitResult.SKIP_SUBTREE;
                     }
                     return FileVisitResult.CONTINUE;
@@ -59,24 +61,56 @@ public final class FileScanner {
 
                 @Override
                 public FileVisitResult visitFileFailed(Path file, IOException exc) {
-                    stats.unreadableEntries++;
+                    stats.unreadableFailures.add(new ScanFailure(file, exc));
                     return FileVisitResult.CONTINUE;
                 }
             });
-            return new ScanStats(stats.files, stats.prunedDirectories, stats.unreadableEntries);
+            return new ScanStats(stats.files, stats.ignoredDirectories, List.copyOf(stats.unreadableFailures));
         } catch (IOException e) {
             throw new IllegalStateException("Falha ao escanear pasta: " + root, e);
         }
     }
 
-    private static boolean isExcluded(Path root, Path path) {
+    private static boolean isExcluded(Path root, Path path, ExcludedPaths excludedPaths) {
         Path relative = root.relativize(path);
+        String relativeName = relative.toString().replace('\\', '/');
+        if (excludedPaths.relativePaths().contains(relativeName)) {
+            return true;
+        }
         for (Path component : relative) {
-            if (EXCLUDED_DIRS.contains(component.toString())) {
+            if (excludedPaths.names().contains(component.toString())) {
                 return true;
             }
         }
         return false;
+    }
+
+    private static ExcludedPaths excludedPaths() {
+        Set<String> names = new LinkedHashSet<>();
+        Set<String> relativePaths = new LinkedHashSet<>();
+        for (String value : configuredExcludedDirs()) {
+            String normalized = value.trim().replace('\\', '/');
+            if (normalized.isEmpty()) {
+                continue;
+            }
+            if (normalized.contains("/")) {
+                relativePaths.add(normalized);
+            } else {
+                names.add(normalized);
+            }
+        }
+        return new ExcludedPaths(Set.copyOf(names), Set.copyOf(relativePaths));
+    }
+
+    private static Set<String> configuredExcludedDirs() {
+        Set<String> values = new LinkedHashSet<>(DEFAULT_EXCLUDED_DIRS);
+        String configured = System.getProperty("keeply.agent.backup.exclude-dirs", "");
+        for (String value : configured.split(",")) {
+            if (!value.isBlank()) {
+                values.add(value.trim());
+            }
+        }
+        return values;
     }
 
     @FunctionalInterface
@@ -84,12 +118,25 @@ public final class FileScanner {
         void accept(Path path) throws IOException;
     }
 
-    public record ScanStats(long files, long prunedDirectories, long unreadableEntries) {
+    public record ScanStats(long files, long ignoredDirectories, List<ScanFailure> unreadableFailures) {
+        public long prunedDirectories() {
+            return ignoredDirectories;
+        }
+
+        public long unreadableEntries() {
+            return unreadableFailures.size();
+        }
+    }
+
+    public record ScanFailure(Path path, IOException cause) {
+    }
+
+    private record ExcludedPaths(Set<String> names, Set<String> relativePaths) {
     }
 
     private static final class MutableStats {
         long files;
-        long prunedDirectories;
-        long unreadableEntries;
+        long ignoredDirectories;
+        List<ScanFailure> unreadableFailures = new ArrayList<>();
     }
 }

@@ -35,6 +35,11 @@ Thumbs.db
 *.log
 logs/
 
+# Environment files
+.env
+.env.*
+!.env.example
+
 # Database / Temp
 *.db
 *.sqlite

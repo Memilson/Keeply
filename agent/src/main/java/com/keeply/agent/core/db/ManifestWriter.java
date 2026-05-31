@@ -2,8 +2,8 @@ package com.keeply.agent.core.db;
 
 import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.github.luben.zstd.ZstdOutputStream;
-import com.keeply.agent.core.ZstdCompressor;
+import com.keeply.agent.core.ChunkCodec;
+import com.keeply.agent.core.CompressionService;
 
 import java.io.OutputStream;
 import java.nio.file.Files;
@@ -28,17 +28,22 @@ public final class ManifestWriter {
                 FROM backup_manifest_files f LEFT JOIN backup_manifest_chunks c ON c.file_path = f.path
                 ORDER BY f.path, c.chunk_index
                 """;
+        ChunkCodec codec = new CompressionService().writeCodec();
         try (OutputStream out = Files.newOutputStream(output);
-             ZstdOutputStream zstd = new ZstdOutputStream(out, ZstdCompressor.COMPRESSION_LEVEL);
-             JsonGenerator json = mapper.getFactory().createGenerator(zstd);
+             OutputStream compressed = new com.github.luben.zstd.ZstdOutputStream(out, codec.level());
+             JsonGenerator json = mapper.getFactory().createGenerator(compressed);
              PreparedStatement statement = database.get().prepareStatement(sql);
              ResultSet rows = statement.executeQuery()) {
             json.writeStartObject();
             json.writeStringField("snapshotId", snapshotId);
             json.writeStringField("sourcePath", sourcePath);
             json.writeStringField("createdAt", Instant.now().toString());
+            json.writeNumberField("manifestVersion", 2);
             json.writeStringField("chunking", "CONTENT_DEFINED_MIN_1MB_AVG_4MB_MAX_8MB");
-            json.writeStringField("compression", "ZSTD");
+            json.writeObjectFieldStart("chunkCompression");
+            json.writeStringField("algorithm", codec.algorithm());
+            json.writeNumberField("level", codec.level());
+            json.writeEndObject();
             json.writeStringField("hashAlgorithm", "SHA-256");
             json.writeArrayFieldStart("files");
             String openPath = null;
@@ -62,7 +67,7 @@ public final class ManifestWriter {
                     json.writeNumberField("index", rows.getInt(5));
                     json.writeStringField("hash", rows.getString(6));
                     json.writeNumberField("originalSize", rows.getLong(7));
-                    json.writeNumberField("compressedSize", rows.getLong(8));
+                    json.writeNumberField("storedSize", rows.getLong(8));
                     json.writeEndObject();
                 }
             }

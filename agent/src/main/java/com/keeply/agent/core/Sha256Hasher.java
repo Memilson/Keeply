@@ -16,16 +16,16 @@ public final class Sha256Hasher {
         try {
             MessageDigest md = MessageDigest.getInstance("SHA-256");
             String hash = toHex(md.digest(data));
-            log.debug("🔑 Hash calculado para {} bytes: {}", data.length, hash);
+            log.debug("Hash calculado para {} bytes: {}", data.length, hash);
             return hash;
         } catch (Exception e) {
-            log.error("❌ Falha ao calcular SHA-256: {}", e.getMessage());
+            log.error("Falha ao calcular SHA-256: {}", e.getMessage());
             throw new IllegalStateException("Falha ao calcular SHA-256", e);
         }
     }
 
     public static String hashFile(Path file) {
-        log.debug("🔑 Calculando hash para o arquivo: {}", file);
+        log.debug("Calculando hash para o arquivo: {}", file);
         try (InputStream in = Files.newInputStream(file)) {
             MessageDigest md = MessageDigest.getInstance("SHA-256");
             byte[] buffer = new byte[1024 * 1024];
@@ -34,10 +34,10 @@ public final class Sha256Hasher {
                 md.update(buffer, 0, read);
             }
             String hash = toHex(md.digest());
-            log.debug("🔑 Hash do arquivo {}: {}", file, hash);
+            log.debug("Hash do arquivo {}: {}", file, hash);
             return hash;
         } catch (Exception e) {
-            log.error("❌ Falha ao calcular SHA-256 do arquivo {}: {}", file, e.getMessage());
+            log.error("Falha ao calcular SHA-256 do arquivo {}: {}", file, e.getMessage());
             throw new IllegalStateException("Falha ao calcular SHA-256 do arquivo: " + file, e);
         }
     }

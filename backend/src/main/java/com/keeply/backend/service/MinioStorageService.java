@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class MinioStorageService implements ObjectStorageService {
     private static final Logger log = LoggerFactory.getLogger(MinioStorageService.class);
+    private static final int COPY_ATTEMPTS = 3;
     private final MinioClient minio;
     private final String bucket;
 
@@ -81,15 +82,32 @@ public class MinioStorageService implements ObjectStorageService {
 
     @Override
     public void copy(String sourceKey, String destinationKey) {
-        try {
-            minio.copyObject(CopyObjectArgs.builder()
-                    .bucket(bucket)
-                    .object(destinationKey)
-                    .source(CopySource.builder().bucket(bucket).object(sourceKey).build())
-                    .build());
-        } catch (Exception e) {
-            throw new IllegalStateException("Falha ao promover objeto MinIO: " + sourceKey, e);
+        Exception last = null;
+        for (int attempt = 1; attempt <= COPY_ATTEMPTS; attempt++) {
+            try {
+                minio.copyObject(CopyObjectArgs.builder()
+                        .bucket(bucket)
+                        .object(destinationKey)
+                        .source(CopySource.builder().bucket(bucket).object(sourceKey).build())
+                        .build());
+                return;
+            } catch (Exception e) {
+                last = e;
+                if (attempt == COPY_ATTEMPTS) {
+                    break;
+                }
+                long delayMs = attempt * 500L;
+                log.warn("event=minio.copy status=retrying source={} destination={} attempt={} max_attempts={} delay_ms={} cause={}",
+                        sourceKey, destinationKey, attempt, COPY_ATTEMPTS, delayMs, e.getMessage());
+                try {
+                    Thread.sleep(delayMs);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException("Falha ao promover objeto MinIO: " + sourceKey, interrupted);
+                }
+            }
         }
+        throw new IllegalStateException("Falha ao promover objeto MinIO: " + sourceKey, last);
     }
 
     @Override

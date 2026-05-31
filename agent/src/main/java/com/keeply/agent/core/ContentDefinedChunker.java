@@ -18,7 +18,7 @@ public class ContentDefinedChunker {
     private static final int CUT_MASK = AVG_SIZE - 1;
 
     public String process(Path file, ChunkConsumer consumer) {
-        log.debug("✂️ Iniciando chunking do arquivo: {}", file);
+        log.debug("Iniciando chunking do arquivo: {}", file);
         try (InputStream in = Files.newInputStream(file)) {
             MessageDigest fileDigest = MessageDigest.getInstance("SHA-256");
             byte[] current = new byte[MAX_SIZE];
@@ -41,7 +41,7 @@ public class ContentDefinedChunker {
 
                     if (canCut || mustCut) {
                         byte[] data = mustCut ? current : Arrays.copyOf(current, currentSize);
-                        log.debug("📦 Chunk gerado: index={} size={} type={}", index, data.length, mustCut ? "MUST_CUT" : "CAN_CUT");
+                        log.debug("Chunk gerado: index={} size={} type={}", index, data.length, mustCut ? "MUST_CUT" : "CAN_CUT");
                         consumer.accept(new ChunkData(index, offset, data, data.length));
                         
                         offset += data.length;
@@ -55,15 +55,15 @@ public class ContentDefinedChunker {
 
             if (currentSize > 0) {
                 byte[] data = Arrays.copyOf(current, currentSize);
-                log.debug("📦 Último chunk gerado: index={} size={}", index, data.length);
+                log.debug("Ultimo chunk gerado: index={} size={}", index, data.length);
                 consumer.accept(new ChunkData(index, offset, data, data.length));
             }
 
             String fileHash = hex(fileDigest.digest());
-            log.debug("✅ Chunking concluído: chunks={} hash={}", index + 1, fileHash);
+            log.debug("Chunking concluido: chunks={} hash={}", index + 1, fileHash);
             return fileHash;
         } catch (Exception e) {
-            log.error("❌ Falha no processamento (streaming) do arquivo {}: {}", file, e.getMessage());
+            log.error("Falha no processamento (streaming) do arquivo {}: {}", file, e.getMessage());
             throw new IllegalStateException("Falha no processamento (streaming) do arquivo: " + file, e);
         }
     }

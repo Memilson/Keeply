@@ -98,7 +98,7 @@ public final class KnownChunkRepository {
                     statement.setString(1, chunk.hash());
                     statement.setLong(2, now);
                     statement.setLong(3, chunk.originalSize());
-                    statement.setLong(4, chunk.compressedSize());
+                    statement.setLong(4, chunk.storedSize());
                     statement.setLong(5, now);
                     statement.addBatch();
                 }

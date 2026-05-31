@@ -34,4 +34,11 @@ public class FileChunk {
 
     @Column(name = "compressed_size", nullable = false)
     public long compressedSize;
+
+    @Column(name = "compression_algorithm", nullable = false, length = 16)
+    public String compressionAlgorithm = "ZSTD";
+
+    @Column(name = "compression_level")
+    public Integer compressionLevel = 3;
 }
+

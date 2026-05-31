@@ -6,6 +6,7 @@ import com.keeply.agent.auth.DeviceIdentity;
 import com.keeply.agent.config.AgentConfigReader;
 import com.keeply.agent.config.AgentConfigWriter;
 import com.keeply.agent.core.BackupEngine;
+import com.keeply.agent.core.BackupSnapshotException;
 import com.keeply.agent.core.LocalDatabase;
 import com.keeply.agent.core.RestoreEngine;
 import com.keeply.agent.core.RestoreEngine.OverwritePolicy;
@@ -319,6 +320,48 @@ public class KeeplyAgentApp extends Application {
             Pane root = loader.load();
             dashboardController = loader.getController();
             dashboardController.setOnNavigate(this::showView);
+            dashboardController.setOnBackupNow(() -> {
+                if (backend == null || deviceId == null) {
+                    log("Faça login primeiro para iniciar o backup manual.");
+                    return;
+                }
+                dashboardController.setBackupInProgress(true);
+                runAsync(() -> {
+                    try {
+                        log("Iniciando backup manual pelo Dashboard...");
+                        var optPlan = backend.getDevicePlan(deviceId);
+                        List<String> sources = optPlan.isPresent() ? optPlan.get().sources() : parseSources(backupSourcesConfig.getText());
+                        if (sources == null || sources.isEmpty()) {
+                            log("Nenhuma pasta configurada para backup.");
+                            return;
+                        }
+                        for (String sourcePath : sources) {
+                            try {
+                                Path source = Path.of(sourcePath);
+                                UUID snapshotId = new BackupEngine(backend, db).backup(deviceId, source);
+                                if (snapshotId != null) {
+                                    log("event=ui.backup.manual status=completed source=" + sourcePath + " snapshot_id=" + snapshotId);
+                                } else {
+                                    log("event=ui.backup.manual status=skipped source=" + sourcePath + " reason=already_running");
+                                }
+                            } catch (Exception ex) {
+                                log("event=ui.backup.manual status=failed source=" + sourcePath + " message=" + getErrorMessage(ex));
+                            }
+                        }
+                        refreshDashboard();
+                        log("Backup manual concluído.");
+                        ui(() -> {
+                            Alert alert = new Alert(Alert.AlertType.INFORMATION);
+                            alert.setTitle("Backup concluído");
+                            alert.setHeaderText(null);
+                            alert.setContentText("O backup manual das pastas foi finalizado.");
+                            alert.showAndWait();
+                        });
+                    } finally {
+                        ui(() -> dashboardController.setBackupInProgress(false));
+                    }
+                });
+            });
             return root;
         } catch (Exception e) {
             e.printStackTrace();
@@ -419,8 +462,22 @@ public class KeeplyAgentApp extends Application {
             }
             Path source = Path.of(pathStr);
             runAsync(() -> {
-                UUID snapshotId = new BackupEngine(backend, db).backup(deviceId, source);
-                log("event=ui.backup status=completed snapshot_id=" + snapshotId);
+                try {
+                    UUID snapshotId = new BackupEngine(backend, db).backup(deviceId, source);
+                    log("event=ui.backup status=completed snapshot_id=" + snapshotId);
+                } catch (BackupSnapshotException backupError) {
+                    try {
+                        backend.failSnapshot(backupError.snapshotId(), backupError.userMessage());
+                    } catch (Exception failSnapshotError) {
+                        log("event=ui.backup status=fail_report_failed snapshot_id="
+                                + backupError.snapshotId() + " message=" + failSnapshotError.getMessage());
+                    }
+                    db.setLastFailedSnapshot(deviceId, backupError.sourcePath(),
+                            backupError.snapshotId().toString(), backupError.userMessage());
+                    log("event=ui.backup status=failed snapshot_id=" + backupError.snapshotId()
+                            + " message=" + backupError.userMessage());
+                    throw backupError;
+                }
             });
         });
 
@@ -441,24 +498,17 @@ public class KeeplyAgentApp extends Application {
         topBar.setAlignment(Pos.CENTER_LEFT);
         topBar.getStyleClass().add("restore-toolbar");
 
-        Label title = new Label("Snapshots");
-        title.getStyleClass().add("restore-title");
-
-        Button restoreAll = new Button("Recuperar snapshot");
-        restoreAll.getStyleClass().add("btn-secondary");
-        restoreAll.setDisable(true);
-
-        Button restoreSelected = new Button("Recuperar itens");
-        restoreSelected.getStyleClass().add("btn-success");
-        restoreSelected.setDisable(true);
-
         Region topSpacer = new Region();
         HBox.setHgrow(topSpacer, Priority.ALWAYS);
-        topBar.getChildren().addAll(title, topSpacer, restoreAll, restoreSelected);
+        topBar.getChildren().add(topSpacer);
 
+        Button backToSnapshots = new Button("Voltar");
+        backToSnapshots.getStyleClass().add("btn-secondary");
+        backToSnapshots.setVisible(false);
+        backToSnapshots.setManaged(false);
         Label currentPathLabel = new Label("Snapshots");
         currentPathLabel.getStyleClass().add("item-muted");
-        HBox addressBar = new HBox(8, currentPathLabel);
+        HBox addressBar = new HBox(8, backToSnapshots, currentPathLabel);
         addressBar.getStyleClass().add("restore-address");
         Region addressSpacer = new Region();
         HBox.setHgrow(addressSpacer, Priority.ALWAYS);
@@ -467,76 +517,130 @@ public class KeeplyAgentApp extends Application {
         VBox topArea = new VBox(8, topBar, addressBar);
         layout.setTop(topArea);
 
-        VBox sidebar = new VBox(10);
-        sidebar.getStyleClass().add("restore-sidebar");
+        VBox snapshotsPane = new VBox(10);
+        snapshotsPane.getStyleClass().add("restore-sidebar");
         Label sidebarTitle = new Label("PONTOS DE RESTAURACAO");
         sidebarTitle.getStyleClass().add("section-title");
         ListView<SnapshotSummary> snapshotList = new ListView<>();
         snapshotList.getStyleClass().add("explorer-list");
         VBox.setVgrow(snapshotList, Priority.ALWAYS);
+        Label browserTitle = new Label("ITENS");
+        browserTitle.getStyleClass().add("section-title");
+        Label browserStatus = new Label("Selecione um snapshot concluído e clique em Carregar itens.");
+        browserStatus.getStyleClass().add("item-muted");
+        Button actionRestore = new Button("Recuperar");
+        actionRestore.getStyleClass().add("restore-nav-line");
+        actionRestore.setGraphic(createNavigationIcon("restore"));
+        actionRestore.setMaxWidth(Double.MAX_VALUE);
+        actionRestore.setDisable(true);
+        VBox rightActions = new VBox(10, actionRestore);
+        rightActions.setMinWidth(220);
+        TreeView<RestoreNode> fileTree = new TreeView<>();
+        fileTree.getStyleClass().add("explorer-list");
+        fileTree.setShowRoot(true);
+        BorderPane itemsPane = new BorderPane();
+        itemsPane.setCenter(fileTree);
+        itemsPane.setRight(rightActions);
+        VBox fileBrowser = new VBox(10, browserTitle, browserStatus, itemsPane);
+        VBox.setVgrow(fileTree, Priority.ALWAYS);
+        fileBrowser.setVisible(false);
+        fileBrowser.setManaged(false);
         SnapshotSummary[] selectedSnapshot = new SnapshotSummary[1];
-
         java.util.function.Consumer<SnapshotSummary> recoverSnapshot = snapshot -> {
             if (snapshot == null) return;
             runAsync(() -> new RestoreEngine(backend).restore(snapshot.id(), null, null, OverwritePolicy.ALWAYS));
         };
         java.util.function.Consumer<SnapshotSummary> loadItems = snapshot -> {
             if (snapshot == null) return;
+            if (!"COMPLETED".equals(snapshot.status())) {
+                throw new IllegalStateException("Snapshot ainda não concluído (Status: " + snapshot.status() + ")");
+            }
             runAsync(() -> {
-                var page = backend.listSnapshotFiles(snapshot.id(), 0, 200, null);
-                log("event=ui.restore.items_loaded snapshot_id=" + snapshot.id()
-                        + " loaded=" + page.items().size()
-                        + " total=" + page.pagination().totalElements());
+                ui(() -> {
+                    browserStatus.setText("Carregando pastas...");
+                    fileTree.setRoot(null);
+                    snapshotsPane.setVisible(false);
+                    snapshotsPane.setManaged(false);
+                    fileBrowser.setVisible(true);
+                    fileBrowser.setManaged(true);
+                    backToSnapshots.setVisible(true);
+                    backToSnapshots.setManaged(true);
+                    currentPathLabel.setText("Itens > " + snapshot.id().toString().substring(0, 8));
+                });
+                RestoreNode rootNode = new RestoreNode(
+                        rootLabelForSnapshot(snapshot.sourcePath()),
+                        "",
+                        true,
+                        0L,
+                        null
+                );
+                LazyRestoreTreeItem rootItem = new LazyRestoreTreeItem(rootNode);
+                ui(() -> {
+                    fileTree.setRoot(rootItem);
+                    rootItem.setExpanded(true);
+                    actionRestore.setDisable(true);
+                });
+                loadFolderChildren(snapshot, rootItem, browserStatus, () -> {
+                    SelectedRestorePaths selections = collectCheckedSelectionsFromTree(fileTree.getRoot());
+                    actionRestore.setDisable(selections.files().isEmpty() && selections.directories().isEmpty());
+                });
+                log("event=ui.restore.items_loaded snapshot_id=" + snapshot.id() + " prefix=/");
             });
         };
 
-        snapshotList.setCellFactory(param -> new ListCell<>() {
-            private Region currentActionsWrap;
-            private Timeline currentExpandAnimation;
+        fileTree.setCellFactory(tv -> new TreeCell<>() {
+            private final CheckBox check = new CheckBox();
+            private final Label text = new Label();
+            private final HBox row = new HBox(8);
+            private CheckBoxTreeItem<RestoreNode> bound;
 
             {
-                selectedProperty().addListener((obs, oldSelected, selected) -> {
-                    if (currentActionsWrap == null) return;
-                    if (currentExpandAnimation != null) {
-                        currentExpandAnimation.stop();
-                    }
-                    if (selected) {
-                        currentActionsWrap.setManaged(true);
-                        currentActionsWrap.setVisible(true);
-                        currentExpandAnimation = new Timeline(
-                                new KeyFrame(Duration.ZERO,
-                                        new KeyValue(currentActionsWrap.maxHeightProperty(), currentActionsWrap.getMaxHeight()),
-                                        new KeyValue(currentActionsWrap.opacityProperty(), currentActionsWrap.getOpacity())),
-                                new KeyFrame(Duration.millis(190),
-                                        new KeyValue(currentActionsWrap.maxHeightProperty(), 78),
-                                        new KeyValue(currentActionsWrap.opacityProperty(), 1.0))
-                        );
-                        currentExpandAnimation.play();
-                    } else {
-                        currentExpandAnimation = new Timeline(
-                                new KeyFrame(Duration.ZERO,
-                                        new KeyValue(currentActionsWrap.maxHeightProperty(), currentActionsWrap.getMaxHeight()),
-                                        new KeyValue(currentActionsWrap.opacityProperty(), currentActionsWrap.getOpacity())),
-                                new KeyFrame(Duration.millis(170),
-                                        new KeyValue(currentActionsWrap.maxHeightProperty(), 0),
-                                        new KeyValue(currentActionsWrap.opacityProperty(), 0.0))
-                        );
-                        currentExpandAnimation.setOnFinished(e -> {
-                            currentActionsWrap.setVisible(false);
-                            currentActionsWrap.setManaged(false);
-                        });
-                        currentExpandAnimation.play();
-                    }
-                });
+                row.setAlignment(Pos.CENTER_LEFT);
+                row.getChildren().addAll(check, createBootstrapFileIcon(false), text);
             }
 
+            @Override
+            protected void updateItem(RestoreNode item, boolean empty) {
+                super.updateItem(item, empty);
+                if (bound != null) {
+                    check.selectedProperty().unbindBidirectional(bound.selectedProperty());
+                    bound = null;
+                }
+                if (empty || item == null || !(getTreeItem() instanceof CheckBoxTreeItem<?> cbItem)) {
+                    setText(null);
+                    setGraphic(null);
+                    return;
+                }
+                @SuppressWarnings("unchecked")
+                CheckBoxTreeItem<RestoreNode> typed = (CheckBoxTreeItem<RestoreNode>) cbItem;
+                bound = typed;
+                check.selectedProperty().bindBidirectional(typed.selectedProperty());
+                check.setAllowIndeterminate(false);
+                row.getChildren().set(1, createBootstrapFileIcon(item.isDirectory));
+                text.setText(item.label);
+                text.getStyleClass().setAll(item.isDirectory ? "snapshot-item-title" : "item-muted");
+                setText(null);
+                setGraphic(row);
+            }
+        });
+        fileTree.rootProperty().addListener((obs, oldRoot, newRoot) -> {
+            if (newRoot instanceof CheckBoxTreeItem<?> cbRoot) {
+                @SuppressWarnings("unchecked")
+                CheckBoxTreeItem<RestoreNode> typedRoot = (CheckBoxTreeItem<RestoreNode>) cbRoot;
+                bindCheckboxListeners(typedRoot, () -> {
+                    SelectedRestorePaths selections = collectCheckedSelectionsFromTree(fileTree.getRoot());
+                    actionRestore.setDisable(selections.files().isEmpty() && selections.directories().isEmpty());
+                });
+            }
+        });
+
+        snapshotList.setCellFactory(param -> new ListCell<>() {
             @Override
             protected void updateItem(SnapshotSummary item, boolean empty) {
                 super.updateItem(item, empty);
                 if (empty || item == null) {
                     setText(null);
                     setGraphic(null);
-                    currentActionsWrap = null;
                 } else {
                     Label dateLabel = new Label("Data " + formatSnapshotDateCompact(item.startedAt()));
                     dateLabel.getStyleClass().add("item-muted");
@@ -557,6 +661,7 @@ public class KeeplyAgentApp extends Application {
 
                     Button rowLoadItems = new Button("Carregar itens");
                     rowLoadItems.getStyleClass().add("btn-success");
+                    rowLoadItems.setDisable(!"COMPLETED".equals(item.status()));
                     rowLoadItems.setOnAction(e -> {
                         snapshotList.getSelectionModel().select(item);
                         loadItems.accept(item);
@@ -565,12 +670,11 @@ public class KeeplyAgentApp extends Application {
                     actions.setAlignment(Pos.CENTER_LEFT);
                     StackPane actionsWrap = new StackPane(actions);
                     actionsWrap.setPadding(new Insets(18, 0, 8, 24));
-                    actionsWrap.setVisible(isSelected());
-                    actionsWrap.setManaged(isSelected());
-                    actionsWrap.setOpacity(isSelected() ? 1.0 : 0.0);
-                    actionsWrap.setMaxHeight(isSelected() ? 78 : 0);
-                    actionsWrap.setPrefHeight(isSelected() ? 78 : 0);
-                    currentActionsWrap = actionsWrap;
+                    actionsWrap.setVisible(true);
+                    actionsWrap.setManaged(true);
+                    actionsWrap.setOpacity(1.0);
+                    actionsWrap.setMaxHeight(78);
+                    actionsWrap.setPrefHeight(78);
 
                     Region spacer = new Region();
                     HBox.setHgrow(spacer, Priority.ALWAYS);
@@ -587,9 +691,11 @@ public class KeeplyAgentApp extends Application {
                 }
             }
         });
-        sidebar.getChildren().addAll(sidebarTitle, snapshotList);
-        sidebar.setMinWidth(320);
-        layout.setCenter(sidebar);
+        snapshotsPane.getChildren().addAll(sidebarTitle, snapshotList);
+        VBox centerHost = new VBox(10, snapshotsPane, fileBrowser);
+        VBox.setVgrow(snapshotsPane, Priority.ALWAYS);
+        VBox.setVgrow(fileBrowser, Priority.ALWAYS);
+        layout.setCenter(centerHost);
 
         Runnable refreshSnapshots = () -> {
             if (backend == null) {
@@ -609,43 +715,109 @@ public class KeeplyAgentApp extends Application {
         snapshotList.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
             if (newVal != null) {
                 selectedSnapshot[0] = newVal;
-                boolean isCompleted = "COMPLETED".equals(newVal.status());
-                boolean canRestore = isCompleted;
-
-                restoreAll.setDisable(!canRestore);
-                restoreSelected.setDisable(!canRestore);
                 currentPathLabel.setText("Snapshots > " + newVal.id().toString().substring(0, 8)
                         + " [" + newVal.status() + "]");
             } else {
                 selectedSnapshot[0] = null;
-                restoreAll.setDisable(true);
-                restoreSelected.setDisable(true);
                 currentPathLabel.setText("Snapshots");
             }
         });
 
-        restoreAll.setOnAction(e -> {
-            recoverSnapshot.accept(snapshotList.getSelectionModel().getSelectedItem());
+        actionRestore.setOnAction(e -> {
+            SnapshotSummary snapshot = selectedSnapshot[0];
+            if (snapshot == null || fileTree.getRoot() == null) return;
+            SelectedRestorePaths selections = collectCheckedSelectionsFromTree(fileTree.getRoot());
+            if (selections.files().isEmpty() && selections.directories().isEmpty()) return;
+            Optional<RestoreDestinationMode> choice = showRestoreDestinationDialog(stage);
+            if (choice.isEmpty()) return;
+            Path destination = null;
+            if (choice.get() == RestoreDestinationMode.CUSTOM) {
+                DirectoryChooser chooser = new DirectoryChooser();
+                chooser.setTitle("Selecionar pasta de destino");
+                java.io.File selected = chooser.showDialog(stage);
+                if (selected == null) return;
+                destination = selected.toPath();
+            }
+            Path finalDestination = destination;
+            runAsync(() -> {
+                Set<String> selectedPaths = resolveSelectedFiles(snapshot, selections);
+                if (selectedPaths.isEmpty()) {
+                    throw new IllegalStateException("Nenhum arquivo selecionado para recuperação");
+                }
+                new RestoreEngine(backend).restore(snapshot.id(), finalDestination, selectedPaths, OverwritePolicy.ALWAYS);
+            });
         });
 
-        restoreSelected.setOnAction(e -> {
-            loadItems.accept(snapshotList.getSelectionModel().getSelectedItem());
+        backToSnapshots.setOnAction(e -> {
+            fileBrowser.setVisible(false);
+            fileBrowser.setManaged(false);
+            snapshotsPane.setVisible(true);
+            snapshotsPane.setManaged(true);
+            backToSnapshots.setVisible(false);
+            backToSnapshots.setManaged(false);
+            currentPathLabel.setText("Snapshots");
+            fileTree.setRoot(null);
+            actionRestore.setDisable(true);
         });
 
         return layout;
     }
 
-    private Set<String> collectCheckedFilePathsFromTree(TreeItem<RestoreNode> root) {
-        Set<String> selected = new HashSet<>();
-        collectCheckedRec(root, selected);
-        return selected;
+    private Optional<RestoreDestinationMode> showRestoreDestinationDialog(Stage owner) {
+        Dialog<RestoreDestinationMode> dialog = new Dialog<>();
+        dialog.initOwner(owner);
+        dialog.setTitle("Recuperar itens");
+        dialog.setHeaderText(null);
+        DialogPane pane = dialog.getDialogPane();
+        pane.getStyleClass().add("restore-destination-dialog");
+
+        ButtonType cancelType = new ButtonType("Cancelar", ButtonBar.ButtonData.CANCEL_CLOSE);
+        ButtonType okType = new ButtonType("OK", ButtonBar.ButtonData.OK_DONE);
+        pane.getButtonTypes().setAll(cancelType, okType);
+
+        Label title = new Label("Escolha o destino da recuperação");
+        title.getStyleClass().add("restore-destination-title");
+
+        Label destinationLabel = new Label("Destino:");
+        destinationLabel.getStyleClass().add("restore-destination-label");
+
+        ComboBox<String> destinationBox = new ComboBox<>();
+        destinationBox.getItems().setAll("Caminho original", "Caminho personalizado");
+        destinationBox.getSelectionModel().selectFirst();
+        destinationBox.setMaxWidth(Double.MAX_VALUE);
+
+        GridPane form = new GridPane();
+        form.setHgap(10);
+        form.setVgap(12);
+        form.add(destinationLabel, 0, 0);
+        form.add(destinationBox, 1, 0);
+        GridPane.setHgrow(destinationBox, Priority.ALWAYS);
+
+        VBox content = new VBox(14, title, form);
+        content.setPadding(new Insets(6, 6, 4, 6));
+        pane.setContent(content);
+
+        dialog.setResultConverter(btn -> {
+            if (btn != okType) return null;
+            return "Caminho personalizado".equals(destinationBox.getValue())
+                    ? RestoreDestinationMode.CUSTOM
+                    : RestoreDestinationMode.ORIGINAL;
+        });
+        return dialog.showAndWait();
+    }
+
+    private SelectedRestorePaths collectCheckedSelectionsFromTree(TreeItem<RestoreNode> root) {
+        Set<String> files = new HashSet<>();
+        Set<String> directories = new HashSet<>();
+        collectCheckedRec(root, files, directories);
+        return new SelectedRestorePaths(files, directories);
     }
 
     private void updateSelectedPathsForVisibleTree(TreeItem<RestoreNode> root, Set<String> selected) {
         Set<String> visible = new HashSet<>();
         collectVisibleFilePaths(root, visible);
         selected.removeAll(visible);
-        selected.addAll(collectCheckedFilePathsFromTree(root));
+        selected.addAll(collectCheckedSelectionsFromTree(root).files());
     }
 
     private void collectVisibleFilePaths(TreeItem<RestoreNode> node, Set<String> out) {
@@ -680,18 +852,22 @@ public class KeeplyAgentApp extends Application {
         }
     }
 
-    private void collectCheckedRec(TreeItem<RestoreNode> node, Set<String> out) {
+    private void collectCheckedRec(TreeItem<RestoreNode> node, Set<String> files, Set<String> directories) {
         if (node == null || node.getValue() == null) return;
         if (node instanceof CheckBoxTreeItem<?> cbNode) {
             @SuppressWarnings("unchecked")
             CheckBoxTreeItem<RestoreNode> typedNode = (CheckBoxTreeItem<RestoreNode>) cbNode;
             RestoreNode value = typedNode.getValue();
-            if (typedNode.isSelected() && value != null && !value.isDirectory && value.fullPath != null && !value.fullPath.isBlank()) {
-                out.add(value.fullPath);
+            if (typedNode.isSelected() && value != null) {
+                if (value.isDirectory) {
+                    directories.add(value.fullPath == null ? "" : value.fullPath);
+                } else if (value.fullPath != null && !value.fullPath.isBlank()) {
+                    files.add(value.fullPath);
+                }
             }
         }
         for (TreeItem<RestoreNode> child : node.getChildren()) {
-            collectCheckedRec(child, out);
+            collectCheckedRec(child, files, directories);
         }
     }
 
@@ -729,6 +905,56 @@ public class KeeplyAgentApp extends Application {
         if (startedAt == null) return "-";
         return DateTimeFormatter.ofPattern("MM-dd HH:mm")
                 .format(startedAt.atZone(ZoneId.systemDefault()));
+    }
+
+    private String rootLabelForSnapshot(String sourcePath) {
+        if (sourcePath == null || sourcePath.isBlank()) {
+            return "Backup";
+        }
+        try {
+            Path path = Path.of(sourcePath);
+            Path name = path.getFileName();
+            if (name != null && !name.toString().isBlank()) {
+                return name.toString();
+            }
+        } catch (Exception ignored) {
+            // fallback para o valor bruto
+        }
+        return sourcePath;
+    }
+
+    private void loadFolderChildren(SnapshotSummary snapshot, LazyRestoreTreeItem parent, Label browserStatus, Runnable onSelectionChanged) {
+        if (snapshot == null || parent == null || !parent.getValue().isDirectory || parent.loading || parent.loaded) {
+            return;
+        }
+        parent.loading = true;
+        String prefix = parent.getValue().fullPath == null ? "" : parent.getValue().fullPath;
+        runAsync(() -> {
+            List<BackendClient.SnapshotFileItem> files = backend.listAllSnapshotFiles(snapshot.id(), null, prefix);
+            List<RestoreNode> children = buildImmediateChildren(prefix, files, null);
+            ui(() -> {
+                parent.getChildren().clear();
+                for (RestoreNode child : children) {
+                    LazyRestoreTreeItem childItem = new LazyRestoreTreeItem(child);
+                    if (child.isDirectory) {
+                        childItem.addPlaceholder();
+                        childItem.expandedProperty().addListener((obs, oldVal, expanded) -> {
+                            if (expanded) {
+                                loadFolderChildren(snapshot, childItem, browserStatus, onSelectionChanged);
+                            }
+                        });
+                    }
+                    bindCheckboxListeners(childItem, onSelectionChanged);
+                    parent.getChildren().add(childItem);
+                }
+                parent.loaded = true;
+                parent.loading = false;
+                String folder = prefix.isBlank() ? "/" : prefix;
+                browserStatus.setText("Pasta: " + folder + " | itens: " + children.size());
+                onSelectionChanged.run();
+            });
+            log("event=ui.restore.folder_loaded snapshot_id=" + snapshot.id() + " prefix=" + (prefix.isBlank() ? "/" : prefix) + " items=" + children.size());
+        });
     }
 
     private List<RestoreNode> buildImmediateChildren(String prefix, List<BackendClient.SnapshotFileItem> files, String search) {
@@ -887,6 +1113,51 @@ public class KeeplyAgentApp extends Application {
         }
     }
 
+    private static class LazyRestoreTreeItem extends CheckBoxTreeItem<RestoreNode> {
+        private boolean loaded;
+        private boolean loading;
+
+        private LazyRestoreTreeItem(RestoreNode value) {
+            super(value);
+            setIndependent(true);
+        }
+
+        private void addPlaceholder() {
+            if (getChildren().isEmpty()) {
+                getChildren().add(new TreeItem<>(new RestoreNode("...", "", false, 0L, null)));
+            }
+        }
+    }
+
+    private Set<String> resolveSelectedFiles(SnapshotSummary snapshot, SelectedRestorePaths selections) {
+        if (snapshot == null || selections == null) return Set.of();
+        if (selections.directories().isEmpty()) {
+            return selections.files();
+        }
+        List<BackendClient.SnapshotFileItem> allFiles = backend.listAllSnapshotFiles(snapshot.id(), null);
+        Set<String> resolved = new HashSet<>(selections.files());
+        for (BackendClient.SnapshotFileItem file : allFiles) {
+            String path = file.path();
+            if (path == null || path.isBlank()) continue;
+            for (String directory : selections.directories()) {
+                String prefix = directory == null ? "" : directory;
+                if (prefix.isBlank() || path.startsWith(prefix)) {
+                    resolved.add(path);
+                    break;
+                }
+            }
+        }
+        return resolved;
+    }
+
+    private record SelectedRestorePaths(Set<String> files, Set<String> directories) {
+    }
+
+    private enum RestoreDestinationMode {
+        ORIGINAL,
+        CUSTOM
+    }
+
     private Path parseDestinationPath(String destinationText) {
         if (destinationText == null || destinationText.isBlank()) {
             log("Selecione uma pasta de destino.");
@@ -1012,11 +1283,17 @@ public class KeeplyAgentApp extends Application {
         if (selectedType == ProtectionPlan.PlanType.DEFAULT) {
             sources = List.of(Path.of(System.getProperty("user.home")).toAbsolutePath().normalize().toString());
         } else {
-            List<String> custom = askCustomSources();
-            if (custom.isEmpty()) {
-                throw new IllegalStateException("Plano CUSTOM requer ao menos uma pasta.");
+            sources = askCustomSources();
+            if (sources.isEmpty()) {
+                ui(() -> {
+                    Alert alert = new Alert(Alert.AlertType.WARNING);
+                    alert.setTitle("Plano Inválido");
+                    alert.setHeaderText(null);
+                    alert.setContentText("O plano CUSTOM requer ao menos uma pasta monitorada.");
+                    alert.showAndWait();
+                });
+                return createPlanFromWizard(); // Repete o processo completo
             }
-            sources = custom;
         }
         return backend.upsertDevicePlan(deviceId, selectedType, sources);
     }
@@ -1029,10 +1306,21 @@ public class KeeplyAgentApp extends Application {
             dialog.setTitle("Plano de proteção obrigatório");
             dialog.setHeaderText("Escolha o plano para este dispositivo");
             dialog.setContentText("Tipo:");
-            String selected = dialog.showAndWait()
-                    .orElseThrow(() -> new IllegalStateException("Escolha do plano é obrigatória."));
-            choiceRef.set(ProtectionPlan.PlanType.valueOf(selected));
-            latch.countDown();
+            String selected = dialog.showAndWait().orElse(null);
+            if (selected != null) {
+                choiceRef.set(ProtectionPlan.PlanType.valueOf(selected));
+                latch.countDown();
+            } else {
+                Alert alert = new Alert(Alert.AlertType.WARNING);
+                alert.setTitle("Ação Obrigatória");
+                alert.setHeaderText(null);
+                alert.setContentText("Você deve escolher um plano de proteção para continuar.");
+                alert.showAndWait();
+                ui(() -> {
+                    choiceRef.set(selectPlanType());
+                    latch.countDown();
+                });
+            }
         });
         awaitLatch(latch);
         return choiceRef.get();
@@ -1054,13 +1342,17 @@ public class KeeplyAgentApp extends Application {
             dialog.getDialogPane().setContent(area);
             dialog.setResultConverter(button -> button == saveType ? area.getText() : null);
 
-            String value = dialog.showAndWait()
-                    .orElseThrow(() -> new IllegalStateException("Plano CUSTOM exige pastas."));
-            valueRef.set(value);
-            latch.countDown();
+            String value = dialog.showAndWait().orElse(null);
+            if (value != null) {
+                valueRef.set(value);
+                latch.countDown();
+            } else {
+                latch.countDown(); // Deixa createPlanFromWizard lidar com a lista vazia
+            }
         });
         awaitLatch(latch);
-        return parseSources(valueRef.get());
+        String val = valueRef.get();
+        return val == null ? List.of() : parseSources(val);
     }
 
     private void awaitLatch(java.util.concurrent.CountDownLatch latch) {

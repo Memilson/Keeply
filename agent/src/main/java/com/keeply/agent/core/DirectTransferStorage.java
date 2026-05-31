@@ -29,15 +29,15 @@ public class DirectTransferStorage implements TransferObjectClient {
     }
 
     @Override
-    public void uploadChunk(String hash, Path zstdFile) {
+    public void uploadChunk(String hash, Path chunkFile, ChunkCodec codec) {
         String key = credentials.stagingPrefix() + "chunks/" + hash.substring(0, 2) + "/"
-                + hash.substring(2, 4) + "/" + hash + ".zst";
-        put(key, zstdFile);
+                + hash.substring(2, 4) + "/" + hash + codec.extension();
+        put(key, chunkFile, codec.contentType());
     }
 
     @Override
     public void uploadManifest(Path zstdFile) {
-        put(credentials.stagingPrefix() + "manifest.json.zst", zstdFile);
+        put(credentials.stagingPrefix() + "manifest.json.zst", zstdFile, "application/zstd");
     }
 
     @Override
@@ -46,12 +46,12 @@ public class DirectTransferStorage implements TransferObjectClient {
     }
 
     @Override
-    public InputStream openChunk(String hash) {
+    public InputStream openChunk(String hash, ChunkCodec codec) {
         return get("users/" + backend.getSession().userId() + "/chunks/" + hash.substring(0, 2) + "/"
-                + hash.substring(2, 4) + "/" + hash + ".zst");
+                + hash.substring(2, 4) + "/" + hash + codec.extension());
     }
 
-    private void put(String key, Path source) {
+    private void put(String key, Path source, String contentType) {
         try {
             ensureRenewed();
             try (InputStream input = Files.newInputStream(source)) {
@@ -59,7 +59,7 @@ public class DirectTransferStorage implements TransferObjectClient {
                         .bucket(credentials.bucket())
                         .object(key)
                         .stream(input, Files.size(source), -1)
-                        .contentType("application/zstd")
+                        .contentType(contentType)
                         .build());
             }
         } catch (Exception e) {

@@ -13,7 +13,7 @@ public class AuditLog {
     public UUID id;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_id", nullable = false, foreignKey = @ForeignKey(name = "fk_audit_user"))
+    @JoinColumn(name = "user_id", foreignKey = @ForeignKey(name = "fk_audit_user"))
     public UserAccount user;
 
     @ManyToOne(fetch = FetchType.LAZY)
