@@ -27,6 +27,18 @@ public class ProtectionPlan {
     @Column(name = "source_path", nullable = false)
     public List<String> sources = new ArrayList<>();
 
+    @Column(name = "cdp_enabled", nullable = false)
+    public boolean cdpEnabled = false;
+
+    @Column(name = "encryption_enabled", nullable = false)
+    public boolean encryptionEnabled = false;
+
+    @Column(name = "schedule_cron", length = 100)
+    public String scheduleCron;
+
+    @Column(name = "encryption_password_hash", length = 255)
+    public String encryptionPasswordHash;
+
     @Column(name = "created_at", nullable = false)
     public Instant createdAt;
 

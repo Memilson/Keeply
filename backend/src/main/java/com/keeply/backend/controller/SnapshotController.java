@@ -2,6 +2,7 @@
 package com.keeply.backend.controller;
 
 import com.keeply.backend.dto.SnapshotDtos;
+import com.keeply.backend.service.FileDownloadService;
 import com.keeply.backend.service.ManifestReaderService;
 import com.keeply.backend.service.SnapshotService;
 import com.keeply.backend.service.TransferCredentialBroker;
@@ -18,11 +19,13 @@ public class SnapshotController {
     private final SnapshotService snapshots;
     private final ManifestReaderService manifestReader;
     private final TransferCredentialBroker transferBroker;
+    private final FileDownloadService fileDownload;
 
-    public SnapshotController(SnapshotService snapshots, ManifestReaderService manifestReader, TransferCredentialBroker transferBroker) {
+    public SnapshotController(SnapshotService snapshots, ManifestReaderService manifestReader, TransferCredentialBroker transferBroker, FileDownloadService fileDownload) {
         this.snapshots = snapshots;
         this.manifestReader = manifestReader;
         this.transferBroker = transferBroker;
+        this.fileDownload = fileDownload;
     }
 
     @PostMapping("/start")
@@ -59,6 +62,15 @@ public class SnapshotController {
     @GetMapping
     public List<SnapshotDtos.SnapshotResponse> list() {
         return snapshots.list(CurrentUser.get().userId());
+    }
+
+    @GetMapping("/{snapshotId}/files/download")
+    public void downloadFile(
+            @PathVariable UUID snapshotId,
+            @RequestParam String path,
+            jakarta.servlet.http.HttpServletResponse response
+    ) throws java.io.IOException {
+        fileDownload.streamFile(CurrentUser.get().userId(), snapshotId, path, response);
     }
 
     @GetMapping("/{snapshotId}/files")

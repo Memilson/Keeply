@@ -7,13 +7,17 @@ package com.keeply.backend.repository;
 import com.keeply.backend.model.Snapshot;
 import com.keeply.backend.model.SnapshotStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 public interface SnapshotRepository extends JpaRepository<Snapshot, UUID> {
-    List<Snapshot> findByDeviceUserIdOrderByCreatedAtDesc(UUID userId);
+    @Query("SELECT s FROM Snapshot s JOIN FETCH s.device WHERE s.device.user.id = :userId ORDER BY s.createdAt DESC")
+    List<Snapshot> findByDeviceUserIdOrderByCreatedAtDesc(@Param("userId") UUID userId);
     List<Snapshot> findByDeviceUserIdAndDeviceIdAndStatusOrderByCreatedAtDesc(UUID userId, UUID deviceId, SnapshotStatus status);
-    Optional<Snapshot> findByIdAndDeviceUserId(UUID id, UUID userId);
+    @Query("SELECT s FROM Snapshot s JOIN FETCH s.device WHERE s.id = :id AND s.device.user.id = :userId")
+    Optional<Snapshot> findByIdAndDeviceUserId(@Param("id") UUID id, @Param("userId") UUID userId);
     boolean existsByDeviceIdAndStatusIn(UUID deviceId, java.util.Collection<SnapshotStatus> statuses);
 }

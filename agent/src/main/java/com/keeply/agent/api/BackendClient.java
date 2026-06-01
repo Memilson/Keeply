@@ -99,9 +99,14 @@ public class BackendClient {
     }
 
     public ProtectionPlan upsertDevicePlan(UUID deviceId, ProtectionPlan.PlanType type, List<String> sources) {
+        return upsertDevicePlan(deviceId, type, sources, false, false, null);
+    }
+
+    public ProtectionPlan upsertDevicePlan(UUID deviceId, ProtectionPlan.PlanType type, List<String> sources,
+                                            boolean cdpEnabled, boolean encryptionEnabled, String scheduleCron) {
         String traceId = traceId();
         try {
-            return devices.upsertPlan(deviceId, type, sources, traceId);
+            return devices.upsertPlan(deviceId, type, sources, cdpEnabled, encryptionEnabled, scheduleCron, traceId);
         } catch (Exception e) {
             throw failure("Falha ao salvar plano do device", traceId, e);
         }

@@ -42,23 +42,6 @@ public final class AgentConfigLoader {
             errors.add("backend.url é obrigatório");
         }
 
-        if (config.backup() == null || config.backup().sources() == null || config.backup().sources().isEmpty()) {
-            errors.add("backup.sources deve conter pelo menos uma pasta");
-        } else {
-            for (Path source : config.backup().sources()) {
-                if (source == null) {
-                    errors.add("backup.sources não pode conter valores nulos");
-                    continue;
-                }
-                Path normalized = source.toAbsolutePath().normalize();
-                if (!Files.exists(normalized)) {
-                    errors.add("backup.sources contém caminho inexistente: " + normalized);
-                } else if (!Files.isDirectory(normalized)) {
-                    errors.add("backup.sources deve conter apenas diretórios: " + normalized);
-                }
-            }
-        }
-
         if (config.schedule() == null || isBlank(config.schedule().cron())) {
             errors.add("schedule.cron é obrigatório");
         } else {

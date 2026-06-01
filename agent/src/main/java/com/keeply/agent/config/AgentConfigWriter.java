@@ -7,7 +7,6 @@ import com.keeply.agent.model.ProtectionPlan;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -20,50 +19,37 @@ public final class AgentConfigWriter {
         this.path = path;
     }
 
-    public void saveSchedule(String backendUrl, String email, String password, List<String> sources, String cron) throws Exception {
+    public void saveSchedule(String backendUrl, String email, List<String> sources, String cron) throws Exception {
         if (backendUrl == null || backendUrl.isBlank()) {
             throw new IllegalStateException("Backend URL é obrigatório.");
-        }
-        if (sources == null || sources.isEmpty()) {
-            throw new IllegalStateException("Informe pelo menos uma pasta em 'Pastas de backup'.");
         }
         Map<String, Object> root = readRoot();
         root.put("backend", Map.of("url", backendUrl));
 
         Map<String, Object> auth = section(root, "auth");
-        if (email != null && !email.isBlank()) {
-            auth.put("email", email);
-        }
-        if (password != null && !password.isBlank()) {
-            auth.put("password", password);
-        }
+        if (email != null && !email.isBlank()) auth.put("email", email);
+        auth.remove("password"); // nunca persistir senha em YAML
         root.put("auth", auth);
 
-        root.put("backup", Map.of("sources", new ArrayList<>(sources)));
+        // sources não são persistidos no YAML — o daemon busca do backend
         Map<String, Object> schedule = section(root, "schedule");
         schedule.put("cron", cron);
         root.put("schedule", schedule);
         write(root);
     }
 
-    public void savePlan(String backendUrl, String email, String password, ProtectionPlan plan) throws Exception {
+    public void savePlan(String backendUrl, String email, ProtectionPlan plan) throws Exception {
         Map<String, Object> root = readRoot();
         Map<String, Object> backend = section(root, "backend");
         backend.put("url", backendUrl);
         root.put("backend", backend);
 
         Map<String, Object> auth = section(root, "auth");
-        if (email != null && !email.isBlank()) {
-            auth.put("email", email);
-        }
-        if (password != null && !password.isBlank()) {
-            auth.put("password", password);
-        }
+        if (email != null && !email.isBlank()) auth.put("email", email);
+        auth.remove("password"); // nunca persistir senha em YAML
         root.put("auth", auth);
 
-        Map<String, Object> backup = section(root, "backup");
-        backup.put("sources", new ArrayList<>(plan.sources()));
-        root.put("backup", backup);
+        // sources não são persistidos no YAML — o daemon busca do backend
         if (!(root.get("schedule") instanceof Map<?, ?>)) {
             root.put("schedule", Map.of("cron", "0 2 * * *", "runOnStartup", false));
         }
@@ -72,7 +58,19 @@ public final class AgentConfigWriter {
 
     public void saveEncryptionEnabled(boolean enabled) throws Exception {
         Map<String, Object> root = readRoot();
-        root.put("encryption", Map.of("enabled", enabled));
+        Map<String, Object> enc = section(root, "encryption");
+        enc.put("enabled", enabled);
+        if (!enabled) enc.remove("password");
+        root.put("encryption", enc);
+        write(root);
+    }
+
+    public void saveEncryptionPassword(String password) throws Exception {
+        Map<String, Object> root = readRoot();
+        Map<String, Object> enc = section(root, "encryption");
+        enc.put("enabled", true);
+        enc.put("password", password);
+        root.put("encryption", enc);
         write(root);
     }
 
