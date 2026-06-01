@@ -26,15 +26,15 @@ public final class AgentConfigReader {
         Map<String, Object> root = yaml.readValue(Files.readString(path),
                 new TypeReference<LinkedHashMap<String, Object>>() {});
         if (root == null) {
-            return Optional.of(new UiConfig(null, null, null, List.of(), null, false));
+            return Optional.of(new UiConfig(null, null, List.of(), null, false, null));
         }
         return Optional.of(new UiConfig(
                 property(root, "backend", "url"),
                 property(root, "auth", "email"),
-                property(root, "auth", "password"),
                 sources(root),
                 property(root, "schedule", "cron"),
-                boolProperty(root, "encryption", "enabled")));
+                boolProperty(root, "encryption", "enabled"),
+                property(root, "encryption", "password")));
     }
 
     public Path path() {
@@ -62,6 +62,6 @@ public final class AgentConfigReader {
         return false;
     }
 
-    public record UiConfig(String backendUrl, String email, String password, List<String> sources, String cron, boolean encryptionEnabled) {
+    public record UiConfig(String backendUrl, String email, List<String> sources, String cron, boolean encryptionEnabled, String encryptionPassword) {
     }
 }

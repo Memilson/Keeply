@@ -3,7 +3,6 @@ package com.keeply.agent.daemon;
 import com.keeply.agent.api.BackendClient;
 import com.keeply.agent.api.LogUtils;
 import com.keeply.agent.auth.DeviceAuthStore;
-import com.keeply.agent.auth.DeviceIdentity;
 import com.keeply.agent.config.AgentConfig;
 import com.keeply.agent.model.ProtectionPlan;
 import com.keeply.agent.core.BackupEngine;
@@ -13,7 +12,6 @@ import com.keeply.agent.model.DeviceSession;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.net.InetAddress;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
@@ -28,7 +26,6 @@ public final class BackupCycleRunner {
         UUID run(UUID deviceId, Path source) throws Exception;
     }
 
-    private final AgentConfig config;
     private final AtomicBoolean running = new AtomicBoolean(false);
 
     private final BackendClient backend;
@@ -38,7 +35,6 @@ public final class BackupCycleRunner {
     private UUID deviceId;
 
     public BackupCycleRunner(AgentConfig config, LocalDatabase db, DeviceAuthStore authStore) {
-        this.config = config;
         this.backend = new BackendClient(config.backend().url(), authStore);
         this.db = db;
         this.authStore = authStore;
@@ -46,7 +42,6 @@ public final class BackupCycleRunner {
     }
 
     BackupCycleRunner(AgentConfig config, DeviceAuthStore authStore, SourceBackupExecutor sourceBackupExecutor) {
-        this.config = config;
         this.backend = new BackendClient(config.backend().url(), authStore);
         this.db = null;
         this.authStore = authStore;
@@ -180,27 +175,11 @@ public final class BackupCycleRunner {
             }
         }
 
-        String email = config.auth().email();
-        String password = config.auth().password();
-
-        if (password == null || password.isBlank()) {
-            throw new IllegalStateException("Senha não configurada. O daemon não pode renovar a sessão automaticamente sem uma senha salva.");
-        }
-
+        // Sessão expirou e não conseguimos renovar — o usuário precisa abrir o agente e fazer login novamente.
         try {
-            String hostname = InetAddress.getLocalHost().getHostName();
-            String installationId = saved != null && saved.deviceInstallationId() != null && !saved.deviceInstallationId().isBlank()
-                    ? saved.deviceInstallationId()
-                    : DeviceIdentity.getOrCreate();
-            DeviceSession session = backend.loginDevice(
-                    email,
-                    password,
-                    installationId,
-                    hostname,
-                    System.getProperty("os.name"),
-                    "0.1.0-daemon"
-            );
-            deviceId = session.deviceId();
+            throw new IllegalStateException(
+                "Sessão expirada e não foi possível renovar automaticamente. " +
+                "Abra o agente Keeply e faça login para reautorizar o daemon.");
         } catch (Exception e) {
             if (isNetworkError(e)) {
                 throw new IllegalStateException("Erro de rede ao tentar realizar login", e);

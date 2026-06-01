@@ -8,6 +8,7 @@ import com.keeply.backend.model.PlanType;
 import com.keeply.backend.model.ProtectionPlan;
 import com.keeply.backend.repository.DeviceRepository;
 import com.keeply.backend.repository.ProtectionPlanRepository;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,10 +23,12 @@ import java.util.UUID;
 public class ProtectionPlanService {
     private final DeviceRepository devices;
     private final ProtectionPlanRepository plans;
+    private final PasswordEncoder passwordEncoder;
 
-    public ProtectionPlanService(DeviceRepository devices, ProtectionPlanRepository plans) {
+    public ProtectionPlanService(DeviceRepository devices, ProtectionPlanRepository plans, PasswordEncoder passwordEncoder) {
         this.devices = devices;
         this.plans = plans;
+        this.passwordEncoder = passwordEncoder;
     }
 
     @Transactional(readOnly = true)
@@ -45,6 +48,15 @@ public class ProtectionPlanService {
         plan.device = device;
         plan.planType = request.planType();
         plan.sources = normalizeSources(request.sources());
+        plan.cdpEnabled = Boolean.TRUE.equals(request.cdpEnabled());
+        plan.encryptionEnabled = Boolean.TRUE.equals(request.encryptionEnabled());
+        plan.scheduleCron = request.scheduleCron() != null && !request.scheduleCron().isBlank()
+                ? request.scheduleCron().trim() : null;
+        if (request.encryptionPassword() != null && !request.encryptionPassword().isBlank()) {
+            plan.encryptionPasswordHash = passwordEncoder.encode(request.encryptionPassword());
+        } else if (!plan.encryptionEnabled) {
+            plan.encryptionPasswordHash = null;
+        }
 
         if (plan.planType == PlanType.DEFAULT) {
             if (plan.sources.size() != 1) {
@@ -87,6 +99,10 @@ public class ProtectionPlanService {
     }
 
     private DeviceDtos.PlanResponse toResponse(ProtectionPlan plan) {
-        return new DeviceDtos.PlanResponse(plan.planType, List.copyOf(plan.sources), plan.updatedAt);
+        return new DeviceDtos.PlanResponse(
+                plan.planType, List.copyOf(plan.sources),
+                plan.cdpEnabled, plan.encryptionEnabled, plan.scheduleCron,
+                plan.encryptionPasswordHash != null && !plan.encryptionPasswordHash.isBlank(),
+                plan.updatedAt);
     }
 }
