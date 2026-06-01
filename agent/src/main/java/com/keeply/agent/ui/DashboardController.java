@@ -30,6 +30,7 @@ public class DashboardController {
     @FXML private VBox btnAddFolder;
     @FXML private Button btnRestaurar;
     @FXML private Button btnProtegerAgora;
+    @FXML private Button btnVerAtividade;
 
     private Consumer<String> onNavigate;
     private Runnable onBackupNow;
@@ -48,6 +49,12 @@ public class DashboardController {
                 if (!backupInProgress && onBackupNow != null) {
                     onBackupNow.run();
                 }
+            });
+        }
+
+        if (btnVerAtividade != null) {
+            btnVerAtividade.setOnAction(e -> {
+                if (onNavigate != null) onNavigate.accept("Atividade");
             });
         }
 

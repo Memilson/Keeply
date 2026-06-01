@@ -19,17 +19,23 @@ public class SnapshotService {
     private final SnapshotRepository snapshots;
     private final DeviceRepository devices;
     private final ObjectStorageService storage;
+    private final SnapshotFileRepository snapshotFiles;
+    private final FileChunkRepository fileChunks;
     private final ManifestParserService manifestParser;
     private final TransferCredentialBroker transferBroker;
 
     public SnapshotService(SnapshotRepository snapshots,
                            DeviceRepository devices,
                            ObjectStorageService storage,
+                           SnapshotFileRepository snapshotFiles,
+                           FileChunkRepository fileChunks,
                            ManifestParserService manifestParser,
                            TransferCredentialBroker transferBroker) {
         this.snapshots = snapshots;
         this.devices = devices;
         this.storage = storage;
+        this.snapshotFiles = snapshotFiles;
+        this.fileChunks = fileChunks;
         this.manifestParser = manifestParser;
         this.transferBroker = transferBroker;
     }
@@ -117,15 +123,26 @@ public class SnapshotService {
 
     private SnapshotDtos.SnapshotResponse toResponse(Snapshot s) {
         UUID deviceId = s.device != null ? s.device.id : null;
+        long totalFiles = s.totalFiles != null ? s.totalFiles : 0L;
+        long totalOriginalSize = s.totalOriginalSize != null ? s.totalOriginalSize : 0L;
+        long totalCompressedSize = s.totalCompressedSize != null ? s.totalCompressedSize : 0L;
+
+        if ((s.totalFiles == null || s.totalOriginalSize == null) && s.id != null) {
+            totalFiles = snapshotFiles.countBySnapshotIdAgg(s.id);
+            totalOriginalSize = snapshotFiles.sumSizeBySnapshotIdAgg(s.id);
+        }
+        if (s.totalCompressedSize == null && s.id != null) {
+            totalCompressedSize = fileChunks.sumCompressedSizeBySnapshotIdAgg(s.id);
+        }
         
         return new SnapshotDtos.SnapshotResponse(
                 s.id,
                 deviceId,
                 s.status,
                 s.sourcePath,
-                s.totalFiles != null ? s.totalFiles : 0L,
-                s.totalOriginalSize != null ? s.totalOriginalSize : 0L,
-                s.totalCompressedSize != null ? s.totalCompressedSize : 0L,
+                totalFiles,
+                totalOriginalSize,
+                totalCompressedSize,
                 s.startedAt,
                 s.completedAt,
                 s.errorMessage

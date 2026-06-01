@@ -1,7 +1,18 @@
+"use client";
+
 import Link from "next/link";
+import { useState } from "react";
 import { KeeplyLogo } from "@/components/KeeplyLogo";
 
 export default function LandingPage() {
+  const [expandedPlans, setExpandedPlans] = useState<Record<string, boolean>>({
+    Pro: true,
+  });
+
+  function togglePlan(name: string) {
+    setExpandedPlans((current) => ({ ...current, [name]: !current[name] }));
+  }
+
   return (
     <div className="flex flex-col bg-white text-[#111827]">
 
@@ -234,7 +245,10 @@ export default function LandingPage() {
             </h2>
           </div>
           <div className="mt-16 grid gap-5 md:grid-cols-3">
-            {PLANS.map((p) => (
+            {PLANS.map((p) => {
+              const expanded = Boolean(expandedPlans[p.name]);
+              const visibleFeatures = expanded ? p.features : p.features.slice(0, 2);
+              return (
               <div
                 key={p.name}
                 className={`relative flex flex-col rounded-2xl bg-white p-8 ${
@@ -257,13 +271,31 @@ export default function LandingPage() {
                 </div>
                 <p className="mt-2 text-sm text-gray-500">{p.desc}</p>
                 <ul className="mt-6 flex-1 space-y-2.5">
-                  {p.features.map((f) => (
+                  {visibleFeatures.map((f) => (
                     <li key={f} className="flex items-start gap-2 text-sm text-gray-600">
                       <span className="mt-0.5 font-bold text-violet-500">✓</span>
                       {f}
                     </li>
                   ))}
                 </ul>
+                <button
+                  type="button"
+                  onClick={() => togglePlan(p.name)}
+                  className="mt-5 flex items-center justify-between rounded-lg border border-gray-200 px-3 py-2 text-left text-sm font-semibold text-violet-700 transition-colors hover:bg-violet-50"
+                >
+                  <span>{expanded ? "Ocultar recursos" : `Ver todos os ${p.features.length} recursos`}</span>
+                  <svg
+                    className={`h-4 w-4 transition-transform ${expanded ? "rotate-180" : ""}`}
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="m6 9 6 6 6-6" />
+                  </svg>
+                </button>
                 <Link
                   href="/register"
                   className={`mt-8 rounded-lg px-4 py-2.5 text-center text-sm font-semibold transition-colors ${
@@ -275,7 +307,7 @@ export default function LandingPage() {
                   {p.cta}
                 </Link>
               </div>
-            ))}
+            )})}
           </div>
         </div>
       </section>

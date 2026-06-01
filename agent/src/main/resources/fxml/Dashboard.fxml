@@ -147,7 +147,7 @@
                 <SVGPath content="M8 1 15 4.5V11L8 15 1 11V4.5z M8 2.5v11 M2 5l6 3 6-3" style="-fx-fill: white;" scaleX="0.8" scaleY="0.8"/>
             </graphic>
         </Button>
-        <Button text="Ver atividade" styleClass="btn-text-primary" alignment="CENTER_LEFT">            <graphic>
+        <Button fx:id="btnVerAtividade" text="Ver atividade" styleClass="btn-text-primary" alignment="CENTER_LEFT">            <graphic>
                 <SVGPath content="M16 6l2.29 2.29-4.88 4.88-4-4L2 16.59 3.41 18l6-6 4 4 6.3-6.29L22 12V6z" styleClass="header-icon" scaleX="0.8" scaleY="0.8"/>
             </graphic>
         </Button>
