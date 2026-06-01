@@ -69,7 +69,9 @@ public final class AgentConfigWriter {
         Map<String, Object> root = readRoot();
         Map<String, Object> enc = section(root, "encryption");
         enc.put("enabled", true);
-        enc.put("password", password);
+        // A senha de criptografia NÃO deve ser salva em texto plano no YAML.
+        // Removendo explicitamente caso existisse.
+        enc.remove("password");
         root.put("encryption", enc);
         write(root);
     }

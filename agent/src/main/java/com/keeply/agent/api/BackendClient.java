@@ -164,10 +164,12 @@ public class BackendClient {
     }
 
     public void failSnapshot(UUID snapshotId, String errorMessage) {
+        String traceId = traceId();
         try {
-            snapshots.fail(snapshotId, errorMessage, traceId());
-        } catch (Exception ignored) {
-            // Failure reporting must not hide the original backup failure.
+            snapshots.fail(snapshotId, errorMessage, traceId);
+        } catch (Exception e) {
+            log.warn("event=snapshot.fail_report status=failed snapshot_id={} trace_id={} message={}",
+                    snapshotId, traceId, e.getMessage());
         }
     }
 

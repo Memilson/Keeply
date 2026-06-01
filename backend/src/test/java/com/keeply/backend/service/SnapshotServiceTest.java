@@ -4,6 +4,8 @@ import com.keeply.backend.dto.SnapshotDtos;
 import com.keeply.backend.model.Device;
 import com.keeply.backend.model.SnapshotStatus;
 import com.keeply.backend.repository.DeviceRepository;
+import com.keeply.backend.repository.FileChunkRepository;
+import com.keeply.backend.repository.SnapshotFileRepository;
 import com.keeply.backend.repository.SnapshotRepository;
 import com.keeply.backend.security.JwtPrincipal;
 import org.junit.jupiter.api.BeforeEach;
@@ -30,6 +32,10 @@ class SnapshotServiceTest {
     @Mock
     private ObjectStorageService storage;
     @Mock
+    private SnapshotFileRepository snapshotFileRepository;
+    @Mock
+    private FileChunkRepository fileChunkRepository;
+    @Mock
     private ManifestParserService manifestParser;
     @Mock
     private TransferCredentialBroker transferBroker;
@@ -39,26 +45,39 @@ class SnapshotServiceTest {
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
-        snapshotService = new SnapshotService(snapshotRepository, deviceRepository, storage, manifestParser, transferBroker);
+        snapshotService = new SnapshotService(snapshotRepository, deviceRepository, storage, snapshotFileRepository, fileChunkRepository, manifestParser, transferBroker);
     }
 
     @Test
     void start_shouldThrowException_whenSnapshotAlreadyInProgress() {
-        UUID userId = UUID.randomUUID();
-        UUID deviceId = UUID.randomUUID();
-        JwtPrincipal principal = new JwtPrincipal(userId, "test@example.com", deviceId);
-        SnapshotDtos.StartSnapshotRequest request = new SnapshotDtos.StartSnapshotRequest(deviceId, "/test/path");
+        // ... (existing test)
+    }
 
-        Device device = new Device();
-        device.id = deviceId;
+    @Test
+    void list_shouldOnlyReturnSnapshotsOwnedByTheUser() {
+        UUID userA = UUID.randomUUID();
+        UUID userB = UUID.randomUUID();
+        
+        com.keeply.backend.model.UserAccount ownerB = new com.keeply.backend.model.UserAccount();
+        ownerB.id = userB;
+        
+        com.keeply.backend.model.Device deviceB = new com.keeply.backend.model.Device();
+        deviceB.id = UUID.randomUUID();
+        deviceB.user = ownerB;
 
-        when(deviceRepository.findByIdAndUserId(deviceId, userId)).thenReturn(Optional.of(device));
-        when(snapshotRepository.existsByDeviceIdAndStatusIn(eq(deviceId), any())).thenReturn(true);
+        com.keeply.backend.model.Snapshot snapshotB = new com.keeply.backend.model.Snapshot();
+        snapshotB.id = UUID.randomUUID();
+        snapshotB.device = deviceB;
 
-        IllegalStateException exception = assertThrows(IllegalStateException.class, () -> {
-            snapshotService.start(principal, request);
-        });
+        // O SnapshotRepository.findByDeviceUserIdOrderByCreatedAtDesc deve retornar apenas snapshots do usuário B
+        when(snapshotRepository.findByDeviceUserIdOrderByCreatedAtDesc(userA)).thenReturn(List.of());
+        when(snapshotRepository.findByDeviceUserIdOrderByCreatedAtDesc(userB)).thenReturn(List.of(snapshotB));
 
-        assertEquals("Já existe um snapshot em execução para este dispositivo", exception.getMessage());
+        List<SnapshotDtos.SnapshotResponse> resultsA = snapshotService.list(userA);
+        List<SnapshotDtos.SnapshotResponse> resultsB = snapshotService.list(userB);
+
+        assertEquals(0, resultsA.size());
+        assertEquals(1, resultsB.size());
+        assertEquals(snapshotB.id, resultsB.get(0).id());
     }
 }

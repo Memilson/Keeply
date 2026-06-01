@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api, type Device } from "@/lib/api";
 import { Topbar } from "@/components/Topbar";
 
@@ -13,7 +13,6 @@ type DevicePlan = {
   encryptionEnabled: boolean;
   scheduleCron: string | null;
   encryptionPasswordSet: boolean;
-  updatedAt?: string;
 };
 
 type Draft = {
@@ -22,37 +21,18 @@ type Draft = {
   cdpEnabled: boolean;
   encryptionEnabled: boolean;
   scheduleCron: string;
-  encryptionPassword: string;
-  encryptionPasswordConfirm: string;
 };
 
 type DeviceWithPlan = Device & { plan: DevicePlan | null; planLoading: boolean };
 
-function parseCron(cron: string | null): { days: number[]; time: string } {
-  if (!cron) return { days: [], time: "" };
-  const parts = cron.trim().split(/\s+/);
-  if (parts.length !== 5) return { days: [], time: "" };
-  const [min, hour, , , dow] = parts;
-  const time = `${hour.padStart(2, "0")}:${min.padStart(2, "0")}`;
-  const days = dow === "*" ? [0, 1, 2, 3, 4, 5, 6] : dow.split(",").map(Number).filter((n) => !isNaN(n));
-  return { time, days };
-}
-
-function buildCron(days: number[], time: string): string | null {
-  if (!days.length || !time) return null;
-  const [h, m] = time.split(":").map(Number);
-  const dow = days.length === 7 ? "*" : days.sort((a, b) => a - b).join(",");
-  return `${m} ${h} * * ${dow}`;
-}
-
-const DAY_LABELS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
-
 export default function ProtectionPage() {
   const [devices, setDevices] = useState<DeviceWithPlan[]>([]);
+  const [selectedId, setSelectedId] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
+  const [newSource, setNewSource] = useState("");
 
   useEffect(() => {
     (async () => {
@@ -60,60 +40,60 @@ export default function ProtectionPage() {
         const devList = await api<Device[]>("/api/devices");
         const withPlan: DeviceWithPlan[] = (devList ?? []).map((d) => ({ ...d, plan: null, planLoading: true }));
         setDevices(withPlan);
+        if (withPlan.length > 0) setSelectedId(withPlan[0].id);
         setLoading(false);
-        await Promise.all(
-          withPlan.map(async (d) => {
-            try {
-              const plan = await api<DevicePlan>(`/api/devices/${d.id}/plan`);
-              setDevices((prev) => prev.map((x) => x.id === d.id ? { ...x, plan, planLoading: false } : x));
-            } catch {
-              setDevices((prev) => prev.map((x) => x.id === d.id ? { ...x, planLoading: false } : x));
-            }
-          })
-        );
+        await Promise.all(withPlan.map(async (d) => {
+          try {
+            const plan = await api<DevicePlan>(`/api/devices/${d.id}/plan`);
+            setDevices((prev) => prev.map((x) => (x.id === d.id ? { ...x, plan, planLoading: false } : x)));
+          } catch {
+            setDevices((prev) => prev.map((x) => (x.id === d.id ? { ...x, planLoading: false } : x)));
+          }
+        }));
       } catch (e) {
-        setError(e instanceof Error ? e.message : "Falha ao carregar dispositivos.");
+        setError(e instanceof Error ? e.message : "Falha ao carregar proteção.");
         setLoading(false);
       }
     })();
   }, []);
 
-  function getDraft(device: DeviceWithPlan): Draft {
-    if (drafts[device.id]) return drafts[device.id];
-    const { days, time } = parseCron(device.plan?.scheduleCron ?? null);
+  const selected = useMemo(
+    () => devices.find((d) => d.id === selectedId) ?? null,
+    [devices, selectedId]
+  );
+
+  function toDraft(device: DeviceWithPlan): Draft {
     return {
       planType: device.plan?.planType ?? "DEFAULT",
       sources: device.plan?.sources ?? [],
       cdpEnabled: device.plan?.cdpEnabled ?? false,
       encryptionEnabled: device.plan?.encryptionEnabled ?? false,
-      scheduleCron: buildCron(days, time) ?? "",
-      encryptionPassword: "",
-      encryptionPasswordConfirm: "",
+      scheduleCron: device.plan?.scheduleCron ?? "0 2 * * *",
     };
   }
 
-  function patch(deviceId: string, update: Partial<Draft>) {
-    setDrafts((prev) => {
-      const device = devices.find((d) => d.id === deviceId)!;
-      const base = prev[deviceId] ?? getDraft(device);
-      return { ...prev, [deviceId]: { ...base, ...update } };
-    });
+  const draft = selected ? drafts[selected.id] ?? toDraft(selected) : null;
+  const isDirty = !!(selected && drafts[selected.id]);
+
+  function patch(update: Partial<Draft>) {
+    if (!selected) return;
+    setDrafts((prev) => ({ ...prev, [selected.id]: { ...(prev[selected.id] ?? toDraft(selected)), ...update } }));
   }
 
-  function discard(deviceId: string) {
-    setDrafts((prev) => { const n = { ...prev }; delete n[deviceId]; return n; });
+  function scheduleLabel(cron: string) {
+    const p = cron.trim().split(/\s+/);
+    if (p.length !== 5) return "Não configurado";
+    const min = p[0].padStart(2, "0");
+    const hour = p[1].padStart(2, "0");
+    return `Todos os dias às ${hour}:${min}`;
   }
 
-  async function save(device: DeviceWithPlan) {
-    const draft = drafts[device.id];
-    if (!draft) return;
-    setSaving(device.id);
+  async function save() {
+    if (!selected || !draft) return;
+    setSaving(true);
+    setError(null);
     try {
-      if (draft.encryptionEnabled && draft.encryptionPassword) {
-        if (draft.encryptionPassword.length < 8) { setError("Senha de criptografia deve ter ao menos 8 caracteres."); setSaving(null); return; }
-        if (draft.encryptionPassword !== draft.encryptionPasswordConfirm) { setError("As senhas não coincidem."); setSaving(null); return; }
-      }
-      const updated = await api<DevicePlan>(`/api/devices/${device.id}/plan`, {
+      const updated = await api<DevicePlan>(`/api/devices/${selected.id}/plan`, {
         method: "PUT",
         body: JSON.stringify({
           planType: draft.planType,
@@ -121,239 +101,236 @@ export default function ProtectionPage() {
           cdpEnabled: draft.cdpEnabled,
           encryptionEnabled: draft.encryptionEnabled,
           scheduleCron: draft.scheduleCron || null,
-          ...(draft.encryptionPassword ? { encryptionPassword: draft.encryptionPassword } : {}),
         }),
       });
-      setDevices((prev) => prev.map((x) => x.id === device.id ? { ...x, plan: updated } : x));
-      discard(device.id);
+      setDevices((prev) => prev.map((d) => (d.id === selected.id ? { ...d, plan: updated } : d)));
+      setDrafts((prev) => {
+        const next = { ...prev };
+        delete next[selected.id];
+        return next;
+      });
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Falha ao salvar.");
+      setError(e instanceof Error ? e.message : "Falha ao salvar proteção.");
     } finally {
-      setSaving(null);
+      setSaving(false);
     }
   }
 
-  if (loading) return (
-    <>
-      <Topbar title="Proteção" subtitle="Planos de backup por dispositivo" />
-      <div className="p-7"><p className="text-sm" style={{ color: "#6B6993" }}>Carregando…</p></div>
-    </>
-  );
+  if (loading) {
+    return (
+      <>
+        <Topbar title="Proteção" subtitle="Plano de proteção do agente" />
+        <div className="p-7 text-sm" style={{ color: "#6B6993" }}>Carregando…</div>
+      </>
+    );
+  }
 
   return (
     <>
-      <Topbar title="Proteção" subtitle="Planos de backup por dispositivo" />
-      <div className="space-y-5 p-7">
+      <Topbar title="Proteção" subtitle="Plano de proteção do agente" />
+      <div className="p-7">
         {error && (
-          <div className="rounded-xl px-4 py-3 text-sm" style={{ background: "#FEF2F2", border: "1px solid #FECACA", color: "#DC2626" }}>
+          <div className="mb-4 rounded-xl px-4 py-3 text-sm" style={{ background: "#FEF2F2", border: "1px solid #FECACA", color: "#DC2626" }}>
             {error}
           </div>
         )}
 
-        {devices.length === 0 && !loading && (
-          <div className="kp-card flex flex-col items-center gap-3 px-6 py-14">
-            <ShieldIcon />
-            <p className="text-sm" style={{ color: "#6B6993" }}>
-              Nenhum dispositivo registrado. Instale o agente para configurar a proteção.
-            </p>
-          </div>
-        )}
-
-        {devices.map((device) => {
-          const isDirty = !!drafts[device.id];
-          const d = getDraft(device);
-          const { days, time } = parseCron(d.scheduleCron || null);
-
-          return (
-            <div key={device.id} className="kp-card overflow-hidden">
-              {/* Header */}
-              <div className="flex items-center justify-between gap-4 px-6 py-4" style={{ borderBottom: "1px solid #F0EEF8" }}>
-                <div className="flex items-center gap-3">
-                  <div className="grid h-9 w-9 place-items-center rounded-xl" style={{ background: "#EDE9FF" }}>
-                    <MonitorIcon />
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold" style={{ color: "#18163A" }}>{device.name || device.hostname}</p>
-                    <p className="text-xs" style={{ color: "#6B6993" }}>{device.hostname} · {device.osName ?? "—"}</p>
-                  </div>
-                </div>
-                {device.planLoading && <span className="text-xs" style={{ color: "#6B6993" }}>Carregando plano…</span>}
-                {isDirty && (
-                  <div className="flex gap-2">
-                    <button onClick={() => discard(device.id)}
-                      className="rounded-lg border px-3 py-1.5 text-xs font-medium hover:bg-gray-50"
-                      style={{ borderColor: "#E4E1F0", color: "#6B6993" }}>
-                      Descartar
-                    </button>
-                    <button onClick={() => save(device)} disabled={saving === device.id}
-                      className="rounded-lg px-3 py-1.5 text-xs font-medium text-white disabled:opacity-60"
-                      style={{ background: "#7B61FF" }}>
-                      {saving === device.id ? "Salvando…" : "Salvar"}
-                    </button>
-                  </div>
-                )}
+        {!selected ? (
+          <div className="kp-card px-6 py-10 text-sm" style={{ color: "#6B6993" }}>Nenhum dispositivo registrado.</div>
+        ) : (
+          <div className="kp-card overflow-hidden">
+            <div className="flex items-center justify-between px-6 py-5" style={{ borderBottom: "1px solid #ECEAF5" }}>
+              <div className="flex items-center gap-3">
+                <ShieldIcon />
+                <h2 className="text-xl font-semibold" style={{ color: "#111827" }}>Plano de Backup</h2>
               </div>
-
-              <div className="divide-y" style={{ borderColor: "#F5F3FC" }}>
-                {/* Plan type */}
-                <Row label="Plano">
-                  <div className="flex rounded-lg overflow-hidden" style={{ border: "1px solid #E4E1F0" }}>
-                    {(["DEFAULT", "CUSTOM"] as PlanType[]).map((type) => (
-                      <button key={type} onClick={() => patch(device.id, { planType: type })}
-                        className="px-3 py-1.5 text-xs font-medium transition-colors"
-                        style={{ background: d.planType === type ? "#7B61FF" : "#FAFAFE", color: d.planType === type ? "#fff" : "#6B6993" }}>
-                        {type === "DEFAULT" ? "Padrão" : "Personalizado"}
-                      </button>
+              <div className="flex items-center gap-3">
+                {devices.length > 1 && (
+                  <select
+                    value={selected.id}
+                    onChange={(e) => setSelectedId(e.target.value)}
+                    className="rounded-lg border px-2 py-1 text-sm"
+                    style={{ borderColor: "#E4E1F0", color: "#374151" }}
+                  >
+                    {devices.map((d) => (
+                      <option key={d.id} value={d.id}>{d.name || d.hostname}</option>
                     ))}
-                  </div>
-                </Row>
-
-                {/* Sources */}
-                <div className="px-6 py-4 space-y-2">
-                  <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: "#6B6993" }}>Pastas protegidas</p>
-                  {d.sources.length === 0 && <p className="text-sm" style={{ color: "#6B6993" }}>Nenhuma pasta configurada.</p>}
-                  {d.sources.map((src) => (
-                    <div key={src} className="flex items-center justify-between gap-3 rounded-lg px-3 py-2" style={{ background: "#F5F3FB" }}>
-                      <div className="flex items-center gap-2 min-w-0">
-                        <FolderIcon />
-                        <span className="text-sm truncate" style={{ color: "#18163A" }}>{src}</span>
-                      </div>
-                      <button onClick={() => patch(device.id, { sources: d.sources.filter((s) => s !== src), planType: "CUSTOM" })}
-                        className="shrink-0 text-xs font-medium hover:text-red-600" style={{ color: "#6B6993" }}>×</button>
-                    </div>
-                  ))}
-                  <AddSourceRow onAdd={(p) => {
-                    if (!d.sources.includes(p)) patch(device.id, { sources: [...d.sources, p], planType: "CUSTOM" });
-                  }} />
-                </div>
-
-                {/* Schedule */}
-                <div className="px-6 py-4 space-y-3">
-                  <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "#6B6993" }}>Agendamento</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {DAY_LABELS.map((label, idx) => {
-                      const dayNum = idx === 0 ? 0 : idx;
-                      const active = days.includes(dayNum);
-                      return (
-                        <button key={label} onClick={() => {
-                          const next = active ? days.filter((d2) => d2 !== dayNum) : [...days, dayNum];
-                          patch(device.id, { scheduleCron: buildCron(next, time) ?? "" });
-                        }}
-                          className="rounded-full px-3 py-1 text-xs font-medium border transition-colors"
-                          style={{ background: active ? "#EDE9FF" : "#FAFAFE", color: active ? "#7B61FF" : "#6B6993", borderColor: active ? "#7B61FF" : "#E4E1F0" }}>
-                          {label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <label className="text-xs" style={{ color: "#6B6993" }}>Horário</label>
-                    <input type="time" value={time}
-                      onChange={(e) => patch(device.id, { scheduleCron: buildCron(days, e.target.value) ?? "" })}
-                      className="rounded-lg border px-3 py-1.5 text-sm focus:outline-none focus:ring-2"
-                      style={{ borderColor: "#E4E1F0", color: "#18163A" }} />
-                    {d.scheduleCron && <span className="text-xs font-mono" style={{ color: "#9CA3AF" }}>{d.scheduleCron}</span>}
-                  </div>
-                </div>
-
-                {/* CDP */}
-                <Row label="Proteção contínua (CDP)">
-                  <Toggle value={d.cdpEnabled} onChange={(v) => patch(device.id, { cdpEnabled: v })} />
-                </Row>
-
-                {/* Encryption */}
-                <Row label="Criptografia AES-256 · SHA-256">
-                  <Toggle value={d.encryptionEnabled} onChange={(v) => patch(device.id, { encryptionEnabled: v, encryptionPassword: "", encryptionPasswordConfirm: "" })} />
-                </Row>
-
-                {d.encryptionEnabled && (
-                  <div className="px-6 pb-4 space-y-3">
-                    {device.plan?.encryptionPasswordSet && !d.encryptionPassword && (
-                      <div className="flex items-center gap-2 rounded-lg px-3 py-2" style={{ background: "#ECFDF5", border: "1px solid #A7F3D0" }}>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#059669" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                        <span className="text-xs font-medium" style={{ color: "#065F46" }}>Senha já configurada — redefina abaixo se necessário</span>
-                      </div>
-                    )}
-                    <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "#6B6993" }}>
-                      {device.plan?.encryptionPasswordSet ? "Redefinir senha" : "Definir senha de criptografia"}
-                    </p>
-                    <input
-                      type="password"
-                      value={d.encryptionPassword}
-                      onChange={(e) => patch(device.id, { encryptionPassword: e.target.value })}
-                      placeholder="Senha AES-256 (mín. 8 caracteres)"
-                      className="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2"
-                      style={{ borderColor: "#E4E1F0", color: "#18163A" }}
-                    />
-                    <input
-                      type="password"
-                      value={d.encryptionPasswordConfirm}
-                      onChange={(e) => patch(device.id, { encryptionPasswordConfirm: e.target.value })}
-                      placeholder="Confirmar senha"
-                      className="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2"
-                      style={{ borderColor: d.encryptionPassword && d.encryptionPassword !== d.encryptionPasswordConfirm ? "#FCA5A5" : "#E4E1F0", color: "#18163A" }}
-                    />
-                    {d.encryptionPassword && d.encryptionPassword !== d.encryptionPasswordConfirm && (
-                      <p className="text-xs" style={{ color: "#DC2626" }}>As senhas não coincidem</p>
-                    )}
-                    <p className="text-xs" style={{ color: "#9CA3AF" }}>
-                      A senha é usada pelo agente para cifrar os dados localmente antes do envio. Guarde-a com segurança — sem ela, os backups não podem ser recuperados.
-                    </p>
-                  </div>
+                  </select>
                 )}
+                <Toggle value={draft?.planType !== "CUSTOM" || true} onChange={() => {}} />
               </div>
             </div>
-          );
-        })}
+
+            <SectionRow title="O que fazer backup" right={`${draft?.sources.length ?? 0} pasta(s)`}>
+              <button
+                onClick={() => {
+                  const p = newSource.trim();
+                  if (!draft || !p || draft.sources.includes(p)) return;
+                  patch({ sources: [...draft.sources, p], planType: "CUSTOM" });
+                  setNewSource("");
+                }}
+                className="rounded-xl border px-4 py-1.5 text-sm"
+                style={{ borderColor: "#D1D5DB", color: "#6D47FF" }}
+              >
+                + Adicionar
+              </button>
+            </SectionRow>
+
+            <div className="px-6 pb-4">
+              <div className="mb-2 flex gap-2">
+                <input
+                  value={newSource}
+                  onChange={(e) => setNewSource(e.target.value)}
+                  placeholder="/home/angelo/Storage"
+                  className="flex-1 rounded-lg border px-3 py-2 text-sm"
+                  style={{ borderColor: "#E4E1F0" }}
+                />
+              </div>
+              <div className="space-y-2">
+                {(draft?.sources ?? []).map((src) => (
+                  <div key={src} className="flex items-center justify-between rounded-xl px-4 py-3" style={{ background: "#F3F4F6" }}>
+                    <div className="flex items-center gap-3">
+                      <FolderIcon />
+                      <span className="text-sm" style={{ color: "#334155" }}>{src}</span>
+                    </div>
+                    <button
+                      onClick={() => patch({ sources: (draft?.sources ?? []).filter((s) => s !== src), planType: "CUSTOM" })}
+                      className="text-lg leading-none"
+                      style={{ color: "#DC2626" }}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <LineRow title="Proteção contínua (CDP)">
+              <Toggle value={!!draft?.cdpEnabled} onChange={(v) => patch({ cdpEnabled: v })} />
+            </LineRow>
+
+            <LineRow title="Agendamento" value={scheduleLabel(draft?.scheduleCron ?? "0 2 * * *")}>
+              <button
+                onClick={() => {
+                  const value = window.prompt("Informe horário (HH:MM)", "02:00");
+                  if (!value) return;
+                  const m = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(value);
+                  if (!m) return;
+                  patch({ scheduleCron: `${Number(m[2])} ${Number(m[1])} * * *` });
+                }}
+                className="text-lg leading-none"
+                style={{ color: "#6D47FF" }}
+              >
+                ✎
+              </button>
+            </LineRow>
+
+            <LineRow title="Quanto tempo manter" value="Manter todos os snapshots" />
+
+            <div className="flex items-center justify-between px-6 py-5" style={{ borderTop: "1px solid #ECEAF5" }}>
+              <div>
+                <p className="text-sm font-medium" style={{ color: "#334155" }}>Criptografia</p>
+                <p className="text-xs" style={{ color: "#94A3B8" }}>AES-256 · SHA-256</p>
+              </div>
+              <Toggle value={!!draft?.encryptionEnabled} onChange={(v) => patch({ encryptionEnabled: v })} />
+            </div>
+
+            <div style={{ borderTop: "1px solid #ECEAF5" }} className="px-6 py-5">
+              <p className="mb-3 text-sm font-medium" style={{ color: "#334155" }}>Informações do dispositivo</p>
+              <div className="grid gap-2 text-sm">
+                <div className="flex gap-3">
+                  <span style={{ color: "#64748B", minWidth: 120 }}>ID do dispositivo</span>
+                  <span style={{ color: "#334155" }}>{selected.id}</span>
+                </div>
+                <div className="flex gap-3">
+                  <span style={{ color: "#64748B", minWidth: 120 }}>Servidor</span>
+                  <span style={{ color: "#334155" }}>http://localhost:8080</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 px-6 py-4" style={{ borderTop: "1px solid #ECEAF5", background: "#FAFAFE" }}>
+              <button
+                onClick={() => {
+                  if (!selected) return;
+                  setDrafts((prev) => {
+                    const next = { ...prev };
+                    delete next[selected.id];
+                    return next;
+                  });
+                }}
+                className="rounded-lg border px-4 py-2 text-sm"
+                style={{ borderColor: "#D1D5DB", color: "#475569" }}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={save}
+                disabled={!isDirty || saving}
+                className="rounded-lg px-4 py-2 text-sm text-white disabled:opacity-60"
+                style={{ background: "#6D47FF" }}
+              >
+                {saving ? "Salvando..." : "Salvar"}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </>
   );
 }
 
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
+function SectionRow({ title, right, children }: { title: string; right?: string; children?: React.ReactNode }) {
   return (
-    <div className="flex items-center justify-between gap-4 px-6 py-4">
-      <span className="text-sm font-medium" style={{ color: "#18163A" }}>{label}</span>
-      {children}
+    <div className="flex items-center justify-between px-6 py-5" style={{ borderTop: "1px solid #ECEAF5" }}>
+      <p className="text-sm font-medium" style={{ color: "#334155" }}>{title}</p>
+      <div className="flex items-center gap-3">
+        {right && <span className="text-sm" style={{ color: "#64748B" }}>{right}</span>}
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function LineRow({ title, value, children }: { title: string; value?: string; children?: React.ReactNode }) {
+  return (
+    <div className="flex items-center justify-between px-6 py-5" style={{ borderTop: "1px solid #ECEAF5" }}>
+      <p className="text-sm font-medium" style={{ color: "#334155" }}>{title}</p>
+      <div className="flex items-center gap-3">
+        {value && <span className="text-sm" style={{ color: "#64748B" }}>{value}</span>}
+        {children}
+      </div>
     </div>
   );
 }
 
 function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
   return (
-    <button onClick={() => onChange(!value)}
-      className="relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors"
-      style={{ background: value ? "#7B61FF" : "#D1D5DB" }}>
-      <span className="inline-block h-5 w-5 rounded-full bg-white shadow transition-transform"
-        style={{ transform: value ? "translateX(20px)" : "translateX(0)" }} />
+    <button
+      onClick={() => onChange(!value)}
+      className="relative inline-flex h-8 w-14 items-center rounded-full"
+      style={{ background: value ? "#6D47FF" : "#CBD5E1" }}
+    >
+      <span
+        className="inline-block h-6 w-6 rounded-full bg-white transition-transform"
+        style={{ transform: value ? "translateX(30px)" : "translateX(2px)" }}
+      />
     </button>
   );
 }
 
-function AddSourceRow({ onAdd }: { onAdd: (path: string) => void }) {
-  const [value, setValue] = useState("");
+function ShieldIcon() {
   return (
-    <div className="flex gap-2 pt-1">
-      <input value={value} onChange={(e) => setValue(e.target.value)}
-        onKeyDown={(e) => { if (e.key === "Enter" && value.trim()) { onAdd(value.trim()); setValue(""); } }}
-        placeholder="/home/usuario/Documentos"
-        className="flex-1 rounded-lg border bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2"
-        style={{ borderColor: "#E4E1F0", color: "#18163A" }} />
-      <button onClick={() => { if (value.trim()) { onAdd(value.trim()); setValue(""); } }}
-        className="rounded-lg px-3 py-2 text-sm font-medium text-white"
-        style={{ background: "#7B61FF" }}>
-        + Adicionar
-      </button>
-    </div>
+    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#6D47FF" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+    </svg>
   );
 }
 
-function ShieldIcon() {
-  return <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#7B61FF" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg>;
-}
-function MonitorIcon() {
-  return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#7B61FF" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" /><line x1="8" y1="21" x2="16" y2="21" /><line x1="12" y1="17" x2="12" y2="21" /></svg>;
-}
 function FolderIcon() {
-  return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7B61FF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" /></svg>;
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+    </svg>
+  );
 }

@@ -23,12 +23,17 @@ import javafx.scene.Scene;
 import javafx.scene.Node;
 import javafx.scene.control.*;
 import javafx.scene.layout.*;
+import javafx.scene.shape.Circle;
 import javafx.scene.shape.SVGPath;
+import javafx.collections.FXCollections;
+import javafx.collections.ObservableList;
+import javafx.collections.transformation.FilteredList;
 import javafx.stage.DirectoryChooser;
 import javafx.stage.Stage;
 import javafx.stage.StageStyle;
 import javafx.animation.KeyFrame;
 import javafx.animation.Timeline;
+import javafx.scene.image.Image;
 import javafx.util.Duration;
 
 import java.io.OutputStream;
@@ -40,6 +45,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalTime;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
@@ -60,6 +67,9 @@ import org.slf4j.LoggerFactory;
 public class KeeplyAgentApp extends Application {
     private static final Logger log = LoggerFactory.getLogger(KeeplyAgentApp.class);
     private static final int VISIBLE_LOG_LIMIT_CHARS = 300_000;
+    private static final int MAX_ACTIVITY_EVENTS = 2_500;
+    private final StringBuilder logBuffer = new StringBuilder();
+    private final AtomicBoolean logFlushScheduled = new AtomicBoolean(false);
     private BackendClient backend;
     private LocalDatabase db;
     private UUID deviceId;
@@ -67,6 +77,9 @@ public class KeeplyAgentApp extends Application {
     private AgentConfigReader configReader;
     private AgentConfigWriter configWriter;
     private final TextArea logs = new TextArea();
+    private final ObservableList<ActivityEvent> allActivityEvents = FXCollections.observableArrayList();
+    private final FilteredList<ActivityEvent> filteredActivityEvents = new FilteredList<>(allActivityEvents, event -> true);
+    private ListView<ActivityEvent> activityListView;
 
     private TextField backendUrl;
     private TextField email;
@@ -127,7 +140,9 @@ public class KeeplyAgentApp extends Application {
         appViews.put("Backup", configView(stage));
         appViews.put("Restore", restoreView(stage)); // Meus arquivos
         logs.getStyleClass().add("log-surface");
-        appViews.put("Logs", logs);
+        Node activityView = buildActivityView();
+        appViews.put("Atividade", activityView);
+        appViews.put("Logs", activityView);
         appShell = buildAppShell(stage);
 
         // Tenta auto-login de forma assíncrona
@@ -182,6 +197,7 @@ public class KeeplyAgentApp extends Application {
         Scene scene = new Scene(appShell, 1240, 760);
         scene.getStylesheets().add(getClass().getResource("/keeply-theme.css").toExternalForm());
         stage.setTitle("Keeply");
+        applyAppIcon(stage);
         stage.setScene(scene);
         stage.show();
         this.primaryStage = stage;
@@ -282,6 +298,18 @@ public class KeeplyAgentApp extends Application {
             BorderPane shell = loader.load();
             this.mainShellController = loader.getController();
             this.mainShellController.setNavigationHandler(this::showView);
+            this.mainShellController.setOnLogout(() -> {
+                try {
+                    deviceAuthStore.save(null); // Limpa sessão
+                    backend.setSession(null);
+                    deviceId = null;
+                    updateAuthenticationNavigation(false);
+                    showView("Login");
+                    log.info("Usuário deslogado via menu de perfil.");
+                } catch (Exception ex) {
+                    log.error("Erro ao realizar logout: ", ex);
+                }
+            });
             this.mainShellController.bindWindow(stage);
             this.contentHost = this.mainShellController.getContentHost();
             if (this.contentHost == null) {
@@ -293,13 +321,25 @@ public class KeeplyAgentApp extends Application {
             navButtons.put("Dashboard", (Button) shell.lookup("#btnInicio"));
             navButtons.put("Restore", (Button) shell.lookup("#btnMeusArquivos"));
             navButtons.put("Backup", (Button) shell.lookup("#btnBackups"));
-            navButtons.put("Logs", (Button) shell.lookup("#btnAtividade"));
+            Button activityBtn = (Button) shell.lookup("#btnAtividade");
+            navButtons.put("Atividade", activityBtn);
+            navButtons.put("Logs", activityBtn);
             
             shellPageLabel = new Label();
             return shell;
         } catch (Exception e) {
-            e.printStackTrace();
-            return new BorderPane(new Label("Erro ao carregar MainShell.fxml"));
+            log.error("Falha ao carregar MainShell.fxml", e);
+            log("ERRO ao carregar MainShell.fxml: " + formatException(e));
+            VBox errorBox = new VBox(10);
+            errorBox.setPadding(new Insets(48));
+            Label title = new Label("Erro ao carregar MainShell.fxml");
+            title.getStyleClass().add("card-title");
+            TextArea details = new TextArea(formatException(e));
+            details.setEditable(false);
+            details.setWrapText(true);
+            details.setPrefRowCount(10);
+            errorBox.getChildren().addAll(title, details);
+            return new BorderPane(errorBox);
         }
     }
 
@@ -390,6 +430,92 @@ public class KeeplyAgentApp extends Application {
             e.printStackTrace();
             return new VBox(new Label("Erro ao carregar Dashboard.fxml"));
         }
+    }
+
+    private Node buildActivityView() {
+        VBox root = new VBox(12);
+        root.getStyleClass().add("activity-root");
+        root.setPadding(new Insets(12));
+
+        HBox toolbar = new HBox(8);
+        toolbar.getStyleClass().add("activity-toolbar");
+        ToggleGroup group = new ToggleGroup();
+        toolbar.getChildren().addAll(
+                createActivityFilter("Todos", "all", group, true),
+                createActivityFilter("Backup", "backup", group, false),
+                createActivityFilter("Daemon", "daemon", group, false),
+                createActivityFilter("UI", "ui", group, false),
+                createActivityFilter("Erros", "error", group, false)
+        );
+
+        activityListView = new ListView<>(filteredActivityEvents);
+        activityListView.getStyleClass().add("activity-list");
+        activityListView.setCellFactory(list -> new ListCell<>() {
+            @Override
+            protected void updateItem(ActivityEvent item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    setGraphic(null);
+                    setText(null);
+                    return;
+                }
+                VBox wrapper = new VBox(6);
+
+                boolean showDayHeader = getIndex() == activityListView.getItems().size() - 1
+                        || getIndex() == 0
+                        || !item.dateLabel().equals(activityListView.getItems().get(getIndex() - 1).dateLabel());
+                if (showDayHeader) {
+                    Label day = new Label(item.dateLabel());
+                    day.getStyleClass().add("activity-day-header");
+                    wrapper.getChildren().add(day);
+                }
+
+                StackPane marker = new StackPane();
+                marker.getStyleClass().add("activity-marker");
+                Region line = new Region();
+                line.getStyleClass().add("activity-marker-line");
+                Circle dot = new Circle(8);
+                dot.getStyleClass().addAll("activity-dot", "activity-dot-" + item.state());
+                Label check = new Label(item.state().equals("running") ? "" : "✓");
+                check.getStyleClass().add("activity-dot-check");
+                marker.getChildren().addAll(line, dot, check);
+
+                Label headline = new Label(item.headline());
+                headline.getStyleClass().add("activity-headline");
+                Label detail = new Label(item.detail());
+                detail.getStyleClass().add("activity-message");
+                detail.setWrapText(true);
+
+                HBox top = new HBox(8);
+                Label tag = new Label(item.categoryLabel());
+                tag.getStyleClass().addAll("activity-tag", "activity-tag-" + item.category().toLowerCase(Locale.ROOT));
+                top.getChildren().addAll(headline, tag);
+
+                VBox body = new VBox(3, top, detail);
+                body.getStyleClass().add("activity-item");
+
+                HBox row = new HBox(10, marker, body);
+                row.getStyleClass().add("activity-row");
+                HBox.setHgrow(body, Priority.ALWAYS);
+                wrapper.getChildren().add(row);
+
+                setGraphic(wrapper);
+                setText(null);
+            }
+        });
+
+        VBox.setVgrow(activityListView, Priority.ALWAYS);
+        root.getChildren().addAll(toolbar, activityListView);
+        return root;
+    }
+
+    private ToggleButton createActivityFilter(String label, String category, ToggleGroup group, boolean selected) {
+        ToggleButton button = new ToggleButton(label);
+        button.getStyleClass().add("activity-filter-btn");
+        button.setToggleGroup(group);
+        button.setSelected(selected);
+        button.setOnAction(e -> filteredActivityEvents.setPredicate(event -> "all".equals(category) || event.category().equalsIgnoreCase(category)));
+        return button;
     }
 
     private void refreshDashboard() {
@@ -1308,13 +1434,11 @@ public class KeeplyAgentApp extends Application {
                 sourcesContainer.getChildren().add(row);
             }
         };
-        // Wire remove re-render: when ActionEvent fires on container, re-render with current pending
         sourcesContainer.addEventHandler(javafx.event.ActionEvent.ACTION, ev -> {
             List<String> cur = pendingSources.get() != null
                     ? pendingSources.get() : parseSources(backupSourcesConfig.getText());
             renderPendingSources.accept(cur);
         });
-
         addFolderBtn.setOnAction(e -> {
             DirectoryChooser chooser = new DirectoryChooser();
             chooser.setTitle("Selecionar pasta para proteger");
@@ -1332,9 +1456,7 @@ public class KeeplyAgentApp extends Application {
                 markDirty.run();
             }
         });
-
         panel.getChildren().addAll(foldersSummaryRow, sourcesContainer, makeDivider());
-
         // ── Proteção contínua (CDP) ──────────────────────────────────────────
         HBox cdpRow = new HBox(10);
         cdpRow.setAlignment(Pos.CENTER_LEFT);
@@ -1357,7 +1479,6 @@ public class KeeplyAgentApp extends Application {
         Region ssp = new Region(); HBox.setHgrow(ssp, Priority.ALWAYS);
         Label scheduleSummaryLbl = new Label("Não configurado");
         scheduleSummaryLbl.getStyleClass().add("settings-row-value");
-
         SVGPath pencilSvg = new SVGPath();
         pencilSvg.setContent("M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z");
         pencilSvg.setStyle("-fx-fill: #6D47FF;");
@@ -1373,24 +1494,41 @@ public class KeeplyAgentApp extends Application {
         scheduleEditArea.setVisible(false);
         scheduleEditArea.setManaged(false);
 
-        Map<Integer, ToggleButton> dayBtns = new LinkedHashMap<>();
-        HBox daysBox = new HBox(6);
-        daysBox.setAlignment(Pos.CENTER_LEFT);
-        String[] dayNames = {"Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"};
-        int[] dayNumbers = {1, 2, 3, 4, 5, 6, 0};
-        for (int i = 0; i < dayNames.length; i++) {
-            ToggleButton tb = new ToggleButton(dayNames[i]);
-            tb.getStyleClass().add("day-toggle-btn");
-            tb.setOnAction(e -> markDirty.run());
-            dayBtns.put(dayNumbers[i], tb);
-            daysBox.getChildren().add(tb);
-        }
+        Label schedInfo = new Label("A tarefa agendada será executada na hora local da máquina.");
+        schedInfo.getStyleClass().add("card-subtitle");
 
-        TextField startTime = new TextField();
-        startTime.setPromptText("HH:mm");
+        HBox modesRow = new HBox(28);
+        modesRow.setAlignment(Pos.CENTER_LEFT);
+        Label modeMonthly = new Label("Mensal");
+        Label modeWeekly = new Label("Semanal");
+        Label modeDaily = new Label("Diário");
+        Label modeHourly = new Label("Toda Hora");
+        modeMonthly.getStyleClass().add("settings-row-value");
+        modeWeekly.getStyleClass().add("settings-row-value");
+        modeHourly.getStyleClass().add("settings-row-value");
+        modeDaily.setStyle("-fx-text-fill: #4F83D1; -fx-font-weight: 700;");
+        modesRow.getChildren().addAll(modeMonthly, modeWeekly, modeDaily, modeHourly);
+
+        RadioButton rbEveryDay = new RadioButton("Executar todos os dias");
+        ToggleGroup scheduleGroup = new ToggleGroup();
+        rbEveryDay.setToggleGroup(scheduleGroup);
+        rbEveryDay.setSelected(true);
+        rbEveryDay.setOnAction(e -> markDirty.run());
+        VBox optionsBox = new VBox(4, rbEveryDay);
+
+        HBox startRow = new HBox(10);
+        startRow.setAlignment(Pos.CENTER_LEFT);
+        Label startLbl = new Label("Iniciar em:");
+        startLbl.getStyleClass().add("settings-row-label");
+        ComboBox<String> startTime = new ComboBox<>();
+        for (int h = 0; h < 24; h++) {
+            startTime.getItems().add(String.format(Locale.ROOT, "%02d:00", h));
+        }
+        startTime.setValue("02:00");
         startTime.getStyleClass().add("config-field");
-        startTime.setMaxWidth(90);
-        startTime.textProperty().addListener((obs, o, n) -> markDirty.run());
+        startTime.setPrefWidth(130);
+        startTime.valueProperty().addListener((obs, o, n) -> markDirty.run());
+        startRow.getChildren().addAll(startLbl, startTime);
 
         Label scheduleStatus = new Label();
         scheduleStatus.getStyleClass().add("card-subtitle");
@@ -1399,17 +1537,17 @@ public class KeeplyAgentApp extends Application {
         Button saveScheduleBtn = new Button("Salvar agendamento");
         saveScheduleBtn.getStyleClass().add("btn-primary");
 
-        HBox timeRow = new HBox(10);
-        timeRow.setAlignment(Pos.CENTER_LEFT);
-        timeRow.getChildren().addAll(startTime, saveScheduleBtn);
-        scheduleEditArea.getChildren().addAll(daysBox, timeRow, scheduleStatus);
+        HBox saveRow = new HBox(10);
+        saveRow.setAlignment(Pos.CENTER_LEFT);
+        saveRow.getChildren().addAll(saveScheduleBtn);
+        scheduleEditArea.getChildren().addAll(schedInfo, modesRow, optionsBox, startRow, saveRow, scheduleStatus);
 
         Runnable updateScheduleSummary = () -> {
-            scheduleSummaryLbl.setText(buildScheduleSummary(dayBtns, startTime));
+            scheduleSummaryLbl.setText(buildScheduleSummaryDaily(startTime));
         };
 
         saveScheduleBtn.setOnAction(e -> runAsync(() -> {
-            saveScheduleWithToggles(dayBtns, startTime, scheduleStatus);
+            saveScheduleDaily(startTime, scheduleStatus);
             ui(() -> { updateScheduleSummary.run(); hideSaveBtns.run(); });
         }));
 
@@ -1542,7 +1680,7 @@ public class KeeplyAgentApp extends Application {
 
         // ── Save all wiring ──────────────────────────────────────────────────
         saveAllBtn.setOnAction(e -> runAsync(() -> {
-            saveScheduleWithToggles(dayBtns, startTime, scheduleStatus);
+            saveScheduleDaily(startTime, scheduleStatus);
             if (backend != null && deviceId != null) {
                 // Compute what to save
                 List<String> toSave = pendingSources.get();
@@ -1574,7 +1712,7 @@ public class KeeplyAgentApp extends Application {
             hideSaveBtns.run();
             pendingSources.set(null);
             runAsync(() -> {
-                loadScheduleWithToggles(dayBtns, startTime, scheduleStatus);
+                loadScheduleDaily(rbEveryDay, startTime, scheduleStatus);
                 Optional<AgentConfigReader.UiConfig> cfgOpt;
                 try { cfgOpt = configReader.read(); } catch (Exception ex) { cfgOpt = Optional.empty(); }
                 boolean encFinal = cfgOpt.map(AgentConfigReader.UiConfig::encryptionEnabled).orElse(false);
@@ -1622,7 +1760,7 @@ public class KeeplyAgentApp extends Application {
 
         // Combined initial load: schedule + encryption, then release suppression
         runAsync(() -> {
-            loadScheduleWithToggles(dayBtns, startTime, scheduleStatus);
+            loadScheduleDaily(rbEveryDay, startTime, scheduleStatus);
             Optional<AgentConfigReader.UiConfig> cfgOpt;
             try { cfgOpt = configReader.read(); } catch (Exception ex) { cfgOpt = Optional.empty(); }
             boolean encFinal = cfgOpt.map(AgentConfigReader.UiConfig::encryptionEnabled).orElse(false);
@@ -1642,18 +1780,9 @@ public class KeeplyAgentApp extends Application {
         return wrapper;
     }
 
-    private String buildScheduleSummary(Map<Integer, ToggleButton> dayBtns, TextField startTime) {
-        String[] names = {"Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"};
-        int[] nums    = {0, 1, 2, 3, 4, 5, 6};
-        List<String> selected = new ArrayList<>();
-        for (int i = 0; i < nums.length; i++) {
-            ToggleButton tb = dayBtns.get(nums[i]);
-            if (tb != null && tb.isSelected()) selected.add(names[i]);
-        }
-        if (selected.isEmpty()) return "Não configurado";
-        String days = selected.size() == 7 ? "Todos os dias" : String.join(", ", selected);
-        String time = startTime.getText() == null || startTime.getText().isBlank() ? "--:--" : startTime.getText();
-        return days + " às " + time;
+    private String buildScheduleSummaryDaily(ComboBox<String> startTime) {
+        String time = startTime.getValue() == null || startTime.getValue().isBlank() ? "--:--" : startTime.getValue();
+        return "Todos os dias às " + time;
     }
 
     private ToggleButton makeToggleSwitch() {
@@ -1705,47 +1834,20 @@ public class KeeplyAgentApp extends Application {
     }
 
 
-    private void saveScheduleWithToggles(Map<Integer, ToggleButton> dayBtns, TextField startTime, Label statusLabel) throws Exception {
-        Map<Integer, CheckBox> proxy = new LinkedHashMap<>();
-        dayBtns.forEach((k, tb) -> {
-            CheckBox cb = new CheckBox();
-            cb.setSelected(tb.isSelected());
-            proxy.put(k, cb);
-        });
-        saveScheduleToYaml(proxy, startTime, statusLabel);
-    }
-
-    private void loadScheduleWithToggles(Map<Integer, ToggleButton> dayBtns, TextField startTime, Label statusLabel) throws Exception {
-        Map<Integer, CheckBox> proxy = new LinkedHashMap<>();
-        dayBtns.forEach((k, tb) -> proxy.put(k, new CheckBox()));
-        loadScheduleFromYaml(proxy, startTime, statusLabel);
-        ui(() -> proxy.forEach((k, cb) -> {
-            if (dayBtns.containsKey(k)) dayBtns.get(k).setSelected(cb.isSelected());
-        }));
-    }
-
-    private void saveScheduleToYaml(Map<Integer, CheckBox> dayChecks, TextField startTime, Label statusLabel) throws Exception {
-        List<Integer> selectedDays = new ArrayList<>();
-        for (Map.Entry<Integer, CheckBox> entry : dayChecks.entrySet()) {
-            if (entry.getValue().isSelected()) {
-                selectedDays.add(entry.getKey());
-            }
-        }
-        if (selectedDays.isEmpty()) {
-            throw new IllegalStateException("Selecione pelo menos um dia.");
+    private void saveScheduleDaily(ComboBox<String> startTime, Label statusLabel) throws Exception {
+        String selectedTime = startTime.getValue();
+        if (selectedTime == null || selectedTime.isBlank()) {
+            throw new IllegalStateException("Selecione um horário.");
         }
 
         LocalTime parsedTime;
         try {
-            parsedTime = LocalTime.parse(startTime.getText().trim(), DateTimeFormatter.ofPattern("HH:mm"));
+            parsedTime = LocalTime.parse(selectedTime.trim(), DateTimeFormatter.ofPattern("HH:mm"));
         } catch (DateTimeParseException e) {
             throw new IllegalStateException("Hora inválida. Use HH:mm, ex: 02:00");
         }
 
-        String dow = selectedDays.size() == 7
-                ? "*"
-                : selectedDays.stream().map(String::valueOf).reduce((a, b) -> a + "," + b).orElse("*");
-        String cron = "%d %d * * %s".formatted(parsedTime.getMinute(), parsedTime.getHour(), dow);
+        String cron = "%d %d * * *".formatted(parsedTime.getMinute(), parsedTime.getHour());
         String backendValue = backendUrl.getText() != null ? backendUrl.getText().trim() : "";
         String emailValue = email.getText() != null ? email.getText().trim() : "";
         List<String> sources = parseSources(backupSourcesConfig.getText());
@@ -1959,12 +2061,12 @@ public class KeeplyAgentApp extends Application {
     }
 
 
-    private void loadScheduleFromYaml(Map<Integer, CheckBox> dayChecks, TextField startTime, Label statusLabel) throws Exception {
+    private void loadScheduleDaily(RadioButton everyDay, ComboBox<String> startTime, Label statusLabel) throws Exception {
         Optional<AgentConfigReader.UiConfig> loaded = configReader.read();
         if (loaded.isEmpty()) {
             ui(() -> {
-                dayChecks.values().forEach(cb -> cb.setSelected(true));
-                startTime.setText("02:00");
+                everyDay.setSelected(true);
+                startTime.setValue("02:00");
                 statusLabel.setText("Primeiro uso: clique em Salvar agendamento para criar " + configReader.path());
             });
             return;
@@ -1989,31 +2091,16 @@ public class KeeplyAgentApp extends Application {
 
         String minutePart = parts[0];
         String hourPart = parts[1];
-        String dow = parts[4];
-
         ui(() -> {
             try {
                 int minute = Integer.parseInt(minutePart);
                 int hour = Integer.parseInt(hourPart);
-                startTime.setText("%02d:%02d".formatted(hour, minute));
+                startTime.setValue("%02d:%02d".formatted(hour, minute));
             } catch (NumberFormatException e) {
-                // Se não for numérico (ex: *, */2), apenas limpa ou mantém padrão, 
-                // indicando que a UI não reflete cron complexo perfeitamente
-                startTime.setText("02:00"); 
+                startTime.setValue("02:00");
             }
 
-            Set<Integer> selectedDays = new HashSet<>();
-            if ("*".equals(dow)) {
-                selectedDays.addAll(dayChecks.keySet());
-            } else {
-                for (String token : dow.split(",")) {
-                    try {
-                        selectedDays.add(Integer.parseInt(token.trim()));
-                    } catch (NumberFormatException ignored) {}
-                }
-            }
-
-            dayChecks.forEach((idx, cb) -> cb.setSelected(selectedDays.contains(idx)));
+            everyDay.setSelected(true);
             statusLabel.setText("Agendamento carregado: " + cron);
         });
     }
@@ -2139,17 +2226,70 @@ public class KeeplyAgentApp extends Application {
     }
 
     private void appendLogs(String text) {
+        synchronized (logBuffer) {
+            logBuffer.append(text);
+        }
+        scheduleLogFlush();
+    }
+
+    private void scheduleLogFlush() {
+        if (!logFlushScheduled.compareAndSet(false, true)) return;
         ui(() -> {
-            logs.appendText(text);
-            int excess = logs.getLength() - VISIBLE_LOG_LIMIT_CHARS;
-            if (excess > 0) {
-                logs.deleteText(0, excess);
+            try {
+                String chunk;
+                synchronized (logBuffer) {
+                    if (logBuffer.isEmpty()) return;
+                    chunk = logBuffer.toString();
+                    logBuffer.setLength(0);
+                }
+                logs.appendText(chunk);
+                int excess = logs.getLength() - VISIBLE_LOG_LIMIT_CHARS;
+                if (excess > 0) {
+                    logs.deleteText(0, excess);
+                }
+                ingestActivityChunk(chunk);
+            } finally {
+                logFlushScheduled.set(false);
+                synchronized (logBuffer) {
+                    if (!logBuffer.isEmpty()) {
+                        scheduleLogFlush();
+                    }
+                }
             }
         });
     }
 
     private void ui(Runnable r) {
         Platform.runLater(r);
+    }
+
+    private void applyAppIcon(Stage stage) {
+        Image icon16 = new Image(Objects.requireNonNull(getClass().getResourceAsStream("/icons/keeply.png")), 16, 16, true, true);
+        Image icon32 = new Image(Objects.requireNonNull(getClass().getResourceAsStream("/icons/keeply.png")), 32, 32, true, true);
+        Image icon64 = new Image(Objects.requireNonNull(getClass().getResourceAsStream("/icons/keeply.png")), 64, 64, true, true);
+        Image icon128 = new Image(Objects.requireNonNull(getClass().getResourceAsStream("/icons/keeply.png")), 128, 128, true, true);
+        Image icon256 = new Image(Objects.requireNonNull(getClass().getResourceAsStream("/icons/keeply.png")), 256, 256, true, true);
+        stage.getIcons().clear();
+        stage.getIcons().addAll(icon16, icon32, icon64, icon128, icon256);
+        try {
+            // On Linux, force a stable app name that desktop shells can map to icon cache/launcher.
+            System.setProperty("jdk.gtk.application.name", "Keeply");
+        } catch (Exception ignored) {
+            // Keep startup resilient if property isn't accepted by the runtime.
+        }
+    }
+
+    private void ingestActivityChunk(String chunk) {
+        if (chunk == null || chunk.isBlank()) return;
+        String[] lines = chunk.split("\\R");
+        for (String raw : lines) {
+            String line = raw == null ? "" : raw.trim();
+            if (line.isEmpty()) continue;
+            allActivityEvents.add(0, ActivityEvent.fromRaw(line));
+        }
+        while (allActivityEvents.size() > MAX_ACTIVITY_EVENTS) {
+            allActivityEvents.remove(allActivityEvents.size() - 1);
+        }
     }
 
     private void redirectSystemErrToTextArea() {
@@ -2221,5 +2361,68 @@ public class KeeplyAgentApp extends Application {
 
     public static void main(String[] args) {
         launch(args);
+    }
+
+    private record ActivityEvent(String dateLabel, String headline, String detail,
+                                 String category, String categoryLabel, String state) {
+        static ActivityEvent fromRaw(String line) {
+            String timestamp = "--:--:--";
+            String message = line;
+            String category = "ui";
+            String categoryLabel = "UI";
+            String state = "success";
+            LocalDate date = LocalDate.now();
+
+            if (line.length() >= 19 && Character.isDigit(line.charAt(0)) && line.charAt(4) == '-') {
+                try {
+                    LocalDateTime dt = LocalDateTime.parse(line.substring(0, 19), DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+                    date = dt.toLocalDate();
+                    timestamp = dt.format(DateTimeFormatter.ofPattern("HH:mm:ss"));
+                    message = line.substring(Math.min(line.length(), 20)).trim();
+                } catch (Exception ignored) {
+                    // keep fallback values
+                }
+            }
+
+            String lower = line.toLowerCase(Locale.ROOT);
+            if (lower.contains("erro") || lower.contains("[error]") || lower.contains("exception") || lower.contains("failed")) {
+                category = "error";
+                categoryLabel = "ERRO";
+                state = "error";
+            } else if (lower.contains("[daemon]") || lower.contains("event=daemon")) {
+                category = "daemon";
+                categoryLabel = "DAEMON";
+                state = lower.contains("status=started") ? "running" : "success";
+            } else if (lower.contains("backup") || lower.contains("snapshot") || lower.contains("chunk_")) {
+                category = "backup";
+                categoryLabel = "BACKUP";
+                state = lower.contains("status=started") ? "running" : "success";
+            }
+
+            String status;
+            if (lower.contains("status=started") || lower.contains("iniciando")) {
+                status = "em andamento";
+                state = "running";
+            } else if (lower.contains("status=completed") || lower.contains("status=finished") || lower.contains("conclu")) {
+                status = "completado";
+            } else if (lower.contains("status=already_running")) {
+                status = "já em execução";
+                state = "running";
+            } else if (state.equals("error")) {
+                status = "falhou";
+            } else {
+                status = "completado";
+            }
+
+            String cleaned = message.replace("[daemon]", "")
+                    .replace("[INFO]", "")
+                    .replace("[ERROR]", "")
+                    .trim();
+            if (cleaned.isBlank()) cleaned = line;
+
+            String dateLabel = date.format(DateTimeFormatter.ofPattern("dd MMM, yyyy", new Locale("pt", "BR")));
+            String headline = timestamp + " • " + status;
+            return new ActivityEvent(dateLabel, headline, cleaned, category, categoryLabel, state);
+        }
     }
 }

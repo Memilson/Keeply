@@ -33,7 +33,7 @@ Get-Process | Where-Object { $_.CommandLine -match "gradle-wrapper.jar.*:backend
 Start-Sleep -Seconds 1
 
 # 1. Parar infra e remover volumes
-Write-Host "Limpando volumes do Docker (Postgres e MinIO)..." -ForegroundColor Yellow
+Write-Host "Limpando volumes do Docker (Postgres, MinIO, backend e frontend)..." -ForegroundColor Yellow
 docker compose -f infra/docker-compose.yml down -v
 
 # 2. Subir infra limpa
@@ -53,8 +53,7 @@ Get-ChildItem -Path $ProjectRoot -Filter "agent.db*" -Recurse -Depth 2 -File | R
 
 Write-Host "Arquivos e diretorios locais limpos." -ForegroundColor Green
 
-Write-Host "AVISO: Por favor, inicie o backend agora (./gradlew :backend:bootRun) em outro terminal." -ForegroundColor Magenta
-Write-Host "Aguardando backend (port 8080) ficar online para registrar o usuario..." -ForegroundColor Cyan
+Write-Host "Aguardando backend (container) ficar online para registrar o usuario..." -ForegroundColor Cyan
 
 # 4. Aguardar o backend estar pronto
 $MaxRetries = 60
@@ -73,7 +72,7 @@ while ($Count -lt $MaxRetries -and -not $BackendUp) {
 }
 
 if (-not $BackendUp) {
-    Write-Host "Erro: O backend nao subiu a tempo ou nao foi iniciado." -ForegroundColor Red
+    Write-Host "Erro: O backend nao subiu a tempo via Docker Compose." -ForegroundColor Red
     exit 1
 }
 
@@ -85,6 +84,17 @@ $body = @{
     password = "keeply123"
 } | ConvertTo-Json
 
-Invoke-RestMethod -Uri "http://localhost:8080/api/auth/register" -Method Post -Body $body -ContentType "application/json" | Out-Null
+try {
+    Invoke-RestMethod -Uri "http://localhost:8080/api/auth/register" -Method Post -Body $body -ContentType "application/json" -ErrorAction Stop | Out-Null
+    Write-Host "Usuario pronto (status HTTP 200/201)." -ForegroundColor Green
+} catch {
+    $statusCode = $_.Exception.Response.StatusCode.value__
+    if ($statusCode -eq 409) {
+        Write-Host "Usuario pronto (status HTTP 409 - ja existe)." -ForegroundColor Green
+    } else {
+        Write-Host "Falha ao criar usuario (status HTTP $statusCode)." -ForegroundColor Red
+        exit 1
+    }
+}
 
 Write-Host "`nAmbiente resetado e usuario criado com sucesso!" -ForegroundColor Green
