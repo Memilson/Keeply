@@ -17,7 +17,6 @@ import com.keeply.agent.model.ProtectionPlan;
 import com.keeply.agent.model.SnapshotSummary;
 import javafx.application.Application;
 import javafx.application.Platform;
-import javafx.collections.FXCollections;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Scene;
@@ -83,6 +82,7 @@ public class KeeplyAgentApp extends Application {
     private final Map<String, Button> navButtons = new LinkedHashMap<>();
     private Runnable restoreRefresh = () -> {};
     private Runnable configRefresh = () -> {};
+    private Stage primaryStage;
 
     @Override
     public void start(Stage stage) {
@@ -104,7 +104,15 @@ public class KeeplyAgentApp extends Application {
         configWriter = new AgentConfigWriter(AgentPaths.resolveDefaultConfigPath());
 
         
-        backendUrl = new TextField("http://localhost:8080");
+        String savedBackendUrl = "http://localhost:8080";
+        try {
+            Optional<AgentConfigReader.UiConfig> cfg = configReader.read();
+            if (cfg.isPresent() && cfg.get().backendUrl() != null && !cfg.get().backendUrl().isBlank()) {
+                savedBackendUrl = cfg.get().backendUrl();
+            }
+        } catch (Exception ignored) {}
+
+        backendUrl = new TextField(savedBackendUrl);
         email = new TextField();
         password = new PasswordField();
         status = new Label("Desconectado");
@@ -176,6 +184,7 @@ public class KeeplyAgentApp extends Application {
         stage.setTitle("Keeply");
         stage.setScene(scene);
         stage.show();
+        this.primaryStage = stage;
 
         Thread.startVirtualThread(new DaemonLogStreamer(AgentPaths.resolveLogPath(), this::appendLogs));
     }
@@ -202,12 +211,13 @@ public class KeeplyAgentApp extends Application {
         Button loginBtn = new Button("ENTRAR NA CONTA");
         loginBtn.setMaxWidth(Double.MAX_VALUE);
         loginBtn.getStyleClass().addAll("btn-primary", "btn-wide");
-        
+
         loginBtn.setOnAction(e -> {
+            loginBtn.setDisable(true);
             runAsync(() -> {
                 String userEmail = email.getText().trim();
                 String userPass = password.getText();
-                
+
                 log("event=ui.login status=started email=" + userEmail);
                 try {
                     String hostname = InetAddress.getLocalHost().getHostName();
@@ -215,7 +225,7 @@ public class KeeplyAgentApp extends Application {
                     String installationId = DeviceIdentity.getOrCreate();
                     DeviceSession session = backend.loginDevice(userEmail, userPass, installationId, hostname, System.getProperty("os.name"), "0.1.0");
                     deviceId = session.deviceId();
-                    synchronizePlanAfterLogin(userPass);
+                    synchronizePlanAfterLogin();
                     if (backend.hasPersistedSession()) {
                         DaemonLauncher.ensureRunning(this::log, true);
                     } else {
@@ -233,16 +243,36 @@ public class KeeplyAgentApp extends Application {
                     log("event=ui.login status=completed device_id=" + deviceId);
                 } catch (Exception ex) {
                     log("Erro no login: " + ex.getMessage());
+                    ui(() -> loginBtn.setDisable(false));
                 }
             });
         });
 
-        grid.addRow(0, new Label("Servidor:"), backendUrl);
-        grid.addRow(1, new Label("E-mail:"), email);
-        grid.addRow(2, new Label("Senha:"), password);
-        grid.add(loginBtn, 1, 3);
+        grid.addRow(0, new Label("E-mail:"), email);
+        grid.addRow(1, new Label("Senha:"), password);
+        grid.add(loginBtn, 1, 2);
 
-        box.getChildren().addAll(title, new Label("Faça login para sincronizar seus backups com a nuvem."), grid);
+        // Bloco avançado colapsável para a URL do servidor
+        VBox advancedBox = new VBox(6);
+        advancedBox.setVisible(false);
+        advancedBox.setManaged(false);
+        GridPane advGrid = grid();
+        advGrid.setAlignment(Pos.CENTER);
+        advGrid.setHgap(10);
+        advGrid.setVgap(10);
+        advGrid.addRow(0, new Label("Servidor:"), backendUrl);
+        advancedBox.getChildren().add(advGrid);
+
+        Hyperlink advLink = new Hyperlink("Configurações avançadas ▾");
+        advLink.getStyleClass().add("card-subtitle");
+        advLink.setOnAction(e -> {
+            boolean visible = advancedBox.isManaged();
+            advancedBox.setVisible(!visible);
+            advancedBox.setManaged(!visible);
+            advLink.setText(visible ? "Configurações avançadas ▾" : "Configurações avançadas ▴");
+        });
+
+        box.getChildren().addAll(title, new Label("Faça login para sincronizar seus backups com a nuvem."), grid, advLink, advancedBox);
         return box;
     }
 
@@ -1206,6 +1236,9 @@ public class KeeplyAgentApp extends Application {
 
         // Dirty-state: shows Salvar/Cancelar only when user changes something
         boolean[] suppressing = {true}; // true during initial load / revert
+        // Pending sources: null = no unsaved changes, non-null = user has edited locally
+        java.util.concurrent.atomic.AtomicReference<List<String>> pendingSources = new java.util.concurrent.atomic.AtomicReference<>(null);
+
         Runnable markDirty = () -> {
             if (suppressing[0]) return;
             cancelBtn.setVisible(true);  cancelBtn.setManaged(true);
@@ -1237,28 +1270,67 @@ public class KeeplyAgentApp extends Application {
         emptyHint.getStyleClass().add("card-subtitle");
         sourcesContainer.getChildren().add(emptyHint);
 
+        // Helper: re-render sources with pending-state remove buttons
+        java.util.function.Consumer<List<String>> renderPendingSources = (sources) -> {
+            sourcesContainer.getChildren().clear();
+            if (sources == null || sources.isEmpty()) {
+                sourcesContainer.getChildren().add(emptyHint);
+                return;
+            }
+            for (String path : sources) {
+                HBox row = new HBox(12);
+                row.setAlignment(Pos.CENTER_LEFT);
+                row.getStyleClass().add("source-item-row");
+                SVGPath folderIcon = new SVGPath();
+                folderIcon.setContent("M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z");
+                folderIcon.setStyle("-fx-fill: #F59E0B;");
+                StackPane iconWrap = new StackPane(folderIcon);
+                iconWrap.setPrefSize(20, 20); iconWrap.setMinSize(20, 20); iconWrap.setMaxSize(20, 20);
+                Label pathLabel = new Label(path);
+                pathLabel.getStyleClass().add("source-path-label");
+                HBox.setHgrow(pathLabel, Priority.ALWAYS);
+                pathLabel.setMaxWidth(Double.MAX_VALUE);
+                Button removeBtn = new Button("×");
+                removeBtn.getStyleClass().add("source-remove-btn");
+                removeBtn.setOnAction(ev -> {
+                    List<String> current = new ArrayList<>(pendingSources.get() != null
+                            ? pendingSources.get() : parseSources(backupSourcesConfig.getText()));
+                    current.remove(path);
+                    pendingSources.set(current);
+                    backupSourcesConfig.setText(String.join("\n", current));
+                    // Re-render is called via the Consumer itself (captured via lambda ref trick below)
+                    foldersCountLbl.setText(current.isEmpty() ? "—" : current.size() + " pasta(s)");
+                    markDirty.run();
+                    // trigger re-render by re-running this consumer
+                    sourcesContainer.fireEvent(new javafx.event.ActionEvent());
+                });
+                row.getChildren().addAll(iconWrap, pathLabel, removeBtn);
+                sourcesContainer.getChildren().add(row);
+            }
+        };
+        // Wire remove re-render: when ActionEvent fires on container, re-render with current pending
+        sourcesContainer.addEventHandler(javafx.event.ActionEvent.ACTION, ev -> {
+            List<String> cur = pendingSources.get() != null
+                    ? pendingSources.get() : parseSources(backupSourcesConfig.getText());
+            renderPendingSources.accept(cur);
+        });
+
         addFolderBtn.setOnAction(e -> {
             DirectoryChooser chooser = new DirectoryChooser();
             chooser.setTitle("Selecionar pasta para proteger");
             var dir = chooser.showDialog(stage);
             if (dir == null) return;
             String newPath = dir.toPath().toString();
-            runAsync(() -> {
-                Optional<ProtectionPlan> optPlan = (backend != null && deviceId != null)
-                        ? backend.getDevicePlan(deviceId) : Optional.empty();
-                List<String> current = new ArrayList<>(optPlan.isPresent()
-                        ? optPlan.get().sources() : parseSources(backupSourcesConfig.getText()));
-                if (!current.contains(newPath)) {
-                    current.add(newPath);
-                    if (backend != null && deviceId != null)
-                        backend.upsertDevicePlan(deviceId, ProtectionPlan.PlanType.CUSTOM, current);
-                    ui(() -> {
-                        backupSourcesConfig.setText(String.join("\n", current));
-                        renderSourceRows(sourcesContainer, current, stage, emptyHint);
-                        foldersCountLbl.setText(current.size() + " pasta(s)");
-                    });
-                }
-            });
+            List<String> current = new ArrayList<>(pendingSources.get() != null
+                    ? pendingSources.get() : parseSources(backupSourcesConfig.getText()));
+            if (!current.contains(newPath)) {
+                current.add(newPath);
+                pendingSources.set(current);
+                backupSourcesConfig.setText(String.join("\n", current));
+                renderPendingSources.accept(current);
+                foldersCountLbl.setText(current.size() + " pasta(s)");
+                markDirty.run();
+            }
         });
 
         panel.getChildren().addAll(foldersSummaryRow, sourcesContainer, makeDivider());
@@ -1368,18 +1440,72 @@ public class KeeplyAgentApp extends Application {
         VBox encLabels = new VBox(2);
         Label encLbl = new Label("Criptografia");
         encLbl.getStyleClass().add("settings-row-label");
-        Label encSub = new Label("AES-256");
+        Label encSub = new Label("AES-256 · SHA-256");
         encSub.getStyleClass().add("card-subtitle");
         encLabels.getChildren().addAll(encLbl, encSub);
         Region esp = new Region(); HBox.setHgrow(esp, Priority.ALWAYS);
         ToggleButton encToggle = makeToggleSwitch();
+
+        // Expandable password section (shown when encryption is ON)
+        VBox encPasswordBox = new VBox(8);
+        encPasswordBox.setPadding(new Insets(0, 20, 14, 20));
+        encPasswordBox.setVisible(false);
+        encPasswordBox.setManaged(false);
+        Label encPassLbl = new Label("Senha de criptografia");
+        encPassLbl.getStyleClass().add("settings-row-label");
+        PasswordField encPassField = new PasswordField();
+        encPassField.setPromptText("Senha para AES-256");
+        encPassField.getStyleClass().add("config-field");
+        PasswordField encPassConfirm = new PasswordField();
+        encPassConfirm.setPromptText("Confirmar senha");
+        encPassConfirm.getStyleClass().add("config-field");
+        Label encPassStatus = new Label();
+        encPassStatus.getStyleClass().add("card-subtitle");
+        Button encPassSave = new Button("Definir senha");
+        encPassSave.getStyleClass().add("btn-primary");
+        encPassSave.setOnAction(ev -> {
+            String p = encPassField.getText();
+            String c = encPassConfirm.getText();
+            if (p.isBlank()) { encPassStatus.setText("A senha não pode ser vazia."); return; }
+            if (p.length() < 8) { encPassStatus.setText("Use pelo menos 8 caracteres."); return; }
+            if (!p.equals(c)) { encPassStatus.setText("As senhas não coincidem."); return; }
+            runAsync(() -> {
+                try {
+                    configWriter.saveEncryptionPassword(p);
+                    ui(() -> {
+                        encPassField.clear(); encPassConfirm.clear();
+                        encPassStatus.setText("Senha definida com sucesso.");
+                        markDirty.run();
+                    });
+                } catch (Exception ex) {
+                    ui(() -> encPassStatus.setText("Erro: " + ex.getMessage()));
+                }
+            });
+        });
+        // Pre-fill if password already exists
+        try {
+            var cfg = configReader.read();
+            if (cfg.isPresent() && cfg.get().encryptionPassword() != null && !cfg.get().encryptionPassword().isBlank()) {
+                encPassStatus.setText("Senha já configurada — redefina se necessário.");
+            }
+        } catch (Exception ignored) {}
+        encPasswordBox.getChildren().addAll(encPassLbl, encPassField, encPassConfirm, encPassSave, encPassStatus);
+
         encToggle.setOnAction(e -> {
             boolean sel = encToggle.isSelected();
-            runAsync(() -> configWriter.saveEncryptionEnabled(sel));
+            if (sel) {
+                encPasswordBox.setVisible(true);
+                encPasswordBox.setManaged(true);
+            } else {
+                encPasswordBox.setVisible(false);
+                encPasswordBox.setManaged(false);
+                encPassField.clear(); encPassConfirm.clear(); encPassStatus.setText("");
+                runAsync(() -> { try { configWriter.saveEncryptionEnabled(false); } catch (Exception ignored) {} });
+            }
             markDirty.run();
         });
         encRow.getChildren().addAll(encLabels, esp, encToggle);
-        panel.getChildren().addAll(encRow, makeDivider());
+        panel.getChildren().addAll(encRow, encPasswordBox, makeDivider());
 
         // ── Informações do dispositivo ───────────────────────────────────────
         HBox devHeaderRow = new HBox(10);
@@ -1417,18 +1543,53 @@ public class KeeplyAgentApp extends Application {
         // ── Save all wiring ──────────────────────────────────────────────────
         saveAllBtn.setOnAction(e -> runAsync(() -> {
             saveScheduleWithToggles(dayBtns, startTime, scheduleStatus);
+            if (backend != null && deviceId != null) {
+                // Compute what to save
+                List<String> toSave = pendingSources.get();
+                if (toSave == null) {
+                    var optPlan = backend.getDevicePlan(deviceId);
+                    toSave = optPlan.map(ProtectionPlan::sources).orElse(parseSources(backupSourcesConfig.getText()));
+                }
+                List<String> finalSources = toSave.isEmpty()
+                        ? List.of(java.nio.file.Path.of(System.getProperty("user.home")).toAbsolutePath().normalize().toString())
+                        : toSave;
+                ProtectionPlan.PlanType type = toSave.size() == 1 && toSave.equals(finalSources) && pendingSources.get() == null
+                        ? ProtectionPlan.PlanType.DEFAULT : ProtectionPlan.PlanType.CUSTOM;
+                // Read current schedule cron from YAML (just saved above)
+                String cron = null;
+                try {
+                    var cfg = configReader.read();
+                    if (cfg.isPresent()) cron = cfg.get().cron();
+                } catch (Exception ignored) {}
+                boolean cdp = cdpToggle.isSelected();
+                boolean enc = encToggle.isSelected();
+                backend.upsertDevicePlan(deviceId, type, finalSources, cdp, enc, cron);
+                pendingSources.set(null);
+            }
             ui(() -> { updateScheduleSummary.run(); hideSaveBtns.run(); });
         }));
 
         cancelBtn.setOnAction(e -> {
             suppressing[0] = true;
             hideSaveBtns.run();
+            pendingSources.set(null);
             runAsync(() -> {
                 loadScheduleWithToggles(dayBtns, startTime, scheduleStatus);
                 Optional<AgentConfigReader.UiConfig> cfgOpt;
                 try { cfgOpt = configReader.read(); } catch (Exception ex) { cfgOpt = Optional.empty(); }
                 boolean encFinal = cfgOpt.map(AgentConfigReader.UiConfig::encryptionEnabled).orElse(false);
-                ui(() -> { encToggle.setSelected(encFinal); updateScheduleSummary.run(); suppressing[0] = false; });
+                // Reload sources from backend on cancel
+                List<String> originalSources = (backend != null && deviceId != null)
+                        ? backend.getDevicePlan(deviceId).map(ProtectionPlan::sources).orElse(parseSources(backupSourcesConfig.getText()))
+                        : parseSources(backupSourcesConfig.getText());
+                ui(() -> {
+                    backupSourcesConfig.setText(String.join("\n", originalSources));
+                    renderPendingSources.accept(originalSources);
+                    foldersCountLbl.setText(originalSources.isEmpty() ? "—" : originalSources.size() + " pasta(s)");
+                    encToggle.setSelected(encFinal);
+                    updateScheduleSummary.run();
+                    suppressing[0] = false;
+                });
             });
         });
 
@@ -1437,7 +1598,7 @@ public class KeeplyAgentApp extends Application {
             if (backend == null || deviceId == null) {
                 List<String> local = parseSources(backupSourcesConfig.getText());
                 ui(() -> {
-                    renderSourceRows(sourcesContainer, local, stage, emptyHint);
+                    renderPendingSources.accept(local);
                     foldersCountLbl.setText(local.isEmpty() ? "—" : local.size() + " pasta(s)");
                 });
                 return;
@@ -1447,7 +1608,9 @@ public class KeeplyAgentApp extends Application {
                 List<String> sources = optPlan.isPresent()
                         ? optPlan.get().sources() : parseSources(backupSourcesConfig.getText());
                 ui(() -> {
-                    renderSourceRows(sourcesContainer, sources, stage, emptyHint);
+                    pendingSources.set(null); // fresh load clears pending
+                    backupSourcesConfig.setText(String.join("\n", sources));
+                    renderPendingSources.accept(sources);
                     foldersCountLbl.setText(sources.isEmpty() ? "—" : sources.size() + " pasta(s)");
                     devIdVal.setText(deviceId != null ? deviceId.toString() : "—");
                     srvVal.setText(backendUrl.getText() != null && !backendUrl.getText().isBlank()
@@ -1463,7 +1626,17 @@ public class KeeplyAgentApp extends Application {
             Optional<AgentConfigReader.UiConfig> cfgOpt;
             try { cfgOpt = configReader.read(); } catch (Exception ex) { cfgOpt = Optional.empty(); }
             boolean encFinal = cfgOpt.map(AgentConfigReader.UiConfig::encryptionEnabled).orElse(false);
-            ui(() -> { encToggle.setSelected(encFinal); updateScheduleSummary.run(); suppressing[0] = false; });
+            boolean hasEncPass = cfgOpt.map(c -> c.encryptionPassword() != null && !c.encryptionPassword().isBlank()).orElse(false);
+            ui(() -> {
+                encToggle.setSelected(encFinal);
+                if (encFinal) {
+                    encPasswordBox.setVisible(true);
+                    encPasswordBox.setManaged(true);
+                    if (hasEncPass) encPassStatus.setText("Senha já configurada — redefina se necessário.");
+                }
+                updateScheduleSummary.run();
+                suppressing[0] = false;
+            });
         });
         refresh.run();
         return wrapper;
@@ -1531,52 +1704,6 @@ public class KeeplyAgentApp extends Application {
         return div;
     }
 
-    private void renderSourceRows(VBox container, List<String> sources, Stage stage, Label emptyHint) {
-        container.getChildren().clear();
-        if (sources == null || sources.isEmpty()) {
-            container.getChildren().add(emptyHint);
-            return;
-        }
-        for (String path : sources) {
-            HBox row = new HBox(12);
-            row.setAlignment(Pos.CENTER_LEFT);
-            row.getStyleClass().add("source-item-row");
-
-            SVGPath folderIcon = new SVGPath();
-            folderIcon.setContent("M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z");
-            folderIcon.setStyle("-fx-fill: #F59E0B;");
-            StackPane iconWrap = new StackPane(folderIcon);
-            iconWrap.setPrefSize(20, 20);
-            iconWrap.setMinSize(20, 20);
-            iconWrap.setMaxSize(20, 20);
-
-            Label pathLabel = new Label(path);
-            pathLabel.getStyleClass().add("source-path-label");
-            HBox.setHgrow(pathLabel, Priority.ALWAYS);
-            pathLabel.setMaxWidth(Double.MAX_VALUE);
-
-            Button removeBtn = new Button("×");
-            removeBtn.getStyleClass().add("source-remove-btn");
-            removeBtn.setOnAction(e -> runAsync(() -> {
-                Optional<ProtectionPlan> optPlan = (backend != null && deviceId != null) ? backend.getDevicePlan(deviceId) : Optional.empty();
-                List<String> current = new ArrayList<>(optPlan.isPresent() ? optPlan.get().sources() : parseSources(backupSourcesConfig.getText()));
-                current.remove(path);
-                if (backend != null && deviceId != null) {
-                    ProtectionPlan.PlanType type = current.isEmpty() ? ProtectionPlan.PlanType.DEFAULT : ProtectionPlan.PlanType.CUSTOM;
-                    backend.upsertDevicePlan(deviceId, type, current.isEmpty()
-                            ? List.of(java.nio.file.Path.of(System.getProperty("user.home")).toAbsolutePath().normalize().toString())
-                            : current);
-                }
-                ui(() -> {
-                    backupSourcesConfig.setText(String.join("\n", current));
-                    renderSourceRows(container, current, stage, emptyHint);
-                });
-            }));
-
-            row.getChildren().addAll(iconWrap, pathLabel, removeBtn);
-            container.getChildren().add(row);
-        }
-    }
 
     private void saveScheduleWithToggles(Map<Integer, ToggleButton> dayBtns, TextField startTime, Label statusLabel) throws Exception {
         Map<Integer, CheckBox> proxy = new LinkedHashMap<>();
@@ -1621,22 +1748,22 @@ public class KeeplyAgentApp extends Application {
         String cron = "%d %d * * %s".formatted(parsedTime.getMinute(), parsedTime.getHour(), dow);
         String backendValue = backendUrl.getText() != null ? backendUrl.getText().trim() : "";
         String emailValue = email.getText() != null ? email.getText().trim() : "";
-        String passwordValue = password.getText() != null ? password.getText() : "";
         List<String> sources = parseSources(backupSourcesConfig.getText());
-        configWriter.saveSchedule(backendValue, emailValue, passwordValue, sources, cron);
+        configWriter.saveSchedule(backendValue, emailValue, sources, cron);
         DaemonLauncher.ensureRunning(this::log, true);
         ui(() -> statusLabel.setText("Agendamento salvo e daemon reiniciado em " + configWriter.path() + " | cron=" + cron));
         log("Agendamento salvo: " + cron);
     }
 
-    private void synchronizePlanAfterLogin(String userPass) {
+    private void synchronizePlanAfterLogin() {
         Optional<ProtectionPlan> maybePlan = backend.getDevicePlan(deviceId);
         ProtectionPlan plan = maybePlan.orElseGet(this::createPlanFromWizard);
 
         try {
-            configWriter.savePlan(backendUrl.getText().trim(), email.getText().trim(), userPass, plan);
+            configWriter.savePlan(backendUrl.getText().trim(), email.getText().trim(), plan);
             ui(() -> backupSourcesConfig.setText(String.join("\n", plan.sources())));
-            log("Plano sincronizado e agent.yaml configurado com sucesso.");        } catch (Exception e) {
+            log("Plano sincronizado e agent.yaml configurado com sucesso.");
+        } catch (Exception e) {
             log("Erro ao salvar configuração após login: " + e.getMessage());
             e.printStackTrace();
         }
@@ -1644,10 +1771,191 @@ public class KeeplyAgentApp extends Application {
 
     private ProtectionPlan createPlanFromWizard() {
         String home = Path.of(System.getProperty("user.home")).toAbsolutePath().normalize().toString();
-        List<String> sources = List.of(home);
-        ProtectionPlan plan = backend.upsertDevicePlan(deviceId, ProtectionPlan.PlanType.DEFAULT, sources);
-        log("event=plan.created type=DEFAULT sources=" + sources);
+
+        // Mostra wizard na thread de UI e aguarda escolha
+        java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.atomic.AtomicReference<String> chosenType = new java.util.concurrent.atomic.AtomicReference<>("DEFAULT");
+        java.util.concurrent.atomic.AtomicReference<List<String>> chosenSources = new java.util.concurrent.atomic.AtomicReference<>(List.of(home));
+
+        Platform.runLater(() -> {
+            try {
+                javafx.stage.Stage wizard = new javafx.stage.Stage();
+                wizard.initOwner(primaryStage);
+                wizard.initModality(javafx.stage.Modality.WINDOW_MODAL);
+                wizard.initStyle(StageStyle.UNDECORATED);
+                wizard.setResizable(false);
+
+                // ── Card ──────────────────────────────────────────────────────
+                VBox card = new VBox(0);
+                card.setStyle(
+                    "-fx-background-color: #ffffff;" +
+                    "-fx-background-radius: 14px;" +
+                    "-fx-border-color: #E2E8F0;" +
+                    "-fx-border-radius: 14px;" +
+                    "-fx-effect: dropshadow(gaussian, rgba(15,23,42,0.16), 28, 0.1, 0, 6);"
+                );
+                card.setPrefWidth(420);
+
+                // Header
+                HBox header = new HBox(10);
+                header.setAlignment(Pos.CENTER_LEFT);
+                header.setPadding(new Insets(20, 22, 16, 22));
+                header.setStyle("-fx-border-color: #F1F5F9; -fx-border-width: 0 0 1 0;");
+                SVGPath shieldIco = new SVGPath();
+                shieldIco.setContent("M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z");
+                shieldIco.setStyle("-fx-fill: #6D47FF;");
+                StackPane icoBox = new StackPane(shieldIco);
+                icoBox.setPrefSize(22, 22); icoBox.setMinSize(22, 22); icoBox.setMaxSize(22, 22);
+                Label hTitle = new Label("Configure sua proteção");
+                hTitle.setStyle("-fx-font-size: 16px; -fx-font-weight: 700; -fx-text-fill: #0F172A;");
+                header.getChildren().addAll(icoBox, hTitle);
+
+                // Body
+                VBox body = new VBox(12);
+                body.setPadding(new Insets(20, 22, 8, 22));
+                Label subtitle = new Label("Este é o seu primeiro acesso. Escolha como quer fazer backup dos seus arquivos:");
+                subtitle.setStyle("-fx-font-size: 13px; -fx-text-fill: #475569;");
+                subtitle.setWrapText(true);
+                subtitle.setMaxWidth(380);
+
+                // Option cards
+                ToggleGroup tg = new ToggleGroup();
+
+                VBox optDefault = buildPlanOptionCard(
+                    "Plano Padrão",
+                    "Protege automaticamente sua pasta pessoal (" + home + ")",
+                    "#6D47FF", tg, "DEFAULT"
+                );
+
+                VBox optCustom = buildPlanOptionCard(
+                    "Personalizado",
+                    "Escolha quais pastas deseja proteger",
+                    "#0EA5E9", tg, "CUSTOM"
+                );
+
+                // Seleciona padrão por default
+                tg.getToggles().get(0).setSelected(true);
+
+                // Seletor de pastas (visível só no modo custom)
+                VBox folderPicker = new VBox(8);
+                folderPicker.setPadding(new Insets(4, 0, 0, 0));
+                folderPicker.setVisible(false);
+                folderPicker.setManaged(false);
+                Label folderPickerTitle = new Label("Pastas selecionadas:");
+                folderPickerTitle.setStyle("-fx-font-size: 12px; -fx-font-weight: 600; -fx-text-fill: #374151;");
+                VBox folderList = new VBox(4);
+                List<String> customSources = new ArrayList<>();
+                Button addFolderBtnW = new Button("+ Adicionar pasta");
+                addFolderBtnW.getStyleClass().add("btn-outline-primary");
+                addFolderBtnW.setOnAction(ae -> {
+                    javafx.stage.DirectoryChooser dc = new javafx.stage.DirectoryChooser();
+                    dc.setTitle("Selecionar pasta para proteger");
+                    java.io.File selected = dc.showDialog(wizard);
+                    if (selected != null) {
+                        String p = selected.toPath().toString();
+                        if (!customSources.contains(p)) {
+                            customSources.add(p);
+                            Label lbl = new Label("• " + p);
+                            lbl.setStyle("-fx-font-size: 12px; -fx-text-fill: #374151;");
+                            folderList.getChildren().add(lbl);
+                        }
+                    }
+                });
+                folderPicker.getChildren().addAll(folderPickerTitle, folderList, addFolderBtnW);
+
+                tg.selectedToggleProperty().addListener((obs, old, nw) -> {
+                    if (nw == null) return;
+                    boolean custom = "CUSTOM".equals(nw.getUserData());
+                    folderPicker.setVisible(custom);
+                    folderPicker.setManaged(custom);
+                });
+
+                body.getChildren().addAll(subtitle, optDefault, optCustom, folderPicker);
+
+                // Footer
+                HBox footer = new HBox(10);
+                footer.setAlignment(Pos.CENTER_RIGHT);
+                footer.setPadding(new Insets(16, 22, 20, 22));
+                footer.setStyle("-fx-border-color: #F1F5F9; -fx-border-width: 1 0 0 0;");
+                Button btnConfirm = new Button("Confirmar");
+                btnConfirm.getStyleClass().add("btn-primary");
+                btnConfirm.setPrefWidth(130);
+                btnConfirm.setOnAction(ae -> {
+                    Toggle sel = tg.getSelectedToggle();
+                    if (sel != null && "CUSTOM".equals(sel.getUserData())) {
+                        if (customSources.isEmpty()) {
+                            customSources.add(home);
+                        }
+                        chosenType.set("CUSTOM");
+                        chosenSources.set(List.copyOf(customSources));
+                    } else {
+                        chosenType.set("DEFAULT");
+                        chosenSources.set(List.of(home));
+                    }
+                    wizard.close();
+                });
+                footer.getChildren().add(btnConfirm);
+
+                card.getChildren().addAll(header, body, footer);
+                StackPane root = new StackPane(card);
+                root.setPadding(new Insets(10));
+                root.setStyle("-fx-background-color: transparent;");
+
+                javafx.scene.Scene wizScene = new javafx.scene.Scene(root);
+                wizScene.setFill(javafx.scene.paint.Color.TRANSPARENT);
+                wizScene.getStylesheets().add(getClass().getResource("/keeply-theme.css").toExternalForm());
+                wizard.setScene(wizScene);
+                wizard.showAndWait();
+            } finally {
+                latch.countDown();
+            }
+        });
+
+        try { latch.await(); } catch (InterruptedException ignored) { Thread.currentThread().interrupt(); }
+
+        ProtectionPlan.PlanType planType = "CUSTOM".equals(chosenType.get())
+                ? ProtectionPlan.PlanType.CUSTOM : ProtectionPlan.PlanType.DEFAULT;
+        ProtectionPlan plan = backend.upsertDevicePlan(deviceId, planType, chosenSources.get());
+        log("event=plan.created type=" + chosenType.get() + " sources=" + chosenSources.get());
         return plan;
+    }
+
+    private VBox buildPlanOptionCard(String title, String description, String accentColor, ToggleGroup tg, String userData) {
+        RadioButton radio = new RadioButton();
+        radio.setToggleGroup(tg);
+        radio.setUserData(userData);
+        radio.setStyle("-fx-cursor: hand;");
+
+        VBox textBox = new VBox(3);
+        Label titleLbl = new Label(title);
+        titleLbl.setStyle("-fx-font-size: 14px; -fx-font-weight: 700; -fx-text-fill: #0F172A;");
+        Label descLbl = new Label(description);
+        descLbl.setStyle("-fx-font-size: 12px; -fx-text-fill: #64748B;");
+        descLbl.setWrapText(true);
+        descLbl.setMaxWidth(310);
+        textBox.getChildren().addAll(titleLbl, descLbl);
+
+        HBox row = new HBox(14, radio, textBox);
+        row.setAlignment(Pos.CENTER_LEFT);
+
+        VBox card = new VBox(row);
+        card.setPadding(new Insets(14, 16, 14, 16));
+        card.setStyle(
+            "-fx-background-color: #F8FAFC;" +
+            "-fx-background-radius: 10px;" +
+            "-fx-border-color: #E2E8F0;" +
+            "-fx-border-radius: 10px;" +
+            "-fx-cursor: hand;"
+        );
+        card.setOnMouseClicked(e -> radio.setSelected(true));
+        radio.selectedProperty().addListener((obs, old, sel) -> card.setStyle(
+            "-fx-background-color: " + (sel ? "#F3EFFF" : "#F8FAFC") + ";" +
+            "-fx-background-radius: 10px;" +
+            "-fx-border-color: " + (sel ? accentColor : "#E2E8F0") + ";" +
+            "-fx-border-radius: 10px;" +
+            "-fx-cursor: hand;"
+        ));
+        return card;
     }
 
 
@@ -1665,7 +1973,6 @@ public class KeeplyAgentApp extends Application {
         ui(() -> {
             if (config.backendUrl() != null) backendUrl.setText(config.backendUrl());
             if (config.email() != null) email.setText(config.email());
-            if (config.password() != null) password.setText(config.password());
             backupSourcesConfig.setText(String.join("\n", config.sources()));
         });
         String cron = config.cron();
@@ -1739,32 +2046,6 @@ public class KeeplyAgentApp extends Application {
         return box;
     }
 
-    private VBox metricCard(String title, Label valueLabel) {
-        VBox card = new VBox(8);
-        card.getStyleClass().add("metric-card");
-        Label titleLabel = new Label(title);
-        titleLabel.getStyleClass().add("metric-title");
-        valueLabel.getStyleClass().add("metric-value");
-        card.getChildren().addAll(titleLabel, valueLabel);
-        return card;
-    }
-
-    private VBox panelWithTitle(String title) {
-        VBox panel = new VBox(8);
-        panel.getStyleClass().add("panel");
-        Label label = new Label(title);
-        label.getStyleClass().add("section-title");
-        panel.getChildren().add(label);
-        return panel;
-    }
-
-    private boolean ready() {
-        if (backend == null || deviceId == null) {
-            log("Faça login primeiro.");
-            return false;
-        }
-        return true;
-    }
 
     private void runAsync(ThrowingRunnable task) {
         Thread.startVirtualThread(() -> {

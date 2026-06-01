@@ -13,7 +13,7 @@ public record AgentConfig(
     public record Backend(String url) {
     }
 
-    public record Auth(String email, String password) {
+    public record Auth(String email) {
     }
 
     public record Device(String name) {

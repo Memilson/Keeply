@@ -27,10 +27,22 @@ public final class DeviceDtos {
 
     public record PlanRequest(
             @NotNull PlanType planType,
-            @NotEmpty @Size(max = 100) List<@NotBlank @Size(max = 255) String> sources
+            @NotEmpty @Size(max = 100) List<@NotBlank @Size(max = 255) String> sources,
+            Boolean cdpEnabled,
+            Boolean encryptionEnabled,
+            @Size(max = 100) String scheduleCron,
+            @Size(max = 128) String encryptionPassword
     ) {
     }
 
-    public record PlanResponse(PlanType planType, List<String> sources, Instant updatedAt) {
+    public record PlanResponse(
+            PlanType planType,
+            List<String> sources,
+            boolean cdpEnabled,
+            boolean encryptionEnabled,
+            String scheduleCron,
+            boolean encryptionPasswordSet,
+            Instant updatedAt
+    ) {
     }
 }

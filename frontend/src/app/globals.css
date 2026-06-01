@@ -1,0 +1,88 @@
+@import "tailwindcss";
+
+:root {
+  --background: #F5F3FB;
+  --foreground: #18163A;
+  --kp-primary: #7B61FF;
+  --kp-primary-dark: #6046F0;
+  --kp-primary-tint: #EDE9FF;
+  --kp-navy: #181640;
+  --kp-ink: #18163A;
+  --kp-muted: #6B6993;
+  --kp-border: #E4E1F0;
+  --kp-bg: #F5F3FB;
+  --kp-card: #FFFFFF;
+  --kp-success: #10B981;
+  --kp-warn: #F59E0B;
+  --kp-danger: #EF4444;
+  /* legacy aliases para não quebrar classes existentes */
+  --keeply-50: #F5F3FF;
+  --keeply-100: #EDE9FF;
+  --keeply-200: #DDD6FE;
+  --keeply-300: #C4B5FD;
+  --keeply-400: #A78BFA;
+  --keeply-500: #7B61FF;
+  --keeply-600: #7B61FF;
+  --keeply-700: #6046F0;
+  --keeply-800: #4C35C5;
+  --keeply-900: #3826A0;
+  --keeply-ink: #18163A;
+  --keeply-soft: #F5F3FB;
+  --keeply-success: #10B981;
+  --keeply-warn: #F59E0B;
+  --keeply-danger: #EF4444;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-keeply-50: var(--keeply-50);
+  --color-keeply-100: var(--keeply-100);
+  --color-keeply-200: var(--keeply-200);
+  --color-keeply-300: var(--keeply-300);
+  --color-keeply-400: var(--keeply-400);
+  --color-keeply-500: var(--keeply-500);
+  --color-keeply-600: var(--keeply-600);
+  --color-keeply-700: var(--keeply-700);
+  --color-keeply-800: var(--keeply-800);
+  --color-keeply-900: var(--keeply-900);
+  --color-keeply-ink: var(--keeply-ink);
+  --color-keeply-soft: var(--keeply-soft);
+  --color-keeply-success: var(--keeply-success);
+  --color-keeply-warn: var(--keeply-warn);
+  --color-keeply-danger: var(--keeply-danger);
+  --font-sans: var(--font-inter), system-ui, sans-serif;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-inter), system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.kp-card {
+  background: #ffffff;
+  border: 1px solid #E4E1F0;
+  border-radius: 0.875rem;
+  box-shadow: 0 1px 4px rgba(24, 22, 58, 0.05);
+}
+
+.kp-btn-primary {
+  background: #7B61FF;
+  color: white;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+.kp-btn-primary:hover {
+  background: #6046F0;
+  box-shadow: 0 4px 16px rgba(123, 97, 255, 0.35);
+}
+.kp-btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.kp-gradient-bg {
+  background: #F5F3FB;
+}
