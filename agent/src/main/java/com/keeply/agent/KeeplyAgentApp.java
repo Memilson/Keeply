@@ -6,7 +6,6 @@ import com.keeply.agent.auth.DeviceIdentity;
 import com.keeply.agent.config.AgentConfigReader;
 import com.keeply.agent.config.AgentConfigWriter;
 import com.keeply.agent.core.BackupEngine;
-import com.keeply.agent.core.BackupSnapshotException;
 import com.keeply.agent.core.LocalDatabase;
 import com.keeply.agent.core.RestoreEngine;
 import com.keeply.agent.core.RestoreEngine.OverwritePolicy;
@@ -31,8 +30,6 @@ import javafx.stage.Stage;
 import javafx.stage.StageStyle;
 import javafx.animation.KeyFrame;
 import javafx.animation.Timeline;
-import javafx.animation.FadeTransition;
-import javafx.animation.KeyValue;
 import javafx.util.Duration;
 
 import java.io.OutputStream;
@@ -85,6 +82,7 @@ public class KeeplyAgentApp extends Application {
     private final Map<String, Node> appViews = new LinkedHashMap<>();
     private final Map<String, Button> navButtons = new LinkedHashMap<>();
     private Runnable restoreRefresh = () -> {};
+    private Runnable configRefresh = () -> {};
 
     @Override
     public void start(Stage stage) {
@@ -118,8 +116,7 @@ public class KeeplyAgentApp extends Application {
 
         appViews.put("Login", loginView());
         appViews.put("Dashboard", dashboardView());
-        appViews.put("Backup", configView()); // Configurações virou Backup
-        appViews.put("AddFolder", backupView(stage)); // Wizard de nova pasta
+        appViews.put("Backup", configView(stage));
         appViews.put("Restore", restoreView(stage)); // Meus arquivos
         logs.getStyleClass().add("log-surface");
         appViews.put("Logs", logs);
@@ -302,6 +299,9 @@ public class KeeplyAgentApp extends Application {
         if ("Dashboard".equals(view)) {
             refreshDashboard();
         }
+        if ("Backup".equals(view)) {
+            configRefresh.run();
+        }
     }
 
     private void updateAuthenticationNavigation(boolean authenticated) {
@@ -349,14 +349,7 @@ public class KeeplyAgentApp extends Application {
                             }
                         }
                         refreshDashboard();
-                        log("Backup manual concluído.");
-                        ui(() -> {
-                            Alert alert = new Alert(Alert.AlertType.INFORMATION);
-                            alert.setTitle("Backup concluído");
-                            alert.setHeaderText(null);
-                            alert.setContentText("O backup manual das pastas foi finalizado.");
-                            alert.showAndWait();
-                        });
+                        log("event=ui.backup.manual status=all_complete");
                     } finally {
                         ui(() -> dashboardController.setBackupInProgress(false));
                     }
@@ -412,149 +405,100 @@ public class KeeplyAgentApp extends Application {
         return String.format(Locale.ROOT, "%.2f %s", value, units[unitIndex]);
     }
 
-    private Pane backupView(Stage stage) {
-        BorderPane layout = new BorderPane();
-        layout.getStyleClass().add("screen-root");
-        layout.setPadding(new Insets(20));
-
-        VBox center = new VBox(20);
-        center.setAlignment(Pos.TOP_LEFT);
-
-        Label title = new Label("Proteger nova pasta");
-        title.getStyleClass().add("page-title");
-        
-        VBox form = new VBox(10);
-        Label label = new Label("Escolha o diretório que você deseja sincronizar com a nuvem Keeply:");
-        label.setWrapText(true);
-
-        HBox selector = new HBox(10);
-        TextField folder = new TextField();
-        folder.setPromptText("Caminho da pasta (ex: /home/documentos)");
-        HBox.setHgrow(folder, Priority.ALWAYS);
-
-        Button choose = new Button("Selecionar pasta", createBootstrapFileIcon(true));
-        choose.getStyleClass().add("btn-secondary");
-        choose.setOnAction(e -> {
-            DirectoryChooser chooser = new DirectoryChooser();
-            var dir = chooser.showDialog(stage);
-            if (dir != null) folder.setText(dir.toPath().toString());
-        });
-        selector.getChildren().addAll(folder, choose);
-
-        VBox infoBox = new VBox(8);
-        infoBox.getStyleClass().add("info-box");
-        infoBox.getChildren().addAll(
-            new Label("O que acontece agora?"),
-            new Label("O Keeply analisara todos os arquivos da pasta."),
-            new Label("Apenas mudancas serao enviadas com deduplicacao."),
-            new Label("Seus dados serao comprimidos e protegidos.")
-        );
-
-        Button backup = new Button("Iniciar backup agora");
-        backup.setMaxWidth(Double.MAX_VALUE);
-        backup.getStyleClass().addAll("btn-success", "btn-wide");
-        backup.setOnAction(e -> {
-            if (!ready()) return;
-            String pathStr = folder.getText();
-            if (pathStr == null || pathStr.isBlank()) {
-                log("Selecione uma pasta primeiro.");
-                return;
-            }
-            Path source = Path.of(pathStr);
-            runAsync(() -> {
-                try {
-                    UUID snapshotId = new BackupEngine(backend, db).backup(deviceId, source);
-                    log("event=ui.backup status=completed snapshot_id=" + snapshotId);
-                } catch (BackupSnapshotException backupError) {
-                    try {
-                        backend.failSnapshot(backupError.snapshotId(), backupError.userMessage());
-                    } catch (Exception failSnapshotError) {
-                        log("event=ui.backup status=fail_report_failed snapshot_id="
-                                + backupError.snapshotId() + " message=" + failSnapshotError.getMessage());
-                    }
-                    db.setLastFailedSnapshot(deviceId, backupError.sourcePath(),
-                            backupError.snapshotId().toString(), backupError.userMessage());
-                    log("event=ui.backup status=failed snapshot_id=" + backupError.snapshotId()
-                            + " message=" + backupError.userMessage());
-                    throw backupError;
-                }
-            });
-        });
-
-        form.getChildren().addAll(label, selector, infoBox, backup);
-        center.getChildren().addAll(title, new Separator(), form);
-        
-        layout.setCenter(center);
-        return layout;
-    }
-
     private Pane restoreView(Stage stage) {
         BorderPane layout = new BorderPane();
-        layout.getStyleClass().add("screen-root");
-        layout.getStyleClass().add("restore-shell");
-        layout.setPadding(new Insets(12));
+        layout.getStyleClass().addAll("screen-root", "restore-shell");
+        layout.setPadding(new Insets(16));
 
-        HBox topBar = new HBox(10);
-        topBar.setAlignment(Pos.CENTER_LEFT);
-        topBar.getStyleClass().add("restore-toolbar");
+        // ── Main card (Acronis-style) ────────────────────────────────────────
+        VBox card = new VBox(0);
+        card.getStyleClass().add("settings-panel");
+        BorderPane.setMargin(card, Insets.EMPTY);
 
-        Region topSpacer = new Region();
-        HBox.setHgrow(topSpacer, Priority.ALWAYS);
-        topBar.getChildren().add(topSpacer);
+        // ── Header ────────────────────────────────────────────────────────────
+        HBox headerBox = new HBox(10);
+        headerBox.setAlignment(Pos.CENTER_LEFT);
+        headerBox.getStyleClass().add("settings-header");
 
-        Button backToSnapshots = new Button("Voltar");
-        backToSnapshots.getStyleClass().add("btn-secondary");
+        SVGPath folderSvg = new SVGPath();
+        folderSvg.setContent("M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z");
+        folderSvg.setStyle("-fx-fill: #6D47FF;");
+        StackPane folderIconBox = new StackPane(folderSvg);
+        folderIconBox.setPrefSize(20, 20); folderIconBox.setMinSize(20, 20); folderIconBox.setMaxSize(20, 20);
+
+        Label headerTitle = new Label("Meus Arquivos");
+        headerTitle.getStyleClass().add("settings-panel-title");
+
+        Region hSpacer = new Region(); HBox.setHgrow(hSpacer, Priority.ALWAYS);
+
+        Button backToSnapshots = new Button("← Voltar");
+        backToSnapshots.getStyleClass().add("btn-outline-primary");
         backToSnapshots.setVisible(false);
         backToSnapshots.setManaged(false);
+
         Label currentPathLabel = new Label("Snapshots");
-        currentPathLabel.getStyleClass().add("item-muted");
-        HBox addressBar = new HBox(8, backToSnapshots, currentPathLabel);
-        addressBar.getStyleClass().add("restore-address");
-        Region addressSpacer = new Region();
-        HBox.setHgrow(addressSpacer, Priority.ALWAYS);
-        addressBar.getChildren().add(addressSpacer);
+        currentPathLabel.getStyleClass().add("card-subtitle");
 
-        VBox topArea = new VBox(8, topBar, addressBar);
-        layout.setTop(topArea);
+        headerBox.getChildren().addAll(folderIconBox, headerTitle, hSpacer, backToSnapshots, currentPathLabel);
+        card.getChildren().addAll(headerBox, makeDivider());
 
-        VBox snapshotsPane = new VBox(10);
-        snapshotsPane.getStyleClass().add("restore-sidebar");
-        Label sidebarTitle = new Label("PONTOS DE RESTAURACAO");
-        sidebarTitle.getStyleClass().add("section-title");
+        // ── Snapshots section ─────────────────────────────────────────────────
+        VBox snapshotsPane = new VBox(0);
+        VBox.setVgrow(snapshotsPane, Priority.ALWAYS);
+
+        HBox sectionRow = new HBox();
+        sectionRow.setAlignment(Pos.CENTER_LEFT);
+        sectionRow.getStyleClass().add("settings-row");
+        Label sectionLbl = new Label("PONTOS DE RESTAURAÇÃO");
+        sectionLbl.getStyleClass().add("section-title");
+        sectionRow.getChildren().add(sectionLbl);
+        snapshotsPane.getChildren().add(sectionRow);
+
         ListView<SnapshotSummary> snapshotList = new ListView<>();
-        snapshotList.getStyleClass().add("explorer-list");
+        snapshotList.getStyleClass().add("restore-snap-list");
         VBox.setVgrow(snapshotList, Priority.ALWAYS);
-        Label browserTitle = new Label("ITENS");
-        browserTitle.getStyleClass().add("section-title");
+        snapshotsPane.getChildren().add(snapshotList);
+
+        // ── File browser section ──────────────────────────────────────────────
         Label browserStatus = new Label("Selecione um snapshot concluído e clique em Carregar itens.");
-        browserStatus.getStyleClass().add("item-muted");
-        Button actionRestore = new Button("Recuperar");
-        actionRestore.getStyleClass().add("restore-nav-line");
-        actionRestore.setGraphic(createNavigationIcon("restore"));
-        actionRestore.setMaxWidth(Double.MAX_VALUE);
+        browserStatus.getStyleClass().add("card-subtitle");
+        browserStatus.setPadding(new Insets(0, 20, 10, 20));
+
+        Button actionRestore = new Button("Recuperar selecionados");
+        actionRestore.getStyleClass().add("btn-primary");
         actionRestore.setDisable(true);
+
         VBox rightActions = new VBox(10, actionRestore);
-        rightActions.setMinWidth(220);
+        rightActions.setPadding(new Insets(0, 0, 0, 12));
+        rightActions.setMinWidth(190);
+        rightActions.setMaxWidth(190);
+
         TreeView<RestoreNode> fileTree = new TreeView<>();
-        fileTree.getStyleClass().add("explorer-list");
+        fileTree.getStyleClass().add("explorer-tree");
         fileTree.setShowRoot(true);
+        VBox.setVgrow(fileTree, Priority.ALWAYS);
+
         BorderPane itemsPane = new BorderPane();
         itemsPane.setCenter(fileTree);
         itemsPane.setRight(rightActions);
-        VBox fileBrowser = new VBox(10, browserTitle, browserStatus, itemsPane);
-        VBox.setVgrow(fileTree, Priority.ALWAYS);
+        itemsPane.setPadding(new Insets(0, 20, 16, 20));
+
+        VBox fileBrowser = new VBox(0, browserStatus, itemsPane);
+        VBox.setVgrow(itemsPane, Priority.ALWAYS);
         fileBrowser.setVisible(false);
         fileBrowser.setManaged(false);
+
         SnapshotSummary[] selectedSnapshot = new SnapshotSummary[1];
+
         java.util.function.Consumer<SnapshotSummary> recoverSnapshot = snapshot -> {
             if (snapshot == null) return;
             runAsync(() -> new RestoreEngine(backend).restore(snapshot.id(), null, null, OverwritePolicy.ALWAYS));
         };
+
         java.util.function.Consumer<SnapshotSummary> loadItems = snapshot -> {
             if (snapshot == null) return;
-            if (!"COMPLETED".equals(snapshot.status())) {
+            if (!"COMPLETED".equals(snapshot.status()))
                 throw new IllegalStateException("Snapshot ainda não concluído (Status: " + snapshot.status() + ")");
-            }
             runAsync(() -> {
                 ui(() -> {
                     browserStatus.setText("Carregando pastas...");
@@ -567,146 +511,138 @@ public class KeeplyAgentApp extends Application {
                     backToSnapshots.setManaged(true);
                     currentPathLabel.setText("Itens > " + snapshot.id().toString().substring(0, 8));
                 });
-                RestoreNode rootNode = new RestoreNode(
-                        rootLabelForSnapshot(snapshot.sourcePath()),
-                        "",
-                        true,
-                        0L,
-                        null
-                );
-                LazyRestoreTreeItem rootItem = new LazyRestoreTreeItem(rootNode);
-                ui(() -> {
-                    fileTree.setRoot(rootItem);
-                    rootItem.setExpanded(true);
-                    actionRestore.setDisable(true);
-                });
+                LazyRestoreTreeItem rootItem = new LazyRestoreTreeItem(
+                        new RestoreNode(rootLabelForSnapshot(snapshot.sourcePath()), "", true, 0L, null));
+                ui(() -> { fileTree.setRoot(rootItem); rootItem.setExpanded(true); actionRestore.setDisable(true); });
                 loadFolderChildren(snapshot, rootItem, browserStatus, () -> {
-                    SelectedRestorePaths selections = collectCheckedSelectionsFromTree(fileTree.getRoot());
-                    actionRestore.setDisable(selections.files().isEmpty() && selections.directories().isEmpty());
+                    SelectedRestorePaths sel = collectCheckedSelectionsFromTree(fileTree.getRoot());
+                    actionRestore.setDisable(sel.files().isEmpty() && sel.directories().isEmpty());
                 });
                 log("event=ui.restore.items_loaded snapshot_id=" + snapshot.id() + " prefix=/");
             });
         };
 
+        // File tree cell factory (unchanged logic, same style)
         fileTree.setCellFactory(tv -> new TreeCell<>() {
             private final CheckBox check = new CheckBox();
             private final Label text = new Label();
             private final HBox row = new HBox(8);
             private CheckBoxTreeItem<RestoreNode> bound;
-
-            {
-                row.setAlignment(Pos.CENTER_LEFT);
-                row.getChildren().addAll(check, createBootstrapFileIcon(false), text);
-            }
+            { row.setAlignment(Pos.CENTER_LEFT); row.getChildren().addAll(check, createBootstrapFileIcon(false), text); }
 
             @Override
             protected void updateItem(RestoreNode item, boolean empty) {
                 super.updateItem(item, empty);
-                if (bound != null) {
-                    check.selectedProperty().unbindBidirectional(bound.selectedProperty());
-                    bound = null;
-                }
+                if (bound != null) { check.selectedProperty().unbindBidirectional(bound.selectedProperty()); bound = null; }
                 if (empty || item == null || !(getTreeItem() instanceof CheckBoxTreeItem<?> cbItem)) {
-                    setText(null);
-                    setGraphic(null);
-                    return;
+                    setText(null); setGraphic(null); return;
                 }
-                @SuppressWarnings("unchecked")
-                CheckBoxTreeItem<RestoreNode> typed = (CheckBoxTreeItem<RestoreNode>) cbItem;
+                @SuppressWarnings("unchecked") CheckBoxTreeItem<RestoreNode> typed = (CheckBoxTreeItem<RestoreNode>) cbItem;
                 bound = typed;
                 check.selectedProperty().bindBidirectional(typed.selectedProperty());
                 check.setAllowIndeterminate(false);
                 row.getChildren().set(1, createBootstrapFileIcon(item.isDirectory));
                 text.setText(item.label);
                 text.getStyleClass().setAll(item.isDirectory ? "snapshot-item-title" : "item-muted");
-                setText(null);
-                setGraphic(row);
+                setText(null); setGraphic(row);
             }
         });
         fileTree.rootProperty().addListener((obs, oldRoot, newRoot) -> {
             if (newRoot instanceof CheckBoxTreeItem<?> cbRoot) {
-                @SuppressWarnings("unchecked")
-                CheckBoxTreeItem<RestoreNode> typedRoot = (CheckBoxTreeItem<RestoreNode>) cbRoot;
+                @SuppressWarnings("unchecked") CheckBoxTreeItem<RestoreNode> typedRoot = (CheckBoxTreeItem<RestoreNode>) cbRoot;
                 bindCheckboxListeners(typedRoot, () -> {
-                    SelectedRestorePaths selections = collectCheckedSelectionsFromTree(fileTree.getRoot());
-                    actionRestore.setDisable(selections.files().isEmpty() && selections.directories().isEmpty());
+                    SelectedRestorePaths sel = collectCheckedSelectionsFromTree(fileTree.getRoot());
+                    actionRestore.setDisable(sel.files().isEmpty() && sel.directories().isEmpty());
                 });
             }
         });
 
+        // Snapshot list cell factory — Acronis style
         snapshotList.setCellFactory(param -> new ListCell<>() {
             @Override
             protected void updateItem(SnapshotSummary item, boolean empty) {
                 super.updateItem(item, empty);
-                if (empty || item == null) {
-                    setText(null);
-                    setGraphic(null);
-                } else {
-                    Label dateLabel = new Label("Data " + formatSnapshotDateCompact(item.startedAt()));
-                    dateLabel.getStyleClass().add("item-muted");
-                    dateLabel.setStyle("-fx-font-size: 11px;");
-                    Label typeLabel = new Label(inferSnapshotType(snapshotList.getItems(), item));
-                    typeLabel.getStyleClass().add("snapshot-item-title");
-                    Label filesLabel = new Label(item.totalFiles() + " arquivos");
-                    filesLabel.getStyleClass().add("item-muted");
-                    Label stateLabel = new Label(formatSnapshotStatus(item.status()));
-                    stateLabel.getStyleClass().add("snapshot-badge");
+                if (empty || item == null) { setText(null); setGraphic(null); return; }
 
-                    Button rowRecover = new Button("Recuperar snapshot");
-                    rowRecover.getStyleClass().add("btn-secondary");
-                    rowRecover.setOnAction(e -> {
-                        snapshotList.getSelectionModel().select(item);
-                        recoverSnapshot.accept(item);
-                    });
+                // Type badge
+                String typeText = inferSnapshotType(snapshotList.getItems(), item);
+                Label typeBadge = new Label(typeText);
+                typeBadge.setStyle(
+                    "-fx-background-color: " + ("COMPLETO".equals(typeText) ? "#EDE9FF" : "#EEF2FF") + ";" +
+                    "-fx-text-fill: " + ("COMPLETO".equals(typeText) ? "#6D47FF" : "#4338CA") + ";" +
+                    "-fx-font-size: 10px; -fx-font-weight: 700;" +
+                    "-fx-background-radius: 999px; -fx-padding: 3 8;"
+                );
 
-                    Button rowLoadItems = new Button("Carregar itens");
-                    rowLoadItems.getStyleClass().add("btn-success");
-                    rowLoadItems.setDisable(!"COMPLETED".equals(item.status()));
-                    rowLoadItems.setOnAction(e -> {
-                        snapshotList.getSelectionModel().select(item);
-                        loadItems.accept(item);
-                    });
-                    HBox actions = new HBox(8, rowRecover, rowLoadItems);
-                    actions.setAlignment(Pos.CENTER_LEFT);
-                    StackPane actionsWrap = new StackPane(actions);
-                    actionsWrap.setPadding(new Insets(18, 0, 8, 24));
-                    actionsWrap.setVisible(true);
-                    actionsWrap.setManaged(true);
-                    actionsWrap.setOpacity(1.0);
-                    actionsWrap.setMaxHeight(78);
-                    actionsWrap.setPrefHeight(78);
+                // Date
+                Label dateLbl = new Label(formatSnapshotDateCompact(item.startedAt()));
+                dateLbl.setStyle("-fx-font-size: 12px; -fx-text-fill: #374151; -fx-font-weight: 600;");
 
-                    Region spacer = new Region();
-                    HBox.setHgrow(spacer, Priority.ALWAYS);
-                    HBox row = new HBox(10,
-                            createBootstrapPcIcon(),
-                            dateLabel,
-                            typeLabel,
-                            filesLabel,
-                            spacer,
-                            stateLabel);
-                    row.setAlignment(Pos.CENTER_LEFT);
-                    VBox cellContent = new VBox(6, row, actionsWrap);
-                    setGraphic(cellContent);
-                }
+                // File count
+                Label filesLbl = new Label(item.totalFiles() + " arq.");
+                filesLbl.setStyle("-fx-font-size: 11px; -fx-text-fill: #94A3B8;");
+
+                // Status badge
+                String statusText = formatSnapshotStatus(item.status());
+                String statusBg = switch (item.status() == null ? "" : item.status()) {
+                    case "COMPLETED"   -> "#DCFCE7";
+                    case "FAILED"      -> "#FEE2E2";
+                    case "IN_PROGRESS" -> "#EDE9FF";
+                    default            -> "#F1F5F9";
+                };
+                String statusFg = switch (item.status() == null ? "" : item.status()) {
+                    case "COMPLETED"   -> "#16A34A";
+                    case "FAILED"      -> "#DC2626";
+                    case "IN_PROGRESS" -> "#6D47FF";
+                    default            -> "#64748B";
+                };
+                Label statusBadge = new Label(statusText);
+                statusBadge.setStyle(
+                    "-fx-background-color: " + statusBg + ";" +
+                    "-fx-text-fill: " + statusFg + ";" +
+                    "-fx-font-size: 10px; -fx-font-weight: 700;" +
+                    "-fx-background-radius: 999px; -fx-padding: 3 8;"
+                );
+
+                Region rowSpacer = new Region(); HBox.setHgrow(rowSpacer, Priority.ALWAYS);
+                HBox infoRow = new HBox(10, createBootstrapPcIcon(), typeBadge, dateLbl, filesLbl, rowSpacer, statusBadge);
+                infoRow.setAlignment(Pos.CENTER_LEFT);
+
+                // Action buttons
+                Button btnRecover = new Button("Recuperar snapshot");
+                btnRecover.getStyleClass().addAll("btn-outline-primary");
+                btnRecover.setOnAction(e -> { snapshotList.getSelectionModel().select(item); recoverSnapshot.accept(item); });
+
+                Button btnLoad = new Button("Carregar itens →");
+                btnLoad.getStyleClass().add("btn-primary");
+                btnLoad.setDisable(!"COMPLETED".equals(item.status()));
+                btnLoad.setOnAction(e -> { snapshotList.getSelectionModel().select(item); loadItems.accept(item); });
+
+                HBox actionsRow = new HBox(8, btnRecover, btnLoad);
+                actionsRow.setAlignment(Pos.CENTER_LEFT);
+                actionsRow.setPadding(new Insets(8, 0, 4, 0));
+
+                VBox cell = new VBox(6, infoRow, actionsRow);
+                cell.setPadding(new Insets(12, 20, 10, 20));
+                setText(null);
+                setGraphic(cell);
             }
         });
-        snapshotsPane.getChildren().addAll(sidebarTitle, snapshotList);
-        VBox centerHost = new VBox(10, snapshotsPane, fileBrowser);
+
+        // ── Wire up sections into card ────────────────────────────────────────
+        card.getChildren().addAll(snapshotsPane, fileBrowser);
         VBox.setVgrow(snapshotsPane, Priority.ALWAYS);
         VBox.setVgrow(fileBrowser, Priority.ALWAYS);
-        layout.setCenter(centerHost);
+        layout.setCenter(card);
 
+        // ── Refresh ───────────────────────────────────────────────────────────
         Runnable refreshSnapshots = () -> {
-            if (backend == null) {
-                return;
-            }
+            if (backend == null) return;
             runAsync(() -> {
                 List<SnapshotSummary> snapshots = backend.listSnapshots();
                 ui(() -> snapshotList.getItems().setAll(snapshots));
             });
         };
-
         Timeline autoRefresh = new Timeline(new KeyFrame(Duration.seconds(30), e -> refreshSnapshots.run()));
         autoRefresh.setCycleCount(Timeline.INDEFINITE);
         autoRefresh.play();
@@ -715,8 +651,7 @@ public class KeeplyAgentApp extends Application {
         snapshotList.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
             if (newVal != null) {
                 selectedSnapshot[0] = newVal;
-                currentPathLabel.setText("Snapshots > " + newVal.id().toString().substring(0, 8)
-                        + " [" + newVal.status() + "]");
+                currentPathLabel.setText("Snapshots > " + newVal.id().toString().substring(0, 8));
             } else {
                 selectedSnapshot[0] = null;
                 currentPathLabel.setText("Snapshots");
@@ -741,20 +676,16 @@ public class KeeplyAgentApp extends Application {
             Path finalDestination = destination;
             runAsync(() -> {
                 Set<String> selectedPaths = resolveSelectedFiles(snapshot, selections);
-                if (selectedPaths.isEmpty()) {
+                if (selectedPaths.isEmpty())
                     throw new IllegalStateException("Nenhum arquivo selecionado para recuperação");
-                }
                 new RestoreEngine(backend).restore(snapshot.id(), finalDestination, selectedPaths, OverwritePolicy.ALWAYS);
             });
         });
 
         backToSnapshots.setOnAction(e -> {
-            fileBrowser.setVisible(false);
-            fileBrowser.setManaged(false);
-            snapshotsPane.setVisible(true);
-            snapshotsPane.setManaged(true);
-            backToSnapshots.setVisible(false);
-            backToSnapshots.setManaged(false);
+            fileBrowser.setVisible(false);   fileBrowser.setManaged(false);
+            snapshotsPane.setVisible(true);  snapshotsPane.setManaged(true);
+            backToSnapshots.setVisible(false); backToSnapshots.setManaged(false);
             currentPathLabel.setText("Snapshots");
             fileTree.setRoot(null);
             actionRestore.setDisable(true);
@@ -764,46 +695,100 @@ public class KeeplyAgentApp extends Application {
     }
 
     private Optional<RestoreDestinationMode> showRestoreDestinationDialog(Stage owner) {
-        Dialog<RestoreDestinationMode> dialog = new Dialog<>();
+        javafx.stage.Stage dialog = new javafx.stage.Stage();
         dialog.initOwner(owner);
-        dialog.setTitle("Recuperar itens");
-        dialog.setHeaderText(null);
-        DialogPane pane = dialog.getDialogPane();
-        pane.getStyleClass().add("restore-destination-dialog");
+        dialog.initModality(javafx.stage.Modality.WINDOW_MODAL);
+        dialog.initStyle(StageStyle.UNDECORATED);
+        dialog.setResizable(false);
 
-        ButtonType cancelType = new ButtonType("Cancelar", ButtonBar.ButtonData.CANCEL_CLOSE);
-        ButtonType okType = new ButtonType("OK", ButtonBar.ButtonData.OK_DONE);
-        pane.getButtonTypes().setAll(cancelType, okType);
+        RestoreDestinationMode[] result = {null};
 
-        Label title = new Label("Escolha o destino da recuperação");
-        title.getStyleClass().add("restore-destination-title");
+        // ── Card ──────────────────────────────────────────────────────────────
+        VBox card = new VBox(0);
+        card.setStyle(
+            "-fx-background-color: #ffffff;" +
+            "-fx-background-radius: 12px;" +
+            "-fx-border-color: #E2E8F0;" +
+            "-fx-border-radius: 12px;" +
+            "-fx-effect: dropshadow(gaussian, rgba(15,23,42,0.14), 24, 0.1, 0, 4);"
+        );
+        card.setPrefWidth(360);
 
-        Label destinationLabel = new Label("Destino:");
-        destinationLabel.getStyleClass().add("restore-destination-label");
+        // Header
+        HBox dHeader = new HBox(10);
+        dHeader.setAlignment(Pos.CENTER_LEFT);
+        dHeader.setPadding(new Insets(18, 20, 14, 20));
+        dHeader.setStyle("-fx-border-color: #F1F5F9; -fx-border-width: 0 0 1 0;");
 
-        ComboBox<String> destinationBox = new ComboBox<>();
-        destinationBox.getItems().setAll("Caminho original", "Caminho personalizado");
-        destinationBox.getSelectionModel().selectFirst();
-        destinationBox.setMaxWidth(Double.MAX_VALUE);
+        SVGPath restoreIco = new SVGPath();
+        restoreIco.setContent("M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9z");
+        restoreIco.setStyle("-fx-fill: #6D47FF;");
+        StackPane icoBox = new StackPane(restoreIco);
+        icoBox.setPrefSize(20, 20); icoBox.setMinSize(20, 20); icoBox.setMaxSize(20, 20);
 
-        GridPane form = new GridPane();
-        form.setHgap(10);
-        form.setVgap(12);
-        form.add(destinationLabel, 0, 0);
-        form.add(destinationBox, 1, 0);
-        GridPane.setHgrow(destinationBox, Priority.ALWAYS);
+        Label dlgTitle = new Label("Recuperar arquivos");
+        dlgTitle.setStyle("-fx-font-size: 15px; -fx-font-weight: 700; -fx-text-fill: #0F172A;");
 
-        VBox content = new VBox(14, title, form);
-        content.setPadding(new Insets(6, 6, 4, 6));
-        pane.setContent(content);
+        Region dlgSpacer = new Region(); HBox.setHgrow(dlgSpacer, Priority.ALWAYS);
 
-        dialog.setResultConverter(btn -> {
-            if (btn != okType) return null;
-            return "Caminho personalizado".equals(destinationBox.getValue())
-                    ? RestoreDestinationMode.CUSTOM
-                    : RestoreDestinationMode.ORIGINAL;
+        Button dlgClose = new Button("×");
+        dlgClose.setStyle(
+            "-fx-background-color: transparent; -fx-text-fill: #94A3B8;" +
+            "-fx-font-size: 18px; -fx-padding: 0 4; -fx-cursor: hand;"
+        );
+        dlgClose.setOnAction(e -> dialog.close());
+
+        dHeader.getChildren().addAll(icoBox, dlgTitle, dlgSpacer, dlgClose);
+
+        // Body
+        VBox body = new VBox(14);
+        body.setPadding(new Insets(18, 20, 20, 20));
+
+        Label destLbl = new Label("Destino da recuperação");
+        destLbl.setStyle("-fx-font-size: 12px; -fx-font-weight: 600; -fx-text-fill: #374151;");
+
+        ComboBox<String> destBox = new ComboBox<>();
+        destBox.getItems().setAll("Caminho original", "Caminho personalizado");
+        destBox.getSelectionModel().selectFirst();
+        destBox.setMaxWidth(Double.MAX_VALUE);
+        destBox.setStyle(
+            "-fx-background-color: #F8FAFC;" +
+            "-fx-border-color: #E2E8F0; -fx-border-radius: 8px; -fx-background-radius: 8px;" +
+            "-fx-padding: 6 10; -fx-font-size: 13px; -fx-font-weight: 500;"
+        );
+
+        // Footer buttons
+        Region btnSpacer = new Region(); HBox.setHgrow(btnSpacer, Priority.ALWAYS);
+        Button cancelDlg = new Button("Cancelar");
+        cancelDlg.getStyleClass().add("btn-outline-primary");
+        cancelDlg.setOnAction(e -> { result[0] = null; dialog.close(); });
+
+        Button okDlg = new Button("Recuperar");
+        okDlg.getStyleClass().add("btn-primary");
+        okDlg.setOnAction(e -> {
+            result[0] = "Caminho personalizado".equals(destBox.getValue())
+                    ? RestoreDestinationMode.CUSTOM : RestoreDestinationMode.ORIGINAL;
+            dialog.close();
         });
-        return dialog.showAndWait();
+
+        HBox footer = new HBox(8, btnSpacer, cancelDlg, okDlg);
+        footer.setAlignment(Pos.CENTER_RIGHT);
+        footer.setPadding(new Insets(4, 0, 0, 0));
+
+        body.getChildren().addAll(destLbl, destBox, footer);
+        card.getChildren().addAll(dHeader, body);
+
+        // Wrap with outer padding for shadow visibility
+        StackPane root = new StackPane(card);
+        root.setPadding(new Insets(8));
+        root.setStyle("-fx-background-color: transparent;");
+
+        javafx.scene.Scene scene = new javafx.scene.Scene(root);
+        scene.setFill(javafx.scene.paint.Color.TRANSPARENT);
+        scene.getStylesheets().add(getClass().getResource("/keeply-theme.css").toExternalForm());
+        dialog.setScene(scene);
+        dialog.showAndWait();
+        return Optional.ofNullable(result[0]);
     }
 
     private SelectedRestorePaths collectCheckedSelectionsFromTree(TreeItem<RestoreNode> root) {
@@ -1171,65 +1156,445 @@ public class KeeplyAgentApp extends Application {
         }
     }
 
-    private Pane configView() {
-        VBox box = box();
-        box.getStyleClass().add("screen-root");
-        box.setSpacing(12);
+    private Pane configView(Stage stage) {
+        BorderPane wrapper = new BorderPane();
+        wrapper.getStyleClass().add("screen-root");
 
-        Label scheduleTitle = new Label("Agendamento automático");
-        scheduleTitle.getStyleClass().add("section-title");
+        ScrollPane scroll = new ScrollPane();
+        scroll.setFitToWidth(true);
+        scroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+        scroll.getStyleClass().add("config-scroll");
 
-        GridPane scheduleGrid = new GridPane();
-        scheduleGrid.setHgap(8);
-        scheduleGrid.setVgap(8);
+        VBox content = new VBox(0);
+        content.setPadding(new Insets(24));
+        content.setFillWidth(true);
 
-        Map<Integer, CheckBox> dayChecks = new LinkedHashMap<>();
-        dayChecks.put(1, new CheckBox("Seg"));
-        dayChecks.put(2, new CheckBox("Ter"));
-        dayChecks.put(3, new CheckBox("Qua"));
-        dayChecks.put(4, new CheckBox("Qui"));
-        dayChecks.put(5, new CheckBox("Sex"));
-        dayChecks.put(6, new CheckBox("Sáb"));
-        dayChecks.put(0, new CheckBox("Dom"));
+        VBox panel = new VBox(0);
+        panel.getStyleClass().add("settings-panel");
 
-        int col = 0;
-        for (CheckBox day : dayChecks.values()) {
-            scheduleGrid.add(day, col++, 0);
+        // ── Header ──────────────────────────────────────────────────────────
+        HBox headerRow = new HBox(10);
+        headerRow.setAlignment(Pos.CENTER_LEFT);
+        headerRow.getStyleClass().add("settings-header");
+
+        SVGPath shieldSvg = new SVGPath();
+        shieldSvg.setContent("M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z");
+        shieldSvg.setStyle("-fx-fill: #6D47FF;");
+        StackPane shieldBox = new StackPane(shieldSvg);
+        shieldBox.setPrefSize(20, 20); shieldBox.setMinSize(20, 20); shieldBox.setMaxSize(20, 20);
+
+        Label panelTitle = new Label("Plano de Backup");
+        panelTitle.getStyleClass().add("settings-panel-title");
+
+        Region hSpacer = new Region(); HBox.setHgrow(hSpacer, Priority.ALWAYS);
+
+        Button cancelBtn = new Button("Cancelar");
+        cancelBtn.getStyleClass().add("btn-outline-primary");
+        cancelBtn.setVisible(false);
+        cancelBtn.setManaged(false);
+
+        Button saveAllBtn = new Button("Salvar");
+        saveAllBtn.getStyleClass().add("btn-primary");
+        saveAllBtn.setVisible(false);
+        saveAllBtn.setManaged(false);
+
+        ToggleButton planToggle = makeToggleSwitch();
+        planToggle.setSelected(true);
+
+        headerRow.getChildren().addAll(shieldBox, panelTitle, hSpacer, cancelBtn, saveAllBtn, planToggle);
+        panel.getChildren().addAll(headerRow, makeDivider());
+
+        // Dirty-state: shows Salvar/Cancelar only when user changes something
+        boolean[] suppressing = {true}; // true during initial load / revert
+        Runnable markDirty = () -> {
+            if (suppressing[0]) return;
+            cancelBtn.setVisible(true);  cancelBtn.setManaged(true);
+            saveAllBtn.setVisible(true); saveAllBtn.setManaged(true);
+        };
+        Runnable hideSaveBtns = () -> {
+            cancelBtn.setVisible(false);  cancelBtn.setManaged(false);
+            saveAllBtn.setVisible(false); saveAllBtn.setManaged(false);
+        };
+
+        // ── O que fazer backup ───────────────────────────────────────────────
+        // Summary row
+        HBox foldersSummaryRow = new HBox(10);
+        foldersSummaryRow.setAlignment(Pos.CENTER_LEFT);
+        foldersSummaryRow.getStyleClass().add("settings-row");
+        Label foldersLbl = new Label("O que fazer backup");
+        foldersLbl.getStyleClass().add("settings-row-label");
+        Region fsp = new Region(); HBox.setHgrow(fsp, Priority.ALWAYS);
+        Label foldersCountLbl = new Label("—");
+        foldersCountLbl.getStyleClass().add("settings-row-value");
+        Button addFolderBtn = new Button("+ Adicionar");
+        addFolderBtn.getStyleClass().add("btn-outline-primary");
+        foldersSummaryRow.getChildren().addAll(foldersLbl, fsp, foldersCountLbl, addFolderBtn);
+
+        // Folder list (always visible below the summary row, compact)
+        VBox sourcesContainer = new VBox(4);
+        sourcesContainer.setPadding(new Insets(0, 20, 12, 20));
+        Label emptyHint = new Label("Nenhuma pasta configurada.");
+        emptyHint.getStyleClass().add("card-subtitle");
+        sourcesContainer.getChildren().add(emptyHint);
+
+        addFolderBtn.setOnAction(e -> {
+            DirectoryChooser chooser = new DirectoryChooser();
+            chooser.setTitle("Selecionar pasta para proteger");
+            var dir = chooser.showDialog(stage);
+            if (dir == null) return;
+            String newPath = dir.toPath().toString();
+            runAsync(() -> {
+                Optional<ProtectionPlan> optPlan = (backend != null && deviceId != null)
+                        ? backend.getDevicePlan(deviceId) : Optional.empty();
+                List<String> current = new ArrayList<>(optPlan.isPresent()
+                        ? optPlan.get().sources() : parseSources(backupSourcesConfig.getText()));
+                if (!current.contains(newPath)) {
+                    current.add(newPath);
+                    if (backend != null && deviceId != null)
+                        backend.upsertDevicePlan(deviceId, ProtectionPlan.PlanType.CUSTOM, current);
+                    ui(() -> {
+                        backupSourcesConfig.setText(String.join("\n", current));
+                        renderSourceRows(sourcesContainer, current, stage, emptyHint);
+                        foldersCountLbl.setText(current.size() + " pasta(s)");
+                    });
+                }
+            });
+        });
+
+        panel.getChildren().addAll(foldersSummaryRow, sourcesContainer, makeDivider());
+
+        // ── Proteção contínua (CDP) ──────────────────────────────────────────
+        HBox cdpRow = new HBox(10);
+        cdpRow.setAlignment(Pos.CENTER_LEFT);
+        cdpRow.getStyleClass().add("settings-row");
+        Label cdpLbl = new Label("Proteção contínua (CDP)");
+        cdpLbl.getStyleClass().add("settings-row-label");
+        Region cdpSp = new Region(); HBox.setHgrow(cdpSp, Priority.ALWAYS);
+        ToggleButton cdpToggle = makeToggleSwitch();
+        cdpToggle.setOnAction(e -> markDirty.run());
+        cdpRow.getChildren().addAll(cdpLbl, cdpSp, cdpToggle);
+        panel.getChildren().addAll(cdpRow, makeDivider());
+
+        // ── Agendamento ──────────────────────────────────────────────────────
+        // Summary row with edit button
+        HBox scheduleSummaryRow = new HBox(10);
+        scheduleSummaryRow.setAlignment(Pos.CENTER_LEFT);
+        scheduleSummaryRow.getStyleClass().add("settings-row");
+        Label scheduleLbl = new Label("Agendamento");
+        scheduleLbl.getStyleClass().add("settings-row-label");
+        Region ssp = new Region(); HBox.setHgrow(ssp, Priority.ALWAYS);
+        Label scheduleSummaryLbl = new Label("Não configurado");
+        scheduleSummaryLbl.getStyleClass().add("settings-row-value");
+
+        SVGPath pencilSvg = new SVGPath();
+        pencilSvg.setContent("M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z");
+        pencilSvg.setStyle("-fx-fill: #6D47FF;");
+        pencilSvg.setScaleX(0.72); pencilSvg.setScaleY(0.72);
+        Button scheduleEditBtn = new Button();
+        scheduleEditBtn.setGraphic(new StackPane(pencilSvg));
+        scheduleEditBtn.getStyleClass().add("btn-icon-inline");
+        scheduleSummaryRow.getChildren().addAll(scheduleLbl, ssp, scheduleSummaryLbl, scheduleEditBtn);
+
+        // Expandable edit area (hidden by default)
+        VBox scheduleEditArea = new VBox(10);
+        scheduleEditArea.setPadding(new Insets(0, 20, 14, 20));
+        scheduleEditArea.setVisible(false);
+        scheduleEditArea.setManaged(false);
+
+        Map<Integer, ToggleButton> dayBtns = new LinkedHashMap<>();
+        HBox daysBox = new HBox(6);
+        daysBox.setAlignment(Pos.CENTER_LEFT);
+        String[] dayNames = {"Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"};
+        int[] dayNumbers = {1, 2, 3, 4, 5, 6, 0};
+        for (int i = 0; i < dayNames.length; i++) {
+            ToggleButton tb = new ToggleButton(dayNames[i]);
+            tb.getStyleClass().add("day-toggle-btn");
+            tb.setOnAction(e -> markDirty.run());
+            dayBtns.put(dayNumbers[i], tb);
+            daysBox.getChildren().add(tb);
         }
 
-        TextField startTime = new TextField("02:00");
+        TextField startTime = new TextField();
         startTime.setPromptText("HH:mm");
-        startTime.setMaxWidth(100);
+        startTime.getStyleClass().add("config-field");
+        startTime.setMaxWidth(90);
+        startTime.textProperty().addListener((obs, o, n) -> markDirty.run());
 
         Label scheduleStatus = new Label();
-        Button saveSchedule = new Button("Salvar agendamento");
-        saveSchedule.setOnAction(e -> runAsync(() -> saveScheduleToYaml(dayChecks, startTime, scheduleStatus)));
-        Button startDaemonLocal = new Button("Tentar start local do daemon");
-        startDaemonLocal.setOnAction(e -> runAsync(() -> {
-            DaemonLauncher.ensureRunning(this::log, true);
-            log("Solicitação de start local do daemon enviada.");
+        scheduleStatus.getStyleClass().add("card-subtitle");
+        scheduleStatus.setWrapText(true);
+
+        Button saveScheduleBtn = new Button("Salvar agendamento");
+        saveScheduleBtn.getStyleClass().add("btn-primary");
+
+        HBox timeRow = new HBox(10);
+        timeRow.setAlignment(Pos.CENTER_LEFT);
+        timeRow.getChildren().addAll(startTime, saveScheduleBtn);
+        scheduleEditArea.getChildren().addAll(daysBox, timeRow, scheduleStatus);
+
+        Runnable updateScheduleSummary = () -> {
+            scheduleSummaryLbl.setText(buildScheduleSummary(dayBtns, startTime));
+        };
+
+        saveScheduleBtn.setOnAction(e -> runAsync(() -> {
+            saveScheduleWithToggles(dayBtns, startTime, scheduleStatus);
+            ui(() -> { updateScheduleSummary.run(); hideSaveBtns.run(); });
         }));
 
-        HBox actions = new HBox(8, saveSchedule, startDaemonLocal);
+        scheduleEditBtn.setOnAction(e -> {
+            boolean expanded = scheduleEditArea.isManaged();
+            scheduleEditArea.setVisible(!expanded);
+            scheduleEditArea.setManaged(!expanded);
+        });
 
-        box.getChildren().addAll(
-                new Label("URL do backend:"),
-                backendUrl,
-                new Label("Device atual:"),
-                new Label(deviceId == null ? "Ainda não registrado" : deviceId.toString()),
-                new Label("Pastas de backup (uma por linha):"),
-                backupSourcesConfig,
-                new Separator(),
-                scheduleTitle,
-                new Label("Dias da semana:"),
-                scheduleGrid,
-                new Label("Hora de começo (HH:mm):"),
-                startTime,
-                actions,
-                scheduleStatus
+        panel.getChildren().addAll(scheduleSummaryRow, scheduleEditArea, makeDivider());
+
+        // ── Quanto tempo manter ──────────────────────────────────────────────
+        HBox retentionRow = new HBox(10);
+        retentionRow.setAlignment(Pos.CENTER_LEFT);
+        retentionRow.getStyleClass().add("settings-row");
+        Label retentionLbl = new Label("Quanto tempo manter");
+        retentionLbl.getStyleClass().add("settings-row-label");
+        Region rsp = new Region(); HBox.setHgrow(rsp, Priority.ALWAYS);
+        Label retentionVal = new Label("Manter todos os snapshots");
+        retentionVal.getStyleClass().add("settings-row-value");
+        retentionRow.getChildren().addAll(retentionLbl, rsp, retentionVal);
+        panel.getChildren().addAll(retentionRow, makeDivider());
+
+        // ── Criptografia ─────────────────────────────────────────────────────
+        HBox encRow = new HBox(10);
+        encRow.setAlignment(Pos.CENTER_LEFT);
+        encRow.getStyleClass().add("settings-row");
+        VBox encLabels = new VBox(2);
+        Label encLbl = new Label("Criptografia");
+        encLbl.getStyleClass().add("settings-row-label");
+        Label encSub = new Label("AES-256");
+        encSub.getStyleClass().add("card-subtitle");
+        encLabels.getChildren().addAll(encLbl, encSub);
+        Region esp = new Region(); HBox.setHgrow(esp, Priority.ALWAYS);
+        ToggleButton encToggle = makeToggleSwitch();
+        encToggle.setOnAction(e -> {
+            boolean sel = encToggle.isSelected();
+            runAsync(() -> configWriter.saveEncryptionEnabled(sel));
+            markDirty.run();
+        });
+        encRow.getChildren().addAll(encLabels, esp, encToggle);
+        panel.getChildren().addAll(encRow, makeDivider());
+
+        // ── Informações do dispositivo ───────────────────────────────────────
+        HBox devHeaderRow = new HBox(10);
+        devHeaderRow.setAlignment(Pos.CENTER_LEFT);
+        devHeaderRow.getStyleClass().add("settings-row");
+        Label devLbl = new Label("Informações do dispositivo");
+        devLbl.getStyleClass().add("settings-row-label");
+        devHeaderRow.getChildren().add(devLbl);
+
+        VBox devBody = new VBox(6);
+        devBody.setPadding(new Insets(0, 20, 18, 20));
+        HBox devIdRow = new HBox(16);
+        devIdRow.setAlignment(Pos.CENTER_LEFT);
+        Label devIdKey = new Label("ID do dispositivo");
+        devIdKey.getStyleClass().add("device-info-key");
+        Label devIdVal = new Label(deviceId == null ? "Registrando..." : deviceId.toString());
+        devIdVal.getStyleClass().add("device-info-value");
+        devIdRow.getChildren().addAll(devIdKey, devIdVal);
+
+        HBox srvRow = new HBox(16);
+        srvRow.setAlignment(Pos.CENTER_LEFT);
+        Label srvKey = new Label("Servidor");
+        srvKey.getStyleClass().add("device-info-key");
+        Label srvVal = new Label(backendUrl.getText() != null && !backendUrl.getText().isBlank()
+                ? backendUrl.getText() : "—");
+        srvVal.getStyleClass().add("device-info-value");
+        srvRow.getChildren().addAll(srvKey, srvVal);
+        devBody.getChildren().addAll(devIdRow, srvRow);
+        panel.getChildren().addAll(devHeaderRow, devBody);
+
+        content.getChildren().add(panel);
+        scroll.setContent(content);
+        wrapper.setCenter(scroll);
+
+        // ── Save all wiring ──────────────────────────────────────────────────
+        saveAllBtn.setOnAction(e -> runAsync(() -> {
+            saveScheduleWithToggles(dayBtns, startTime, scheduleStatus);
+            ui(() -> { updateScheduleSummary.run(); hideSaveBtns.run(); });
+        }));
+
+        cancelBtn.setOnAction(e -> {
+            suppressing[0] = true;
+            hideSaveBtns.run();
+            runAsync(() -> {
+                loadScheduleWithToggles(dayBtns, startTime, scheduleStatus);
+                Optional<AgentConfigReader.UiConfig> cfgOpt;
+                try { cfgOpt = configReader.read(); } catch (Exception ex) { cfgOpt = Optional.empty(); }
+                boolean encFinal = cfgOpt.map(AgentConfigReader.UiConfig::encryptionEnabled).orElse(false);
+                ui(() -> { encToggle.setSelected(encFinal); updateScheduleSummary.run(); suppressing[0] = false; });
+            });
+        });
+
+        // ── Refresh ──────────────────────────────────────────────────────────
+        Runnable refresh = () -> {
+            if (backend == null || deviceId == null) {
+                List<String> local = parseSources(backupSourcesConfig.getText());
+                ui(() -> {
+                    renderSourceRows(sourcesContainer, local, stage, emptyHint);
+                    foldersCountLbl.setText(local.isEmpty() ? "—" : local.size() + " pasta(s)");
+                });
+                return;
+            }
+            runAsync(() -> {
+                var optPlan = backend.getDevicePlan(deviceId);
+                List<String> sources = optPlan.isPresent()
+                        ? optPlan.get().sources() : parseSources(backupSourcesConfig.getText());
+                ui(() -> {
+                    renderSourceRows(sourcesContainer, sources, stage, emptyHint);
+                    foldersCountLbl.setText(sources.isEmpty() ? "—" : sources.size() + " pasta(s)");
+                    devIdVal.setText(deviceId != null ? deviceId.toString() : "—");
+                    srvVal.setText(backendUrl.getText() != null && !backendUrl.getText().isBlank()
+                            ? backendUrl.getText() : "—");
+                });
+            });
+        };
+        this.configRefresh = refresh;
+
+        // Combined initial load: schedule + encryption, then release suppression
+        runAsync(() -> {
+            loadScheduleWithToggles(dayBtns, startTime, scheduleStatus);
+            Optional<AgentConfigReader.UiConfig> cfgOpt;
+            try { cfgOpt = configReader.read(); } catch (Exception ex) { cfgOpt = Optional.empty(); }
+            boolean encFinal = cfgOpt.map(AgentConfigReader.UiConfig::encryptionEnabled).orElse(false);
+            ui(() -> { encToggle.setSelected(encFinal); updateScheduleSummary.run(); suppressing[0] = false; });
+        });
+        refresh.run();
+        return wrapper;
+    }
+
+    private String buildScheduleSummary(Map<Integer, ToggleButton> dayBtns, TextField startTime) {
+        String[] names = {"Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"};
+        int[] nums    = {0, 1, 2, 3, 4, 5, 6};
+        List<String> selected = new ArrayList<>();
+        for (int i = 0; i < nums.length; i++) {
+            ToggleButton tb = dayBtns.get(nums[i]);
+            if (tb != null && tb.isSelected()) selected.add(names[i]);
+        }
+        if (selected.isEmpty()) return "Não configurado";
+        String days = selected.size() == 7 ? "Todos os dias" : String.join(", ", selected);
+        String time = startTime.getText() == null || startTime.getText().isBlank() ? "--:--" : startTime.getText();
+        return days + " às " + time;
+    }
+
+    private ToggleButton makeToggleSwitch() {
+        ToggleButton btn = new ToggleButton();
+
+        Region thumb = new Region();
+        thumb.setStyle(
+            "-fx-background-color: white;" +
+            "-fx-background-radius: 999px;" +
+            "-fx-pref-width: 18px; -fx-pref-height: 18px;" +
+            "-fx-min-width: 18px; -fx-min-height: 18px;" +
+            "-fx-max-width: 18px; -fx-max-height: 18px;" +
+            "-fx-effect: dropshadow(gaussian, rgba(0,0,0,0.20), 3, 0, 0, 1);"
         );
-        runAsync(() -> loadScheduleFromYaml(dayChecks, startTime, scheduleStatus));
-        return box;
+
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+
+        HBox track = new HBox();
+        track.setAlignment(Pos.CENTER_LEFT);
+        track.setPadding(new Insets(3));
+        track.setPrefSize(44, 24);
+        track.setMinSize(44, 24);
+        track.setMaxSize(44, 24);
+        track.setStyle("-fx-background-color: #CBD5E1; -fx-background-radius: 999px;");
+        track.getChildren().add(thumb);
+
+        btn.setGraphic(track);
+        btn.getStyleClass().add("toggle-switch-btn");
+
+        btn.selectedProperty().addListener((obs, old, selected) -> {
+            if (selected) {
+                track.getChildren().setAll(spacer, thumb);
+                track.setStyle("-fx-background-color: #6D47FF; -fx-background-radius: 999px;");
+            } else {
+                track.getChildren().setAll(thumb);
+                track.setStyle("-fx-background-color: #CBD5E1; -fx-background-radius: 999px;");
+            }
+        });
+
+        return btn;
+    }
+
+    private Region makeDivider() {
+        Region div = new Region();
+        div.getStyleClass().add("settings-divider");
+        div.setMaxWidth(Double.MAX_VALUE);
+        return div;
+    }
+
+    private void renderSourceRows(VBox container, List<String> sources, Stage stage, Label emptyHint) {
+        container.getChildren().clear();
+        if (sources == null || sources.isEmpty()) {
+            container.getChildren().add(emptyHint);
+            return;
+        }
+        for (String path : sources) {
+            HBox row = new HBox(12);
+            row.setAlignment(Pos.CENTER_LEFT);
+            row.getStyleClass().add("source-item-row");
+
+            SVGPath folderIcon = new SVGPath();
+            folderIcon.setContent("M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z");
+            folderIcon.setStyle("-fx-fill: #F59E0B;");
+            StackPane iconWrap = new StackPane(folderIcon);
+            iconWrap.setPrefSize(20, 20);
+            iconWrap.setMinSize(20, 20);
+            iconWrap.setMaxSize(20, 20);
+
+            Label pathLabel = new Label(path);
+            pathLabel.getStyleClass().add("source-path-label");
+            HBox.setHgrow(pathLabel, Priority.ALWAYS);
+            pathLabel.setMaxWidth(Double.MAX_VALUE);
+
+            Button removeBtn = new Button("×");
+            removeBtn.getStyleClass().add("source-remove-btn");
+            removeBtn.setOnAction(e -> runAsync(() -> {
+                Optional<ProtectionPlan> optPlan = (backend != null && deviceId != null) ? backend.getDevicePlan(deviceId) : Optional.empty();
+                List<String> current = new ArrayList<>(optPlan.isPresent() ? optPlan.get().sources() : parseSources(backupSourcesConfig.getText()));
+                current.remove(path);
+                if (backend != null && deviceId != null) {
+                    ProtectionPlan.PlanType type = current.isEmpty() ? ProtectionPlan.PlanType.DEFAULT : ProtectionPlan.PlanType.CUSTOM;
+                    backend.upsertDevicePlan(deviceId, type, current.isEmpty()
+                            ? List.of(java.nio.file.Path.of(System.getProperty("user.home")).toAbsolutePath().normalize().toString())
+                            : current);
+                }
+                ui(() -> {
+                    backupSourcesConfig.setText(String.join("\n", current));
+                    renderSourceRows(container, current, stage, emptyHint);
+                });
+            }));
+
+            row.getChildren().addAll(iconWrap, pathLabel, removeBtn);
+            container.getChildren().add(row);
+        }
+    }
+
+    private void saveScheduleWithToggles(Map<Integer, ToggleButton> dayBtns, TextField startTime, Label statusLabel) throws Exception {
+        Map<Integer, CheckBox> proxy = new LinkedHashMap<>();
+        dayBtns.forEach((k, tb) -> {
+            CheckBox cb = new CheckBox();
+            cb.setSelected(tb.isSelected());
+            proxy.put(k, cb);
+        });
+        saveScheduleToYaml(proxy, startTime, statusLabel);
+    }
+
+    private void loadScheduleWithToggles(Map<Integer, ToggleButton> dayBtns, TextField startTime, Label statusLabel) throws Exception {
+        Map<Integer, CheckBox> proxy = new LinkedHashMap<>();
+        dayBtns.forEach((k, tb) -> proxy.put(k, new CheckBox()));
+        loadScheduleFromYaml(proxy, startTime, statusLabel);
+        ui(() -> proxy.forEach((k, cb) -> {
+            if (dayBtns.containsKey(k)) dayBtns.get(k).setSelected(cb.isSelected());
+        }));
     }
 
     private void saveScheduleToYaml(Map<Integer, CheckBox> dayChecks, TextField startTime, Label statusLabel) throws Exception {
@@ -1278,90 +1643,11 @@ public class KeeplyAgentApp extends Application {
     }
 
     private ProtectionPlan createPlanFromWizard() {
-        ProtectionPlan.PlanType selectedType = selectPlanType();
-        List<String> sources;
-        if (selectedType == ProtectionPlan.PlanType.DEFAULT) {
-            sources = List.of(Path.of(System.getProperty("user.home")).toAbsolutePath().normalize().toString());
-        } else {
-            sources = askCustomSources();
-            if (sources.isEmpty()) {
-                ui(() -> {
-                    Alert alert = new Alert(Alert.AlertType.WARNING);
-                    alert.setTitle("Plano Inválido");
-                    alert.setHeaderText(null);
-                    alert.setContentText("O plano CUSTOM requer ao menos uma pasta monitorada.");
-                    alert.showAndWait();
-                });
-                return createPlanFromWizard(); // Repete o processo completo
-            }
-        }
-        return backend.upsertDevicePlan(deviceId, selectedType, sources);
-    }
-
-    private ProtectionPlan.PlanType selectPlanType() {
-        java.util.concurrent.atomic.AtomicReference<ProtectionPlan.PlanType> choiceRef = new java.util.concurrent.atomic.AtomicReference<>();
-        java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
-        ui(() -> {
-            ChoiceDialog<String> dialog = new ChoiceDialog<>("DEFAULT", "DEFAULT", "CUSTOM");
-            dialog.setTitle("Plano de proteção obrigatório");
-            dialog.setHeaderText("Escolha o plano para este dispositivo");
-            dialog.setContentText("Tipo:");
-            String selected = dialog.showAndWait().orElse(null);
-            if (selected != null) {
-                choiceRef.set(ProtectionPlan.PlanType.valueOf(selected));
-                latch.countDown();
-            } else {
-                Alert alert = new Alert(Alert.AlertType.WARNING);
-                alert.setTitle("Ação Obrigatória");
-                alert.setHeaderText(null);
-                alert.setContentText("Você deve escolher um plano de proteção para continuar.");
-                alert.showAndWait();
-                ui(() -> {
-                    choiceRef.set(selectPlanType());
-                    latch.countDown();
-                });
-            }
-        });
-        awaitLatch(latch);
-        return choiceRef.get();
-    }
-
-    private List<String> askCustomSources() {
-        java.util.concurrent.atomic.AtomicReference<String> valueRef = new java.util.concurrent.atomic.AtomicReference<>();
-        java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
-        ui(() -> {
-            Dialog<String> dialog = new Dialog<>();
-            dialog.setTitle("Plano CUSTOM");
-            dialog.setHeaderText("Informe pastas (uma por linha)");
-            ButtonType saveType = new ButtonType("Salvar", ButtonBar.ButtonData.OK_DONE);
-            dialog.getDialogPane().getButtonTypes().addAll(saveType, ButtonType.CANCEL);
-
-            TextArea area = new TextArea();
-            area.setPromptText("/home/usuario/Documentos\n/home/usuario/Imagens");
-            area.setPrefRowCount(6);
-            dialog.getDialogPane().setContent(area);
-            dialog.setResultConverter(button -> button == saveType ? area.getText() : null);
-
-            String value = dialog.showAndWait().orElse(null);
-            if (value != null) {
-                valueRef.set(value);
-                latch.countDown();
-            } else {
-                latch.countDown(); // Deixa createPlanFromWizard lidar com a lista vazia
-            }
-        });
-        awaitLatch(latch);
-        String val = valueRef.get();
-        return val == null ? List.of() : parseSources(val);
-    }
-
-    private void awaitLatch(java.util.concurrent.CountDownLatch latch) {
-        try {
-            latch.await();
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IllegalStateException("Operação interrompida", e);
-        }
+        String home = Path.of(System.getProperty("user.home")).toAbsolutePath().normalize().toString();
+        List<String> sources = List.of(home);
+        ProtectionPlan plan = backend.upsertDevicePlan(deviceId, ProtectionPlan.PlanType.DEFAULT, sources);
+        log("event=plan.created type=DEFAULT sources=" + sources);
+        return plan;
     }
 
 

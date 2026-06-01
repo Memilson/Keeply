@@ -32,8 +32,8 @@
                 </VBox>
             </HBox>
             <VBox spacing="4" style="-fx-padding: 8 0 0 0;">
-                <Label fx:id="lblLastBackup" text="Último backup: Hoje, 09:42" styleClass="card-subtitle"/>
-                <Label text="Próximo: Automático" styleClass="card-subtitle"/>
+                <Label fx:id="lblLastBackup" text="" styleClass="card-subtitle"/>
+                <Label fx:id="lblNextBackup" text="Próximo: Automático" styleClass="card-subtitle"/>
             </VBox>
             <Region VBox.vgrow="ALWAYS"/>
             <Button text="Fazer backup agora" styleClass="btn-outline-primary" maxWidth="Infinity"/>
@@ -71,7 +71,7 @@
                 </VBox>
             </HBox>
             <VBox spacing="4" style="-fx-padding: 8 0 0 0;">
-                <Label text="de 1 TB utilizado" styleClass="card-subtitle"/>
+                <Label fx:id="lblStorageLimit" text="de 1 TB utilizado" styleClass="card-subtitle"/>
             </VBox>
             <Region VBox.vgrow="ALWAYS"/>
             <Button text="Ver detalhes →" styleClass="btn-text-primary" alignment="CENTER_LEFT"/>
@@ -121,10 +121,10 @@
             </HBox>
         </VBox>
 
-        <!-- Snapshots recentes -->
+        <!-- Backups recentes -->
         <VBox styleClass="dash-card" spacing="16" HBox.hgrow="ALWAYS" prefWidth="400">
             <HBox alignment="CENTER_LEFT">
-                <Label text="Snapshots recentes" styleClass="section-title-dash"/>
+                <Label text="Backups recentes" styleClass="section-title-dash"/>
                 <Region HBox.hgrow="ALWAYS"/>
                 <Label text="Ver todos" styleClass="link-text"/>
             </HBox>
@@ -138,7 +138,7 @@
             <SVGPath content="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm-2 16l-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9l-8 8z" style="-fx-fill: white;" scaleX="1.2" scaleY="1.2"/>
         </StackPane>
         <VBox spacing="4">
-            <Label text="Proteger Agora" styleClass="banner-title"/>
+            <Label text="Proteção contínua ativa" styleClass="banner-title"/>
             <Label text="Keeply monitora, protege e mantém seus dados seguros em segundo plano." styleClass="banner-subtitle"/>
         </VBox>
         <Region HBox.hgrow="ALWAYS"/>

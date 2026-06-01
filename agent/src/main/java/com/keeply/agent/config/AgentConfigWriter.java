@@ -70,6 +70,12 @@ public final class AgentConfigWriter {
         write(root);
     }
 
+    public void saveEncryptionEnabled(boolean enabled) throws Exception {
+        Map<String, Object> root = readRoot();
+        root.put("encryption", Map.of("enabled", enabled));
+        write(root);
+    }
+
     public Path path() {
         return path;
     }
