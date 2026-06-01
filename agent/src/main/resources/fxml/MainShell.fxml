@@ -31,9 +31,9 @@
                         <SVGPath content="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z" styleClass="nav-icon"/>
                     </graphic>
                 </Button>
-                <Button fx:id="btnBackups" text="Backup" styleClass="nav-button" maxWidth="Infinity" alignment="CENTER_LEFT">
+                <Button fx:id="btnBackups" text="Configurações" styleClass="nav-button" maxWidth="Infinity" alignment="CENTER_LEFT">
                     <graphic>
-                        <SVGPath content="M19.35 10.04A7.49 7.49 0 0 0 12 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 0 0 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z" styleClass="nav-icon"/>
+                        <SVGPath content="M12 15.5A3.5 3.5 0 0 1 8.5 12 3.5 3.5 0 0 1 12 8.5a3.5 3.5 0 0 1 3.5 3.5 3.5 3.5 0 0 1-3.5 3.5m7.43-2.92c.04-.34.07-.68.07-1.08s-.03-.73-.07-1.08l2.34-1.82c.21-.17.27-.47.13-.71l-2.22-3.84c-.14-.24-.44-.32-.68-.24l-2.76 1.11c-.58-.44-1.2-.82-1.88-1.09l-.42-2.93A.54.54 0 0 0 14 3h-4c-.27 0-.5.19-.53.46l-.42 2.93c-.68.27-1.3.65-1.88 1.09L4.41 6.37c-.24-.08-.54 0-.68.24L1.51 10.45c-.14.24-.08.54.13.71l2.34 1.82c-.04.35-.07.69-.07 1.08s.03.73.07 1.08L1.64 17c-.21.17-.27.47-.13.71l2.22 3.84c.14.24.44.32.68.24l2.76-1.11c.58.44 1.2.82 1.88 1.09l.42 2.93c.03.27.26.46.53.46h4c.27 0 .5-.19.53-.46l.42-2.93c.68-.27 1.3-.65 1.88-1.09l2.76 1.11c.24.08.54 0 .68-.24l2.22-3.84c.14-.24.08-.54-.13-.71l-2.34-1.82z" styleClass="nav-icon"/>
                     </graphic>
                 </Button>
                 <Button fx:id="btnAtividade" text="Atividade" styleClass="nav-button" maxWidth="Infinity" alignment="CENTER_LEFT">
@@ -49,11 +49,11 @@
             <VBox styleClass="storage-card" spacing="10">
                 <Label text="Armazenamento" styleClass="storage-title"/>
                 <HBox alignment="BASELINE_LEFT" spacing="4">
-                    <Label fx:id="lblStorageUsed" text="0 B" styleClass="storage-used"/>
+                    <Label fx:id="lblStorageUsed" text="—" styleClass="storage-used"/>
                     <Label text="de 1 TB" styleClass="storage-total"/>
                 </HBox>
                 <ProgressBar fx:id="pbStorage" progress="0" prefWidth="200" styleClass="storage-progress"/>
-                <Label fx:id="lblStoragePercent" text="0% usado" styleClass="storage-percent"/>
+                <Label fx:id="lblStoragePercent" text="" styleClass="storage-percent"/>
                 <Button text="Gerenciar plano" styleClass="btn-manage-plan" maxWidth="Infinity">
                     <graphic>
                         <SVGPath content="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z" styleClass="btn-icon-purple"/>
@@ -81,9 +81,9 @@
                     <HBox alignment="CENTER" spacing="8" styleClass="profile-box">
                         <StackPane>
                             <Circle radius="14" fill="#6D47FF"/>
-                            <Label fx:id="lblProfileInitials" text="MO" style="-fx-text-fill: white; -fx-font-weight: bold; -fx-font-size: 11px;"/>
+                            <Label fx:id="lblProfileInitials" text="" style="-fx-text-fill: white; -fx-font-weight: bold; -fx-font-size: 11px;"/>
                         </StackPane>
-                        <Label fx:id="lblProfileName" text="Convidado" styleClass="profile-name"/>
+                        <Label fx:id="lblProfileName" text="" styleClass="profile-name"/>
                         <SVGPath content="M7 10l5 5 5-5z" styleClass="header-icon"/>
                     </HBox>
                     <Button fx:id="btnClose" text="&#x00D7;" styleClass="window-close-button" focusTraversable="false"/>
