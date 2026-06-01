@@ -1,21 +1,27 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { api, type Device } from "@/lib/api";
-import { formatRelative } from "@/lib/format";
+import { api, type Device, type Snapshot } from "@/lib/api";
+import { formatBytes, formatDateTime } from "@/lib/format";
 import { Topbar } from "@/components/Topbar";
 
 export default function MachinesPage() {
   const [devices, setDevices] = useState<Device[]>([]);
+  const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
+  const [selectedDeviceId, setSelectedDeviceId] = useState<string>("");
+  const [openActionId, setOpenActionId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [query, setQuery] = useState("");
 
   useEffect(() => {
     (async () => {
       try {
-        const data = await api<Device[]>("/api/devices");
-        setDevices(data ?? []);
+        const [d, s] = await Promise.all([api<Device[]>("/api/devices"), api<Snapshot[]>("/api/snapshots")]);
+        const list = d ?? [];
+        setDevices(list);
+        setSnapshots(s ?? []);
+        if (list.length > 0) setSelectedDeviceId(list[0].id);
       } catch (e) {
         setError(e instanceof Error ? e.message : "Falha ao carregar máquinas.");
       } finally {
@@ -24,123 +30,173 @@ export default function MachinesPage() {
     })();
   }, []);
 
-  const filtered = useMemo(
-    () =>
-      devices.filter((d) => {
-        if (!query) return true;
-        const q = query.toLowerCase();
-        return d.name?.toLowerCase().includes(q) || d.hostname?.toLowerCase().includes(q) || d.osName?.toLowerCase().includes(q);
-      }),
-    [devices, query]
-  );
+  const snapshotsByDevice = useMemo(() => {
+    const map = new Map<string, Snapshot[]>();
+    for (const s of snapshots) {
+      const arr = map.get(s.deviceId) ?? [];
+      arr.push(s);
+      map.set(s.deviceId, arr);
+    }
+    for (const [, arr] of map) {
+      arr.sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime());
+    }
+    return map;
+  }, [snapshots]);
 
-  function isHealthy(d: Device) {
-    return d.lastSeenAt && Date.now() - new Date(d.lastSeenAt).getTime() < 24 * 3600 * 1000;
-  }
+  const selectedSnapshots = selectedDeviceId ? snapshotsByDevice.get(selectedDeviceId) ?? [] : [];
 
   return (
     <>
-      <Topbar title="Máquinas" subtitle="Todos os endpoints protegidos pelo agente Keeply" />
-      <div className="space-y-5 p-7">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2 rounded-lg border bg-white px-3 py-2" style={{ borderColor: "#E4E1F0" }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6B6993" strokeWidth="2">
-              <circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" />
-            </svg>
-            <input
-              type="search"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Buscar por nome, hostname ou SO…"
-              className="w-64 bg-transparent text-sm focus:outline-none"
-              style={{ color: "#18163A" }}
-            />
-          </div>
-          <span className="text-xs font-medium" style={{ color: "#6B6993" }}>
-            {loading ? "Carregando…" : `${filtered.length} máquina${filtered.length !== 1 ? "s" : ""}`}
-          </span>
-        </div>
-
+      <Topbar title="Máquinas" subtitle="Snapshots por máquina" />
+      <div className="p-7">
         {error && (
-          <div className="rounded-xl px-4 py-3 text-sm" style={{ background: "#FEF2F2", border: "1px solid #FECACA", color: "#DC2626" }}>
+          <div className="mb-5 rounded-xl px-4 py-3 text-sm" style={{ background: "#FEF2F2", border: "1px solid #FECACA", color: "#DC2626" }}>
             {error}
           </div>
         )}
 
-        <div className="kp-card overflow-hidden">
-          {loading ? (
-            <p className="px-6 py-10 text-sm" style={{ color: "#6B6993" }}>Carregando…</p>
-          ) : filtered.length === 0 ? (
-            <div className="flex flex-col items-center gap-3 px-6 py-14">
-              <div className="grid h-12 w-12 place-items-center rounded-2xl" style={{ background: "#EDE9FF" }}>
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#7B61FF" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="3" y="4" width="18" height="7" rx="1.5" /><rect x="3" y="13" width="18" height="7" rx="1.5" />
-                </svg>
-              </div>
-              <p className="text-sm text-center" style={{ color: "#6B6993" }}>
-                {query ? "Nenhuma máquina encontrada para essa busca." : "Nenhuma máquina cadastrada. Instale o agente Keeply para começar."}
-              </p>
+        <div className="grid gap-5 lg:grid-cols-[280px_minmax(0,1fr)]">
+          <aside className="kp-card overflow-hidden">
+            <div className="px-4 py-3 text-xs font-semibold uppercase tracking-wider" style={{ color: "#6B6993", borderBottom: "1px solid #F0EEF8", background: "#FAFAFE" }}>
+              Armazenamentos
             </div>
-          ) : (
-            <table className="w-full text-sm">
-              <thead>
-                <tr style={{ borderBottom: "1px solid #F0EEF8" }}>
-                  {["Máquina", "Sistema operacional", "Versão agente", "Status", "Último contato"].map((h) => (
-                    <th key={h} className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-wider" style={{ color: "#6B6993", background: "#FAFAFE" }}>
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((d, idx) => {
-                  const healthy = isHealthy(d);
+            {loading ? (
+              <p className="px-4 py-6 text-sm" style={{ color: "#6B6993" }}>Carregando…</p>
+            ) : devices.length === 0 ? (
+              <p className="px-4 py-6 text-sm" style={{ color: "#6B6993" }}>Nenhuma máquina cadastrada.</p>
+            ) : (
+              <div className="p-2">
+                {devices.map((d) => {
+                  const active = selectedDeviceId === d.id;
+                  const list = snapshotsByDevice.get(d.id) ?? [];
+                  const totalBytes = list.reduce((acc, s) => acc + (s.totalCompressedSize ?? 0), 0);
                   return (
-                    <tr
+                    <button
                       key={d.id}
-                      className="transition-colors hover:bg-gray-50/60"
-                      style={{ borderTop: idx > 0 ? "1px solid #F5F3FC" : undefined }}
+                      onClick={() => setSelectedDeviceId(d.id)}
+                      className="mb-1.5 w-full rounded-lg px-3 py-2.5 text-left"
+                      style={active ? { background: "#EDE9FF" } : { background: "transparent" }}
                     >
-                      <td className="px-5 py-3.5">
-                        <div className="flex items-center gap-3">
-                          <span
-                            className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-xs font-bold text-white"
-                            style={{ background: "#7B61FF" }}
-                          >
-                            {(d.name || d.hostname || "K").slice(0, 2).toUpperCase()}
-                          </span>
-                          <div className="min-w-0">
-                            <p className="truncate font-medium" style={{ color: "#18163A" }}>{d.name || "—"}</p>
-                            <p className="truncate text-xs" style={{ color: "#6B6993" }}>{d.hostname}</p>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-5 py-3.5" style={{ color: "#6B6993" }}>{d.osName ?? "—"}</td>
-                      <td className="px-5 py-3.5 font-mono text-xs" style={{ color: "#6B6993" }}>{d.agentVersion ?? "—"}</td>
-                      <td className="px-5 py-3.5">
-                        <span
-                          className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium"
-                          style={{
-                            background: healthy ? "#ECFDF5" : "#FEF3C7",
-                            color: healthy ? "#059669" : "#D97706",
-                          }}
-                        >
-                          <span
-                            className="h-1.5 w-1.5 rounded-full inline-block"
-                            style={{ background: healthy ? "#10B981" : "#F59E0B" }}
-                          />
-                          {healthy ? "Online" : "Offline"}
-                        </span>
-                      </td>
-                      <td className="px-5 py-3.5" style={{ color: "#6B6993" }}>{formatRelative(d.lastSeenAt)}</td>
-                    </tr>
+                      <p className="truncate text-sm font-semibold" style={{ color: active ? "#6046F0" : "#18163A" }}>{d.name || d.hostname}</p>
+                      <p className="mt-0.5 text-xs" style={{ color: "#6B6993" }}>
+                        {list.length} snapshot{list.length !== 1 ? "s" : ""} · {formatBytes(totalBytes)}
+                      </p>
+                    </button>
                   );
                 })}
-              </tbody>
-            </table>
-          )}
+              </div>
+            )}
+          </aside>
+
+          <section className="kp-card overflow-visible">
+            <div className="flex items-center justify-between px-5 py-3" style={{ borderBottom: "1px solid #F0EEF8", background: "#FAFAFE" }}>
+              <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "#6B6993" }}>
+                {selectedDeviceId ? "Snapshots da máquina" : "Snapshots"}
+              </p>
+              <span className="text-xs font-medium" style={{ color: "#6B6993" }}>
+                {selectedSnapshots.length} item{selectedSnapshots.length !== 1 ? "ns" : ""}
+              </span>
+            </div>
+
+            {!selectedDeviceId ? (
+              <p className="px-5 py-10 text-sm" style={{ color: "#6B6993" }}>Selecione uma máquina na barra lateral.</p>
+            ) : selectedSnapshots.length === 0 ? (
+              <p className="px-5 py-10 text-sm" style={{ color: "#6B6993" }}>Sem snapshots para essa máquina.</p>
+            ) : (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr style={{ borderBottom: "1px solid #F0EEF8" }}>
+                    {["Origem", "Status", "Arquivos", "Tamanho", "Início", ""].map((h) => (
+                      <th key={h} className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-wider" style={{ color: "#6B6993" }}>
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {selectedSnapshots.map((s, idx) => (
+                    <tr key={s.id} style={{ borderTop: idx > 0 ? "1px solid #F5F3FC" : undefined }}>
+                      <td className="px-5 py-3.5" style={{ color: "#6B6993" }}>
+                        <span className="block max-w-[280px] truncate" title={s.sourcePath}>{s.sourcePath}</span>
+                      </td>
+                      <td className="px-5 py-3.5"><StatusPill status={s.status} /></td>
+                      <td className="px-5 py-3.5 tabular-nums" style={{ color: "#6B6993" }}>{s.totalFiles ?? 0}</td>
+                      <td className="px-5 py-3.5 tabular-nums" style={{ color: "#6B6993" }}>{formatBytes(s.totalCompressedSize ?? 0)}</td>
+                      <td className="px-5 py-3.5" style={{ color: "#6B6993" }}>{formatDateTime(s.startedAt)}</td>
+                      <td className="relative px-5 py-3.5 text-right">
+                        <button
+                          type="button"
+                          onClick={() => setOpenActionId((current) => (current === s.id ? null : s.id))}
+                          className="inline-grid h-8 w-8 place-items-center rounded-lg transition-colors hover:bg-[#F5F3FB]"
+                          style={{ border: "1px solid #E4E1F0", color: "#6B6993", background: "#FFFFFF" }}
+                          aria-label="Abrir ações"
+                        >
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                            <circle cx="5" cy="12" r="2" />
+                            <circle cx="12" cy="12" r="2" />
+                            <circle cx="19" cy="12" r="2" />
+                          </svg>
+                        </button>
+
+                        {openActionId === s.id && (
+                          <div
+                            className="absolute right-5 top-12 z-10 w-44 overflow-hidden rounded-xl bg-white py-1 text-left shadow-lg"
+                            style={{ border: "1px solid #E4E1F0" }}
+                          >
+                            <Link
+                              href={`/dashboard/backups/${s.id}`}
+                              onClick={() => setOpenActionId(null)}
+                              className="block px-4 py-2.5 text-sm transition-colors hover:bg-[#F5F3FB]"
+                              style={{ color: "#18163A" }}
+                            >
+                              Abrir snapshots
+                            </Link>
+                            <Link
+                              href="/dashboard/protection"
+                              onClick={() => setOpenActionId(null)}
+                              className="block px-4 py-2.5 text-sm transition-colors hover:bg-[#F5F3FB]"
+                              style={{ color: "#18163A" }}
+                            >
+                              Configurar plano
+                            </Link>
+                            <button
+                              type="button"
+                              onClick={() => setOpenActionId(null)}
+                              className="block w-full px-4 py-2.5 text-left text-sm transition-colors hover:bg-red-50"
+                              style={{ color: "#DC2626" }}
+                              title="Exclusão de máquina ainda não está disponível na API."
+                            >
+                              Excluir
+                            </button>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </section>
         </div>
       </div>
     </>
+  );
+}
+
+function StatusPill({ status }: { status: Snapshot["status"] }) {
+  const running = { label: "Em execução", dot: "#7B61FF", bg: "#EDE9FF", text: "#6046F0" };
+  const map: Record<Snapshot["status"], { label: string; dot: string; bg: string; text: string }> = {
+    COMPLETED: { label: "Concluído", dot: "#10B981", bg: "#ECFDF5", text: "#059669" },
+    RUNNING: running,
+    IN_PROGRESS: running,
+    PROCESSING: running,
+    FAILED: { label: "Falhou", dot: "#EF4444", bg: "#FEF2F2", text: "#DC2626" },
+  };
+  const m = map[status] ?? map.FAILED;
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium" style={{ background: m.bg, color: m.text }}>
+      <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: m.dot }} />
+      {m.label}
+    </span>
   );
 }

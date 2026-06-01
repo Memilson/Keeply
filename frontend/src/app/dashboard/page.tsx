@@ -2,375 +2,471 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { api, type Device, type Snapshot, API_BASE } from "@/lib/api";
-import { formatBytes, formatRelative } from "@/lib/format";
+import { api, API_BASE, type Device, type Snapshot, type SnapshotStatus } from "@/lib/api";
+import { formatBytes, formatDateTime, formatRelative } from "@/lib/format";
 import { Topbar } from "@/components/Topbar";
-import { Sparkline, DonutGauge } from "@/components/Sparkline";
+import { DonutGauge } from "@/components/Sparkline";
+
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 export default function DashboardOverview() {
   const [devices, setDevices] = useState<Device[]>([]);
   const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [asOf, setAsOf] = useState<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+
+    async function load() {
       try {
-        const [d, s] = await Promise.all([
+        const [deviceList, snapshotList] = await Promise.all([
           api<Device[]>("/api/devices"),
           api<Snapshot[]>("/api/snapshots"),
         ]);
         if (cancelled) return;
-        setDevices(d ?? []);
-        setSnapshots(s ?? []);
+        setDevices(deviceList ?? []);
+        setSnapshots(snapshotList ?? []);
+        setAsOf(Date.now());
+        setError(null);
       } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : "Falha ao carregar dados.");
+        if (!cancelled) {
+          setAsOf(Date.now());
+          setError(e instanceof Error ? e.message : "Falha ao carregar dados.");
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
-    })();
-    return () => { cancelled = true; };
+    }
+
+    load();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const completed = snapshots.filter((s) => s.status === "COMPLETED");
-  const running = snapshots.filter((s) => s.status === "RUNNING" || s.status === "IN_PROGRESS" || s.status === "PROCESSING");
-  const failed = snapshots.filter((s) => s.status === "FAILED");
-
-  const stats = useMemo(() => {
-    const totalOriginal = completed.reduce((acc, s) => acc + (s.totalOriginalSize ?? 0), 0);
+  const dashboard = useMemo(() => {
+    const now = asOf ?? 0;
+    const completed = snapshots.filter((s) => s.status === "COMPLETED");
+    const running = snapshots.filter(isRunningStatus);
+    const failed = snapshots.filter((s) => s.status === "FAILED");
+    const recent24h = snapshots.filter((s) => now - new Date(s.startedAt).getTime() <= DAY_MS);
+    const backups24h = recent24h.filter((s) => s.status === "COMPLETED" || isRunningStatus(s)).length;
+    const activeDevices = devices.filter((d) => d.lastSeenAt && now - new Date(d.lastSeenAt).getTime() <= DAY_MS).length;
+    const completedOrFailed = snapshots.filter((s) => s.status === "COMPLETED" || s.status === "FAILED");
+    const successRate =
+      completedOrFailed.length > 0 ? Math.round((completed.length / completedOrFailed.length) * 100) : 100;
     const totalCompressed = completed.reduce((acc, s) => acc + (s.totalCompressedSize ?? 0), 0);
-    const compression = totalOriginal > 0 ? totalOriginal / Math.max(totalCompressed, 1) : 0;
-    const healthy = devices.filter(
-      (d) => d.lastSeenAt && Date.now() - new Date(d.lastSeenAt).getTime() < 24 * 3600 * 1000
-    ).length;
-    const successRate = snapshots.length > 0 ? Math.round((completed.length / snapshots.length) * 100) : 100;
-    return { devices: devices.length, healthy, backups: completed.length, running: running.length, failed: failed.length, totalCompressed, totalOriginal, compression, successRate };
-  }, [devices, snapshots, completed, running, failed]);
+    const latestSnapshot = [...snapshots].sort(
+      (a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()
+    )[0];
 
-  const series = useMemo(() => {
-    const buckets: number[] = Array(14).fill(0);
-    const now = Date.now();
-    for (const s of snapshots) {
-      const t = new Date(s.startedAt).getTime();
-      const daysAgo = Math.floor((now - t) / (24 * 3600 * 1000));
-      if (daysAgo >= 0 && daysAgo < 14) buckets[13 - daysAgo]++;
-    }
-    return buckets;
-  }, [snapshots]);
+    const recentSnapshots = [...snapshots]
+      .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime())
+      .slice(0, 6);
 
-  const recent = useMemo(
-    () => [...snapshots].sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()).slice(0, 6),
-    [snapshots]
-  );
-
-  const topDevices = useMemo(() => {
-    const byDevice = new Map<string, number>();
-    for (const s of completed) {
-      byDevice.set(s.deviceId, (byDevice.get(s.deviceId) ?? 0) + (s.totalCompressedSize ?? 0));
-    }
-    return [...byDevice.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4).map(([id, size]) => {
-      const d = devices.find((x) => x.id === id);
-      return { id, name: d?.name || d?.hostname || "Máquina", size };
+    const activity = Array.from({ length: 7 }, (_, index) => {
+      const date = new Date(now - (6 - index) * DAY_MS);
+      const key = date.toISOString().slice(0, 10);
+      const count = snapshots.filter((s) => new Date(s.startedAt).toISOString().slice(0, 10) === key).length;
+      return {
+        key,
+        count,
+        label: date.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }),
+      };
     });
-  }, [completed, devices]);
+
+    const byDevice = new Map<string, number>();
+    for (const snapshot of completed) {
+      byDevice.set(snapshot.deviceId, (byDevice.get(snapshot.deviceId) ?? 0) + (snapshot.totalCompressedSize ?? 0));
+    }
+
+    const topDevices = [...byDevice.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([id, size]) => {
+        const device = devices.find((d) => d.id === id);
+        return { id, name: deviceName(device), size };
+      });
+
+    return {
+      activeDevices,
+      activity,
+      backups24h,
+      completed,
+      failed,
+      latestSnapshot,
+      offlineDevices: Math.max(devices.length - activeDevices, 0),
+      recentSnapshots,
+      running,
+      successRate,
+      topDevices,
+      totalCompressed,
+    };
+  }, [asOf, devices, snapshots]);
+
+  const lastUpdated = loading || !asOf ? "Atualizando..." : new Date(asOf).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
 
   return (
     <>
-      <Topbar title="Visão geral" subtitle="Resumo de proteção das suas máquinas" />
-      <div className="space-y-5 p-7">
+      <Topbar title="Visão geral do ambiente" />
+      <main className="dashboard-page">
+        <section className="dashboard-hero">
+          <div className="min-w-0">
+            <p className="dashboard-eyebrow">Dashboard</p>
+            <h1>Visão geral do ambiente</h1>
+            <p className="dashboard-subtitle">
+              Acompanhe proteção, atividade de backups e capacidade usada pelas máquinas conectadas.
+            </p>
+            <p className="dashboard-updated">Última atualização: {lastUpdated}</p>
+          </div>
+
+          <div className="dashboard-actions">
+            <Link href="/dashboard/backups" className="kp-btn kp-btn-primary">
+              Executar backup
+            </Link>
+            <Link href="/dashboard/machines#agentes" className="kp-btn kp-btn-secondary">
+              Instalar agente
+            </Link>
+            <button type="button" className="kp-btn kp-btn-secondary">
+              Exportar relatório
+            </button>
+          </div>
+        </section>
+
         {error && (
-          <div className="rounded-xl px-4 py-3 text-sm" style={{ background: "#FEF2F2", border: "1px solid #FECACA", color: "#DC2626" }}>
-            {error}{" "}
-            <span style={{ color: "#EF4444", opacity: 0.7 }}>(backend em {API_BASE} está online?)</span>
+          <div className="kp-alert-error">
+            {error} <span>(backend em {API_BASE} está online?)</span>
           </div>
         )}
 
-        {/* KPI strip */}
-        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <section className="kpi-grid">
           <KpiCard
             label="Máquinas protegidas"
-            value={loading ? "…" : `${stats.devices}`}
-            hint={`${stats.healthy} ativas nas últimas 24h`}
-            iconBg="#EDE9FF"
-            iconColor="#7B61FF"
-            icon={
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="3" y="4" width="18" height="7" rx="1.5" /><rect x="3" y="13" width="18" height="7" rx="1.5" /><circle cx="7" cy="7.5" r="0.7" fill="currentColor" /><circle cx="7" cy="16.5" r="0.7" fill="currentColor" />
-              </svg>
-            }
+            value={loading ? "..." : String(devices.length)}
+            hint={`${dashboard.activeDevices} ativas, ${dashboard.offlineDevices} offline`}
+            tone="purple"
+            icon={ICONS.devices}
           />
           <KpiCard
-            label="Backups concluídos"
-            value={loading ? "…" : `${stats.backups}`}
-            hint={`${stats.running} em execução agora`}
-            iconBg="#ECFDF5"
-            iconColor="#10B981"
-            icon={
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M20 6 9 17l-5-5" />
-              </svg>
-            }
+            label="Backups últimas 24h"
+            value={loading ? "..." : String(dashboard.backups24h)}
+            hint={`${dashboard.running.length} em execução agora`}
+            tone="green"
+            icon={ICONS.backup}
           />
           <KpiCard
-            label="Volume armazenado"
-            value={loading ? "…" : formatBytes(stats.totalCompressed)}
-            hint={`Original ${formatBytes(stats.totalOriginal)}`}
-            iconBg="#EFF6FF"
-            iconColor="#3B82F6"
-            icon={
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <ellipse cx="12" cy="5" rx="9" ry="3" /><path d="M3 5v6c0 1.7 4 3 9 3s9-1.3 9-3V5" /><path d="M3 11v6c0 1.7 4 3 9 3s9-1.3 9-3v-6" />
-              </svg>
-            }
+            label="Armazenamento usado"
+            value={loading ? "..." : formatBytes(dashboard.totalCompressed)}
+            hint="Snapshots concluídos"
+            tone="blue"
+            icon={ICONS.storage}
           />
           <KpiCard
-            label="Taxa de sucesso"
-            value={loading ? "…" : `${stats.successRate}%`}
-            hint={stats.failed > 0 ? `${stats.failed} falha(s) recente(s)` : "Sem falhas recentes"}
-            iconBg={stats.failed > 0 ? "#FEF3C7" : "#ECFDF5"}
-            iconColor={stats.failed > 0 ? "#F59E0B" : "#10B981"}
-            icon={
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 3 4 6v6c0 5 3.5 8.5 8 9 4.5-.5 8-4 8-9V6l-8-3Z" />
-              </svg>
-            }
+            label="Saúde do ambiente"
+            value={loading ? "..." : `${dashboard.successRate}%`}
+            hint="Sucesso entre concluídos e falhos"
+            tone="green"
+            icon={ICONS.shield}
+          />
+          <KpiCard
+            label="Último snapshot"
+            value={loading ? "..." : formatRelative(dashboard.latestSnapshot?.startedAt)}
+            hint={dashboard.latestSnapshot ? statusLabel(dashboard.latestSnapshot.status) : "Sem snapshots"}
+            tone="purple"
+            icon={ICONS.clock}
+          />
+          <KpiCard
+            label="Falhas críticas"
+            value={loading ? "..." : String(dashboard.failed.length)}
+            hint={dashboard.failed.length > 0 ? "Requer atenção" : "Nenhuma falha registrada"}
+            tone={dashboard.failed.length > 0 ? "red" : "green"}
+            icon={ICONS.warning}
           />
         </section>
 
-        {/* Charts row */}
-        <section className="grid gap-5 xl:grid-cols-3">
-          {/* Activity chart */}
-          <div className="kp-card xl:col-span-2">
-            <div className="flex items-center justify-between px-6 py-4" style={{ borderBottom: "1px solid #F0EEF8" }}>
-              <div>
-                <h2 className="text-sm font-semibold" style={{ color: "#18163A" }}>Atividade de backups</h2>
-                <p className="text-xs mt-0.5" style={{ color: "#6B6993" }}>Snapshots nos últimos 14 dias</p>
-              </div>
-              <span className="inline-flex items-center gap-1.5 text-xs" style={{ color: "#6B6993" }}>
-                <span className="h-2 w-2 rounded-full inline-block" style={{ background: "#7B61FF" }} />
-                Snapshots
-              </span>
-            </div>
-            <div className="p-6">
-              <BarChart values={series} />
-            </div>
-          </div>
+        <section className="dashboard-grid-main">
+          <article className="kp-card dashboard-card activity-card">
+            <CardHeader title="Atividade de backups" description="Snapshots registrados nos últimos 7 dias" />
+            <BackupActivityChart values={dashboard.activity} loading={loading} />
+          </article>
 
-          {/* Protection status */}
-          <div className="kp-card">
-            <div className="px-6 py-4" style={{ borderBottom: "1px solid #F0EEF8" }}>
-              <h2 className="text-sm font-semibold" style={{ color: "#18163A" }}>Status de proteção</h2>
-              <p className="text-xs mt-0.5" style={{ color: "#6B6993" }}>Saúde geral do ambiente</p>
-            </div>
-            <div className="flex flex-col items-center gap-5 p-6">
+          <article className="kp-card dashboard-card">
+            <CardHeader title="Status de proteção" description="Saúde geral do ambiente" />
+            <div className="protection-status">
               <DonutGauge
-                value={stats.successRate}
-                label={`${stats.successRate}%`}
+                value={loading ? 0 : dashboard.successRate}
+                label={loading ? "..." : `${dashboard.successRate}%`}
                 sublabel="sucesso"
-                size={152}
-                thickness={12}
+                size={156}
+                thickness={13}
                 color="#7B61FF"
+                trackColor="#EDE9FF"
               />
-              <div className="grid w-full grid-cols-3 gap-2">
-                <StatTag color="#10B981" label="OK" count={completed.length} />
-                <StatTag color="#7B61FF" label="Rodando" count={running.length} />
-                <StatTag color="#EF4444" label="Falhou" count={failed.length} />
+              <div className="protection-ok">
+                <span className="protection-dot" />
+                {dashboard.failed.length === 0 ? "Ambiente protegido" : "Falhas detectadas"}
+              </div>
+              <div className="status-counters">
+                <StatTag label="Concluído" count={dashboard.completed.length} color="#10B981" />
+                <StatTag label="Rodando" count={dashboard.running.length} color="#7B61FF" />
+                <StatTag label="Falhou" count={dashboard.failed.length} color="#EF4444" />
               </div>
             </div>
-          </div>
+          </article>
         </section>
 
-        {/* Bottom row */}
-        <section className="grid gap-5 xl:grid-cols-3">
-          {/* Recent snapshots */}
-          <div className="kp-card xl:col-span-2">
-            <div className="flex items-center justify-between px-6 py-4" style={{ borderBottom: "1px solid #F0EEF8" }}>
-              <div>
-                <h2 className="text-sm font-semibold" style={{ color: "#18163A" }}>Snapshots recentes</h2>
-                <p className="text-xs mt-0.5" style={{ color: "#6B6993" }}>Últimas execuções no seu ambiente</p>
-              </div>
-              <Link href="/dashboard/backups" className="text-xs font-medium transition-opacity hover:opacity-75" style={{ color: "#7B61FF" }}>
-                Ver todos →
+        <section className="dashboard-grid-bottom">
+          <article className="kp-card dashboard-card snapshots-card">
+            <div className="card-heading-row">
+              <CardHeader title="Snapshots recentes" description="Últimas execuções no seu ambiente" />
+              <Link href="/dashboard/backups" className="kp-link">
+                Ver todos
               </Link>
             </div>
-            {loading ? (
-              <p className="px-6 py-10 text-sm" style={{ color: "#6B6993" }}>Carregando…</p>
-            ) : recent.length === 0 ? (
-              <div className="flex flex-col items-center gap-3 px-6 py-12">
-                <div className="grid h-12 w-12 place-items-center rounded-2xl" style={{ background: "#EDE9FF" }}>
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#7B61FF" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                    <rect x="3" y="4" width="18" height="4" rx="1" /><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8" /><path d="M10 12h4" />
-                  </svg>
-                </div>
-                <p className="text-sm text-center" style={{ color: "#6B6993" }}>Nenhum snapshot ainda.<br />Instale o agente Keeply para começar.</p>
-              </div>
-            ) : (
-              <ul className="divide-y" style={{ borderColor: "#F0EEF8" }}>
-                {recent.map((snap) => {
-                  const device = devices.find((d) => d.id === snap.deviceId);
-                  return (
-                    <li key={snap.id} className="flex items-center gap-4 px-6 py-3.5 hover:bg-gray-50/50 transition-colors">
-                      <div className={`grid h-8 w-8 place-items-center rounded-lg ${statusBg(snap.status)}`}>
-                        <span className={statusFg(snap.status)}>{statusIcon(snap.status)}</span>
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium" style={{ color: "#18163A" }}>
-                          {device?.name ?? device?.hostname ?? "Máquina"}
-                        </p>
-                        <p className="truncate text-xs" style={{ color: "#6B6993" }}>{snap.sourcePath}</p>
-                      </div>
-                      <div className="hidden text-right text-xs md:block" style={{ color: "#6B6993" }}>
-                        <p className="font-semibold" style={{ color: "#18163A" }}>
-                          {formatBytes(snap.totalCompressedSize ?? 0)}
-                        </p>
-                        <p>{formatRelative(snap.startedAt)}</p>
-                      </div>
-                      <Link
-                        href={`/dashboard/backups/${snap.id}`}
-                        className="rounded-lg px-3 py-1.5 text-xs font-medium transition-colors hover:opacity-80"
-                        style={{ border: "1px solid #E4E1F0", color: "#7B61FF", background: "#FAFAFE" }}
-                      >
-                        Detalhes
-                      </Link>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </div>
+            <RecentSnapshotsTable snapshots={dashboard.recentSnapshots} devices={devices} loading={loading} />
+          </article>
 
-          {/* Top machines */}
-          <div className="kp-card">
-            <div className="px-6 py-4" style={{ borderBottom: "1px solid #F0EEF8" }}>
-              <h2 className="text-sm font-semibold" style={{ color: "#18163A" }}>Top máquinas por volume</h2>
-              <p className="text-xs mt-0.5" style={{ color: "#6B6993" }}>Onde está seu armazenamento</p>
-            </div>
-            {loading ? (
-              <p className="px-6 py-10 text-sm" style={{ color: "#6B6993" }}>Carregando…</p>
-            ) : topDevices.length === 0 ? (
-              <p className="px-6 py-12 text-center text-sm" style={{ color: "#6B6993" }}>Sem dados ainda.</p>
-            ) : (
-              <ul className="space-y-4 p-6">
-                {topDevices.map((d) => {
-                  const max = topDevices[0].size || 1;
-                  const pct = Math.round((d.size / max) * 100);
-                  return (
-                    <li key={d.id}>
-                      <div className="flex items-center justify-between mb-1.5">
-                        <span className="truncate text-sm font-medium" style={{ color: "#18163A" }}>{d.name}</span>
-                        <span className="text-xs ml-2 shrink-0" style={{ color: "#6B6993" }}>{formatBytes(d.size)}</span>
-                      </div>
-                      <div className="h-1.5 overflow-hidden rounded-full" style={{ background: "#EDE9FF" }}>
-                        <div
-                          className="h-full rounded-full transition-all"
-                          style={{ width: `${pct}%`, background: "#7B61FF" }}
-                        />
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-            <div className="px-6 py-4" style={{ borderTop: "1px solid #F0EEF8" }}>
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs" style={{ color: "#6B6993" }}>Compressão média</p>
-                  <p className="font-semibold text-sm mt-0.5" style={{ color: "#18163A" }}>
-                    {loading ? "…" : `${stats.compression.toFixed(1)}x`}
-                  </p>
-                </div>
-                <Sparkline values={series} />
-              </div>
-            </div>
-          </div>
+          <article className="kp-card dashboard-card">
+            <CardHeader title="Top máquinas por volume" description="Ranking por armazenamento usado" />
+            <TopDevices devices={dashboard.topDevices} loading={loading} />
+          </article>
         </section>
-      </div>
+      </main>
     </>
   );
 }
 
-function KpiCard({ label, value, hint, iconBg, iconColor, icon }: {
-  label: string; value: string; hint: string;
-  iconBg: string; iconColor: string; icon: React.ReactNode;
+function CardHeader({ title, description }: { title: string; description: string }) {
+  return (
+    <div className="card-header">
+      <h2>{title}</h2>
+      <p>{description}</p>
+    </div>
+  );
+}
+
+function KpiCard({
+  label,
+  value,
+  hint,
+  tone,
+  icon,
+}: {
+  label: string;
+  value: string;
+  hint: string;
+  tone: "purple" | "green" | "blue" | "red";
+  icon: React.ReactNode;
 }) {
   return (
-    <div className="kp-card p-5">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-xs font-medium uppercase tracking-wider" style={{ color: "#6B6993" }}>{label}</p>
-          <p className="mt-2.5 text-2xl font-bold tabular-nums" style={{ color: "#18163A" }}>{value}</p>
-          <p className="mt-1 text-xs" style={{ color: "#6B6993" }}>{hint}</p>
-        </div>
-        <div
-          className="grid h-10 w-10 shrink-0 place-items-center rounded-xl"
-          style={{ background: iconBg, color: iconColor }}
-        >
-          {icon}
-        </div>
+    <article className="kp-card kpi-card">
+      <div className={`kpi-icon kpi-icon-${tone}`}>{icon}</div>
+      <div className="min-w-0">
+        <p className="kpi-label">{label}</p>
+        <p className="kpi-value">{value}</p>
+        <p className="kpi-hint">{hint}</p>
+      </div>
+    </article>
+  );
+}
+
+function BackupActivityChart({ values, loading }: { values: { key: string; count: number; label: string }[]; loading: boolean }) {
+  const max = Math.max(...values.map((v) => v.count), 1);
+  const guideValues = [max, Math.ceil(max / 2), 0];
+
+  return (
+    <div className="chart-wrap">
+      <div className="chart-guides" aria-hidden="true">
+        {guideValues.map((value) => (
+          <span key={value}>{value}</span>
+        ))}
+      </div>
+      <div className="chart-bars">
+        {values.map((item) => {
+          const height = loading ? 22 : Math.max((item.count / max) * 100, item.count > 0 ? 12 : 4);
+          return (
+            <div key={item.key} className="chart-bar-cell" title={`${item.count} snapshots em ${item.label}`}>
+              <div className="chart-bar-track">
+                <div className="chart-bar" style={{ height: `${height}%`, opacity: item.count === 0 && !loading ? 0.28 : 1 }} />
+              </div>
+              <span>{item.label}</span>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
 }
 
-function BarChart({ values }: { values: number[] }) {
-  const max = Math.max(...values, 1);
+function RecentSnapshotsTable({
+  snapshots,
+  devices,
+  loading,
+}: {
+  snapshots: Snapshot[];
+  devices: Device[];
+  loading: boolean;
+}) {
+  if (loading) return <p className="empty-state">Carregando snapshots...</p>;
+  if (snapshots.length === 0) return <p className="empty-state">Nenhum snapshot ainda. Instale o agente Keeply para começar.</p>;
+
   return (
-    <div className="flex h-40 items-end gap-1">
-      {values.map((v, i) => {
-        const h = (v / max) * 100;
-        const isToday = i === values.length - 1;
-        return (
-          <div key={i} className="flex flex-1 flex-col items-center justify-end" title={`${v} snapshots`}>
-            <div
-              className="w-full rounded-t-sm transition-all"
-              style={{
-                height: `${Math.max(h, 3)}%`,
-                background: isToday ? "#7B61FF" : "#C4B8FF",
-                opacity: v === 0 ? 0.3 : 1,
-              }}
-            />
+    <div className="table-scroll">
+      <table className="kp-table">
+        <thead>
+          <tr>
+            {["Máquina", "Caminho", "Status", "Tamanho", "Duração", "Iniciado", "Ações"].map((heading) => (
+              <th key={heading}>{heading}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {snapshots.map((snapshot) => {
+            const device = devices.find((d) => d.id === snapshot.deviceId);
+            return (
+              <tr key={snapshot.id}>
+                <td>
+                  <div className="machine-cell">
+                    <span className="machine-avatar">{deviceName(device).slice(0, 2).toUpperCase()}</span>
+                    <span>{deviceName(device)}</span>
+                  </div>
+                </td>
+                <td>
+                  <span className="path-cell" title={snapshot.sourcePath}>
+                    {snapshot.sourcePath}
+                  </span>
+                </td>
+                <td>
+                  <StatusPill status={snapshot.status} />
+                </td>
+                <td>{formatBytes(snapshot.totalCompressedSize ?? 0)}</td>
+                <td>{formatDuration(snapshot.startedAt, snapshot.completedAt)}</td>
+                <td>{formatDateTime(snapshot.startedAt)}</td>
+                <td>
+                  <Link href={`/dashboard/backups/${snapshot.id}`} className="table-action">
+                    Abrir
+                  </Link>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function TopDevices({ devices, loading }: { devices: { id: string; name: string; size: number }[]; loading: boolean }) {
+  if (loading) return <p className="empty-state">Carregando ranking...</p>;
+  if (devices.length === 0) return <p className="empty-state">Sem dados de volume ainda.</p>;
+
+  const max = devices[0]?.size || 1;
+  return (
+    <div className="volume-list">
+      {devices.map((device, index) => (
+        <div key={device.id} className="volume-row">
+          <div className="volume-row-top">
+            <span className="volume-rank">{index + 1}</span>
+            <span className="volume-name">{device.name}</span>
+            <span className="volume-size">{formatBytes(device.size)}</span>
           </div>
-        );
-      })}
+          <div className="volume-track">
+            <div className="volume-bar" style={{ width: `${Math.max((device.size / max) * 100, 6)}%` }} />
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
 
-function StatTag({ color, label, count }: { color: string; label: string; count: number }) {
+function StatTag({ label, count, color }: { label: string; count: number; color: string }) {
   return (
-    <div className="rounded-xl p-3 text-center" style={{ background: "#F8F7FD" }}>
-      <div className="flex items-center justify-center gap-1.5 mb-1">
-        <span className="h-1.5 w-1.5 rounded-full inline-block" style={{ background: color }} />
-        <span className="text-[11px]" style={{ color: "#6B6993" }}>{label}</span>
-      </div>
-      <p className="text-base font-bold" style={{ color: "#18163A" }}>{count}</p>
+    <div className="status-counter">
+      <span style={{ background: color }} />
+      <strong>{count}</strong>
+      <small>{label}</small>
     </div>
   );
 }
 
-function statusBg(s: Snapshot["status"]) {
-  return s === "COMPLETED" ? "bg-emerald-50" : s === "RUNNING" ? "bg-[#EDE9FF]" : "bg-red-50";
+function StatusPill({ status }: { status: SnapshotStatus }) {
+  const map: Record<SnapshotStatus, { label: string; className: string }> = {
+    COMPLETED: { label: "Concluído", className: "badge-success" },
+    RUNNING: { label: "Em execução", className: "badge-running" },
+    IN_PROGRESS: { label: "Em execução", className: "badge-running" },
+    PROCESSING: { label: "Processando", className: "badge-running" },
+    FAILED: { label: "Falhou", className: "badge-danger" },
+  };
+  const meta = map[status] ?? map.FAILED;
+  return <span className={`kp-badge ${meta.className}`}>{meta.label}</span>;
 }
-function statusFg(s: Snapshot["status"]) {
-  return s === "COMPLETED" ? "text-emerald-600" : s === "RUNNING" ? "text-[#7B61FF]" : "text-red-500";
+
+function isRunningStatus(snapshot: Snapshot) {
+  return snapshot.status === "RUNNING" || snapshot.status === "IN_PROGRESS" || snapshot.status === "PROCESSING";
 }
-function statusIcon(s: Snapshot["status"]) {
-  if (s === "COMPLETED")
-    return (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M20 6 9 17l-5-5" />
-      </svg>
-    );
-  if (s === "RUNNING")
-    return (
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="animate-spin">
-        <path d="M21 12a9 9 0 1 1-6.2-8.55" />
-      </svg>
-    );
-  return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M12 9v4" /><path d="M12 17h.01" /><circle cx="12" cy="12" r="10" />
+
+function statusLabel(status: SnapshotStatus) {
+  if (status === "COMPLETED") return "Concluído";
+  if (status === "FAILED") return "Falhou";
+  return "Em execução";
+}
+
+function deviceName(device?: Device) {
+  return device?.name || device?.hostname || "Máquina";
+}
+
+function formatDuration(startedAt?: string, completedAt?: string) {
+  if (!startedAt || !completedAt) return "-";
+  const diff = new Date(completedAt).getTime() - new Date(startedAt).getTime();
+  if (!Number.isFinite(diff) || diff < 0) return "-";
+  const seconds = Math.round(diff / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  if (minutes < 60) return remainingSeconds ? `${minutes}m ${remainingSeconds}s` : `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  return remainingMinutes ? `${hours}h ${remainingMinutes}m` : `${hours}h`;
+}
+
+const ICONS = {
+  devices: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="4" width="18" height="6" rx="1.5" />
+      <rect x="3" y="14" width="18" height="6" rx="1.5" />
+      <path d="M7 7h.01M7 17h.01" />
     </svg>
-  );
-}
+  ),
+  backup: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M20 6 9 17l-5-5" />
+    </svg>
+  ),
+  storage: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+      <ellipse cx="12" cy="5" rx="8" ry="3" />
+      <path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5" />
+      <path d="M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6" />
+    </svg>
+  ),
+  shield: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 3 5 6v5c0 4.7 3 8.2 7 9 4-.8 7-4.3 7-9V6l-7-3Z" />
+      <path d="m9 12 2 2 4-4" />
+    </svg>
+  ),
+  clock: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="8" />
+      <path d="M12 8v5l3 2" />
+    </svg>
+  ),
+  warning: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+      <path d="m12 3 9 16H3L12 3Z" />
+      <path d="M12 9v4M12 17h.01" />
+    </svg>
+  ),
+};

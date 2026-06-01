@@ -44,13 +44,27 @@ Este pacote entrega a base inicial em Java 25:
 - SHA-256 por chunk e por arquivo.
 - Compressão Zstandard (Zstd), nível 3.
 - Manifesto JSON.
-- Docker Compose para PostgreSQL e MinIO.
+- Docker Compose para PostgreSQL, MinIO, backend e frontend.
 
 ## Rodando a infra
 
 ```bash
 cd infra
 docker compose up -d
+```
+
+Serviços expostos:
+
+- Frontend: `http://localhost:3000`
+- Backend: `http://localhost:8080`
+- MinIO API: `http://localhost:9000`
+- MinIO Console: `http://localhost:9001`
+- PostgreSQL: `localhost:5432`
+
+Se alguma porta já estiver ocupada, você pode sobrescrever na hora de subir, por exemplo:
+
+```bash
+FRONTEND_PORT=3001 BACKEND_PORT=8081 docker compose up -d
 ```
 
 MinIO Console:

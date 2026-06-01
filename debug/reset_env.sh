@@ -40,11 +40,12 @@ sleep 1
 pkill -9 -f "com.keeply.backend" || true
 
 # 1. Parar infra e remover volumes
-echo "Limpando volumes do Docker (Postgres e MinIO)..."
+echo "Limpando volumes do Docker (Postgres, MinIO, backend e frontend)..."
 docker compose -f infra/docker-compose.yml down -v
 
-# 2. Subir infra limpa
-echo "Subindo infraestrutura..."
+# 2. Subir infra limpa e reconstruir backend com o código local
+echo "Subindo infraestrutura (com rebuild do backend)..."
+docker compose -f infra/docker-compose.yml up -d --build backend
 docker compose -f infra/docker-compose.yml up -d
 
 # 3. Remover banco local do agente e arquivos de dados
@@ -63,27 +64,33 @@ find "$PROJECT_ROOT" -maxdepth 2 -type f -name "agent.db*" -exec rm -f {} +
 
 echo "Arquivos e diretorios locais limpos."
 
-echo "AVISO: Por favor, inicie o backend agora (./gradlew :backend:bootRun) em outro terminal."
-echo "Aguardando backend (port 8080) ficar online para registrar o usuario..."
+echo "Aguardando backend (container) ficar online para registrar o usuario..."
 
 # 4. Aguardar o backend estar pronto
 MAX_RETRIES=60
 COUNT=0
-until curl -s http://localhost:8080/actuator/health > /dev/null || [ $COUNT -eq $MAX_RETRIES ]; do
+until curl -fsS http://localhost:8080/actuator/health > /dev/null || [ $COUNT -eq $MAX_RETRIES ]; do
     sleep 2
     COUNT=$((COUNT + 1))
     echo "   Tentativa $COUNT/$MAX_RETRIES..."
 done
 
 if [ $COUNT -eq $MAX_RETRIES ]; then
-    echo "Erro: O backend nao subiu a tempo ou nao foi iniciado."
+    echo "Erro: O backend nao subiu a tempo via Docker Compose."
     exit 1
 fi
 
 # 5. Criar usuário de teste
 echo "Criando usuario de teste (keeply@keeply.com)..."
-curl -s -X POST http://localhost:8080/api/auth/register \
+HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST http://localhost:8080/api/auth/register \
      -H "Content-Type: application/json" \
-     -d '{"name": "Keeply Test", "email": "keeply@keeply.com", "password": "keeply123"}'
+     -d '{"name": "Keeply Test", "email": "keeply@keeply.com", "password": "keeply123"}')
+
+if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "201" ] || [ "$HTTP_CODE" = "409" ]; then
+    echo "Usuario pronto (status HTTP $HTTP_CODE)."
+else
+    echo "Falha ao criar usuario (status HTTP $HTTP_CODE)."
+    exit 1
+fi
 
 echo -e "\nAmbiente resetado e usuario criado com sucesso!"

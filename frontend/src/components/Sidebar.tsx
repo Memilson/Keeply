@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { KeeplyMark } from "./KeeplyLogo";
 
-type Item = { href: string; label: string; icon: React.ReactNode };
+type Item = { href: string; label: string; icon: React.ReactNode; activePrefix?: string };
 
 const ICONS = {
   grid: (
@@ -20,6 +20,11 @@ const ICONS = {
   archive: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
       <rect x="3" y="4" width="18" height="4" rx="1" /><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8" /><path d="M10 12h4" />
+    </svg>
+  ),
+  agent: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M8 8h8v8H8z" /><path d="M4 10h4M4 14h4M16 10h4M16 14h4M10 4v4M14 4v4M10 16v4M14 16v4" />
     </svg>
   ),
   shield: (
@@ -42,34 +47,36 @@ const ICONS = {
 const ITEMS: Item[] = [
   { href: "/dashboard", label: "Visão geral", icon: ICONS.grid },
   { href: "/dashboard/machines", label: "Máquinas", icon: ICONS.server },
-  { href: "/dashboard/backups", label: "Backups", icon: ICONS.archive },
-  { href: "/dashboard/protection", label: "Proteção", icon: ICONS.shield },
+  { href: "/dashboard/activities", label: "Atividades", icon: ICONS.chart },
 ];
 
 export function Sidebar() {
   const pathname = usePathname();
   return (
-    <aside className="hidden w-60 shrink-0 flex-col lg:flex" style={{ background: "#FFFFFF", borderRight: "1px solid #E9E6F4" }}>
+    <aside className="hidden h-screen w-[276px] shrink-0 flex-col overflow-hidden p-3 lg:flex" style={{ background: "#F8F7FD", borderRight: "1px solid #E9E6F4" }}>
       {/* Logo */}
-      <div className="flex items-center gap-2 px-5 py-5" style={{ borderBottom: "1px solid #F0EEF8" }}>
-        <KeeplyMark size={26} />
-        <span className="text-[17px] font-semibold tracking-tight" style={{ color: "#18163A" }}>Keeply</span>
+      <div className="flex items-center gap-3 rounded-2xl bg-white px-4 py-4" style={{ border: "1px solid #E9E6F4" }}>
+        <KeeplyMark size={30} />
+        <div className="min-w-0">
+          <span className="block text-[17px] font-semibold tracking-tight" style={{ color: "#18163A" }}>Keeply</span>
+        </div>
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 px-3 py-4 space-y-0.5">
+      <nav className="flex-1 space-y-1 px-1 py-5">
         {ITEMS.map((it) => {
-          const active = pathname === it.href || (it.href !== "/dashboard" && pathname.startsWith(it.href));
+          const activeBase = it.activePrefix ?? it.href.split("#")[0];
+          const active = pathname === activeBase || (activeBase !== "/dashboard" && pathname.startsWith(activeBase));
           return (
             <Link
               key={it.href}
               href={it.href}
-              style={active ? { background: "#EDE9FF", color: "#6046F0" } : { color: "#6B6993" }}
-              className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-150 ${
-                active ? "" : "hover:bg-[#F5F3FB] hover:text-[#18163A]"
+              style={active ? { background: "#EDE9FF", color: "#6046F0", boxShadow: "0 6px 18px rgba(123, 97, 255, 0.12)" } : { color: "#6B6993" }}
+              className={`flex items-center gap-3 rounded-xl px-3.5 py-3 text-sm font-medium transition-all duration-150 ${
+                active ? "" : "hover:bg-white hover:text-[#18163A]"
               }`}
             >
-              <span className="grid h-5 w-5 place-items-center shrink-0">{it.icon}</span>
+              <span className="grid h-5 w-5 shrink-0 place-items-center">{it.icon}</span>
               <span>{it.label}</span>
             </Link>
           );
@@ -77,9 +84,9 @@ export function Sidebar() {
       </nav>
 
       {/* Bottom agent install card */}
-      <div className="mx-3 mb-4 rounded-xl p-4" style={{ background: "#F5F3FB", border: "1px solid #E9E6F4" }}>
+      <div className="rounded-2xl bg-white p-4" style={{ border: "1px solid #E9E6F4", boxShadow: "0 10px 28px rgba(24, 22, 58, 0.06)" }}>
         <div className="flex items-start gap-2.5">
-          <div className="grid h-7 w-7 shrink-0 place-items-center rounded-lg" style={{ background: "#EDE9FF" }}>
+          <div className="grid h-8 w-8 shrink-0 place-items-center rounded-xl" style={{ background: "#EDE9FF" }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7B61FF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M12 3 4 6v6c0 5 3.5 8.5 8 9 4.5-.5 8-4 8-9V6l-8-3Z" />
             </svg>
@@ -89,13 +96,20 @@ export function Sidebar() {
             <p className="mt-0.5 text-[11px] leading-relaxed" style={{ color: "#6B6993" }}>Adicione novas máquinas ao seu ambiente.</p>
           </div>
         </div>
-        <button className="mt-3 w-full rounded-lg py-1.5 text-xs font-medium text-white transition-colors hover:opacity-90" style={{ background: "#7B61FF" }}>
+        <button className="mt-3 w-full rounded-xl py-2 text-xs font-medium text-white transition-colors hover:opacity-90" style={{ background: "#7B61FF" }}>
           Ver guia
         </button>
       </div>
 
       {/* Version */}
-      <div className="px-5 pb-4 text-[10px]" style={{ color: "#A9A6C0" }}>
+      <button className="mt-3 flex items-center gap-2 rounded-xl px-3 py-2.5 text-left text-xs font-medium transition-colors hover:bg-white" style={{ color: "#8A87A8" }}>
+        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+          <path d="m15 18-6-6 6-6" />
+        </svg>
+        Recolher menu
+      </button>
+
+      <div className="px-3 pb-1 pt-2 text-[10px]" style={{ color: "#A9A6C0" }}>
         Keeply v1.0
       </div>
     </aside>

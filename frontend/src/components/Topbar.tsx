@@ -1,30 +1,44 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { clearTokens } from "@/lib/api";
 
-type Props = { title: string; subtitle?: string };
+type Props = { title?: string; subtitle?: string };
 
-export function Topbar({ title, subtitle }: Props) {
+function getStoredUserSnapshot() {
+  if (typeof window === "undefined") return "";
+  return localStorage.getItem("keeply.user") ?? "";
+}
+
+function parseStoredUser(raw: string) {
+  try {
+    if (!raw) return { initials: "KP", userName: "Conta" };
+    const u = JSON.parse(raw) as { name?: string; email?: string };
+    const src = u.name ?? u.email ?? "Keeply";
+    const parts = src.split(/[\s@]+/).filter(Boolean);
+    const initials = `${parts[0]?.[0] ?? "K"}${parts[1]?.[0] ?? ""}`.toUpperCase();
+    return { initials, userName: u.name ?? u.email ?? "Conta" };
+  } catch {
+    return { initials: "KP", userName: "Conta" };
+  }
+}
+
+function subscribeToStoredUser(callback: () => void) {
+  window.addEventListener("storage", callback);
+  return () => window.removeEventListener("storage", callback);
+}
+
+export function Topbar(props: Props) {
+  void props;
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [initials, setInitials] = useState("KP");
-  const [userName, setUserName] = useState("Conta");
-
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem("keeply.user");
-      if (raw) {
-        const u = JSON.parse(raw) as { name?: string; email?: string };
-        const src = u.name ?? u.email ?? "Keeply";
-        const parts = src.split(/[\s@]+/).filter(Boolean);
-        const i = (parts[0]?.[0] ?? "K") + (parts[1]?.[0] ?? "");
-        setInitials(i.toUpperCase());
-        setUserName(u.name ?? u.email ?? "Conta");
-      }
-    } catch {}
-  }, []);
+  const rawUser = useSyncExternalStore(
+    subscribeToStoredUser,
+    getStoredUserSnapshot,
+    () => ""
+  );
+  const { initials, userName } = useMemo(() => parseStoredUser(rawUser), [rawUser]);
 
   function logout() {
     clearTokens();
@@ -33,36 +47,8 @@ export function Topbar({ title, subtitle }: Props) {
   }
 
   return (
-    <header className="sticky top-0 z-20 flex items-center justify-between gap-4 bg-white px-8 py-3.5" style={{ borderBottom: "1px solid #E4E1F0" }}>
-      <div className="min-w-0">
-        <h1 className="truncate text-lg font-semibold" style={{ color: "#18163A" }}>{title}</h1>
-        {subtitle && <p className="truncate text-xs" style={{ color: "#6B6993" }}>{subtitle}</p>}
-      </div>
-
+    <header className="sticky top-0 z-20 flex min-h-[68px] items-center justify-end gap-4 bg-white/90 px-5 backdrop-blur lg:px-8" style={{ borderBottom: "1px solid #E9E6F4" }}>
       <div className="flex items-center gap-2.5">
-        {/* Search */}
-        <div className="hidden items-center gap-2 rounded-lg border px-3 py-2 md:flex" style={{ border: "1px solid #E4E1F0", background: "#F8F7FD" }}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6B6993" strokeWidth="2">
-            <circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" />
-          </svg>
-          <input
-            placeholder="Buscar…"
-            className="w-52 bg-transparent text-sm focus:outline-none"
-            style={{ color: "#18163A" }}
-          />
-        </div>
-
-        {/* Bell */}
-        <button
-          className="relative grid h-9 w-9 place-items-center rounded-lg transition-colors hover:bg-gray-50"
-          style={{ border: "1px solid #E4E1F0" }}
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6B6993" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" /><path d="M10 21a2 2 0 0 0 4 0" />
-          </svg>
-          <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full" style={{ background: "#EF4444" }} />
-        </button>
-
         {/* User */}
         <div className="relative">
           <button
@@ -85,21 +71,38 @@ export function Topbar({ title, subtitle }: Props) {
           </button>
 
           {open && (
-            <div className="absolute right-0 mt-2 w-44 overflow-hidden rounded-xl bg-white shadow-lg" style={{ border: "1px solid #E4E1F0" }}>
+            <div className="absolute right-0 mt-2 w-48 overflow-hidden rounded-xl bg-white shadow-lg" style={{ border: "1px solid #E4E1F0" }}>
               <div className="px-4 py-3" style={{ borderBottom: "1px solid #F0EEF8" }}>
                 <p className="text-xs font-medium" style={{ color: "#18163A" }}>{userName}</p>
                 <p className="text-[11px]" style={{ color: "#6B6993" }}>Administrador</p>
               </div>
-              <button
-                onClick={logout}
-                className="flex w-full items-center gap-2 px-4 py-2.5 text-sm transition-colors hover:bg-gray-50"
-                style={{ color: "#EF4444" }}
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" />
-                </svg>
-                Sair
-              </button>
+
+              <div className="py-1">
+                <button
+                  onClick={() => {
+                    setOpen(false);
+                    router.push("/dashboard/perfil");
+                  }}
+                  className="flex w-full items-center gap-2 px-4 py-2.5 text-sm transition-colors hover:bg-gray-50"
+                  style={{ color: "#18163A" }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />
+                  </svg>
+                  Gerenciar Perfil
+                </button>
+
+                <button
+                  onClick={logout}
+                  className="flex w-full items-center gap-2 px-4 py-2.5 text-sm transition-colors hover:bg-gray-50"
+                  style={{ color: "#EF4444" }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" />
+                  </svg>
+                  Sair
+                </button>
+              </div>
             </div>
           )}
         </div>
