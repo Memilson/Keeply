@@ -1,3 +1,5 @@
+# syntax=docker/dockerfile:1.7
+
 FROM eclipse-temurin:25-jdk AS build
 WORKDIR /app
 
@@ -6,7 +8,8 @@ COPY gradle ./gradle
 COPY backend ./backend
 COPY agent ./agent
 
-RUN chmod +x ./gradlew && ./gradlew :backend:bootJar -x test --no-daemon
+RUN --mount=type=cache,target=/root/.gradle \
+    chmod +x ./gradlew && ./gradlew :backend:bootJar -x test --no-daemon
 
 FROM eclipse-temurin:25-jre
 WORKDIR /app

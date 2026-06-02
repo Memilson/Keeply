@@ -61,4 +61,8 @@ public final class SnapshotDtos {
             List<SnapshotFileItem> items,
             PageMetadata pagination
     ) {}
+
+    public record SelectedArchiveRequest(
+            @NotNull @Size(min = 1, max = 10) List<@NotBlank @Size(max = 4096) String> paths
+    ) {}
 }

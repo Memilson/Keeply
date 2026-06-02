@@ -4,6 +4,7 @@ import com.keeply.agent.api.BackendClient;
 import com.keeply.agent.api.LogUtils;
 import com.keeply.agent.auth.DeviceAuthStore;
 import com.keeply.agent.config.AgentConfig;
+import com.keeply.agent.config.AgentConfigWriter;
 import com.keeply.agent.model.ProtectionPlan;
 import com.keeply.agent.core.BackupEngine;
 import com.keeply.agent.core.BackupSnapshotException;
@@ -29,23 +30,32 @@ public final class BackupCycleRunner {
     private final AtomicBoolean running = new AtomicBoolean(false);
 
     private final BackendClient backend;
+    private final AgentConfig config;
+    private final AgentConfigWriter configWriter;
     private final LocalDatabase db;
     private final SourceBackupExecutor sourceBackupExecutor;
     private final DeviceAuthStore authStore;
     private UUID deviceId;
 
-    public BackupCycleRunner(AgentConfig config, LocalDatabase db, DeviceAuthStore authStore) {
-        this.backend = new BackendClient(config.backend().url(), authStore);
-        this.db = db;
-        this.authStore = authStore;
-        this.sourceBackupExecutor = (id, source) -> new BackupEngine(backend, db).backup(id, source);
+    public BackupCycleRunner(AgentConfig config, Path configPath, LocalDatabase db, DeviceAuthStore authStore) {
+        this(config, new BackendClient(config.backend().url(), authStore), new AgentConfigWriter(configPath),
+                db, authStore, null);
     }
 
     BackupCycleRunner(AgentConfig config, DeviceAuthStore authStore, SourceBackupExecutor sourceBackupExecutor) {
-        this.backend = new BackendClient(config.backend().url(), authStore);
-        this.db = null;
+        this(config, new BackendClient(config.backend().url(), authStore), null, null, authStore, sourceBackupExecutor);
+    }
+
+    BackupCycleRunner(AgentConfig config, BackendClient backend, AgentConfigWriter configWriter,
+                      LocalDatabase db, DeviceAuthStore authStore, SourceBackupExecutor sourceBackupExecutor) {
+        this.config = config;
+        this.backend = backend;
+        this.configWriter = configWriter;
+        this.db = db;
         this.authStore = authStore;
-        this.sourceBackupExecutor = sourceBackupExecutor;
+        this.sourceBackupExecutor = sourceBackupExecutor != null
+                ? sourceBackupExecutor
+                : (id, source) -> new BackupEngine(backend, db).backup(id, source);
     }
 
     public void runCycle() {
@@ -72,9 +82,9 @@ public final class BackupCycleRunner {
     }
 
     void backupAllSources(UUID currentDeviceId) {
-        Optional<ProtectionPlan> maybePlan = backend.getDevicePlan(currentDeviceId);
+        Optional<ProtectionPlan> maybePlan = resolvePlan(currentDeviceId);
         if (maybePlan.isEmpty()) {
-            log.warn("event=backup.cycle status=skipped reason=missing_protection_plan");
+            log.warn("event=backup.cycle status=skipped reason=missing_remote_and_local_plan");
             return;
         }
         log.info("event=backup.cycle device_id={} status=running_sources", currentDeviceId);
@@ -193,5 +203,70 @@ public final class BackupCycleRunner {
             return;
         }
         throw new IllegalStateException("Device não autenticado no ciclo atual.");
+    }
+
+    private Optional<ProtectionPlan> resolvePlan(UUID currentDeviceId) {
+        try {
+            Optional<ProtectionPlan> remotePlan = backend.getDevicePlan(currentDeviceId);
+            if (remotePlan.isPresent()) {
+                persistLocalPlan(remotePlan.get());
+                return remotePlan;
+            }
+            log.warn("event=backup.plan status=missing source=backend");
+        } catch (RuntimeException e) {
+            if (isNetworkError(e)) {
+                log.warn("event=backup.plan status=fallback_to_local reason=network_error message={}", e.getMessage());
+            } else {
+                throw e;
+            }
+        }
+
+        Optional<ProtectionPlan> localPlan = localCachedPlan();
+        if (localPlan.isPresent()) {
+            log.info("event=backup.plan status=loaded source=agent_yaml");
+        } else {
+            log.warn("event=backup.plan status=missing source=agent_yaml");
+        }
+        return localPlan;
+    }
+
+    private Optional<ProtectionPlan> localCachedPlan() {
+        List<Path> configuredSources = config.backup() != null && config.backup().sources() != null
+                ? config.backup().sources()
+                : List.of();
+        if (configuredSources.isEmpty()) {
+            return Optional.empty();
+        }
+        String cron = config.schedule() != null ? config.schedule().cron() : null;
+        ProtectionPlan.RetentionMode retentionMode = ProtectionPlan.RetentionMode.KEEP_ALL;
+        Integer retentionDays = null;
+        if (config.retention() != null && config.retention().mode() != null) {
+            retentionMode = ProtectionPlan.RetentionMode.valueOf(config.retention().mode());
+            retentionDays = config.retention().days();
+        }
+        ProtectionPlan.PlanType planType = configuredSources.size() == 1
+                ? ProtectionPlan.PlanType.DEFAULT
+                : ProtectionPlan.PlanType.CUSTOM;
+        return Optional.of(new ProtectionPlan(
+                planType,
+                configuredSources.stream().map(Path::toString).toList(),
+                false,
+                false,
+                cron,
+                retentionMode,
+                retentionDays,
+                null));
+    }
+
+    private void persistLocalPlan(ProtectionPlan plan) {
+        if (configWriter == null) {
+            return;
+        }
+        try {
+            String email = config.auth() != null ? config.auth().email() : null;
+            configWriter.savePlan(config.backend().url(), email, plan);
+        } catch (Exception e) {
+            log.warn("event=backup.plan_cache status=write_failed message={}", e.getMessage());
+        }
     }
 }

@@ -35,12 +35,14 @@ public final class DeviceApiClient {
     ProtectionPlan upsertPlan(UUID deviceId, ProtectionPlan.PlanType type, List<String> sources,
                               boolean cdpEnabled, boolean encryptionEnabled, String scheduleCron,
                               String traceId) throws Exception {
-        return upsertPlan(deviceId, type, sources, cdpEnabled, encryptionEnabled, scheduleCron, null, traceId);
+        return upsertPlan(deviceId, type, sources, cdpEnabled, encryptionEnabled, scheduleCron,
+                null, null, null, traceId);
     }
 
     ProtectionPlan upsertPlan(UUID deviceId, ProtectionPlan.PlanType type, List<String> sources,
                               boolean cdpEnabled, boolean encryptionEnabled, String scheduleCron,
-                              String encryptionPassword, String traceId) throws Exception {
+                              String encryptionPassword, ProtectionPlan.RetentionMode retentionMode,
+                              Integer retentionDays, String traceId) throws Exception {
         Map<String, Object> payload = new java.util.LinkedHashMap<>();
         payload.put("planType", type);
         payload.put("sources", sources);
@@ -48,6 +50,8 @@ public final class DeviceApiClient {
         payload.put("encryptionEnabled", encryptionEnabled);
         if (scheduleCron != null) payload.put("scheduleCron", scheduleCron);
         if (encryptionPassword != null && !encryptionPassword.isBlank()) payload.put("encryptionPassword", encryptionPassword);
+        if (retentionMode != null) payload.put("retentionMode", retentionMode);
+        if (retentionDays != null) payload.put("retentionDays", retentionDays);
         String body = mapper.writeValueAsString(payload);
         return mapper.readValue(executor.sendJson("/api/devices/" + deviceId + "/plan",
                 body, "PUT", traceId).body(), ProtectionPlan.class);

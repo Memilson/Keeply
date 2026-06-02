@@ -26,7 +26,7 @@ public final class AgentConfigReader {
         Map<String, Object> root = yaml.readValue(Files.readString(path),
                 new TypeReference<LinkedHashMap<String, Object>>() {});
         if (root == null) {
-            return Optional.of(new UiConfig(null, null, List.of(), null, false, null));
+            return Optional.of(new UiConfig(null, null, List.of(), null, false, null, null, null));
         }
         return Optional.of(new UiConfig(
                 property(root, "backend", "url"),
@@ -34,7 +34,9 @@ public final class AgentConfigReader {
                 sources(root),
                 property(root, "schedule", "cron"),
                 boolProperty(root, "encryption", "enabled"),
-                property(root, "encryption", "password")));
+                property(root, "encryption", "password"),
+                property(root, "retention", "mode"),
+                intProperty(root, "retention", "days")));
     }
 
     public Path path() {
@@ -62,6 +64,22 @@ public final class AgentConfigReader {
         return false;
     }
 
-    public record UiConfig(String backendUrl, String email, List<String> sources, String cron, boolean encryptionEnabled, String encryptionPassword) {
+    private static Integer intProperty(Map<String, Object> root, String section, String key) {
+        if (root.get(section) instanceof Map<?, ?> values && values.get(key) instanceof Number number) {
+            return number.intValue();
+        }
+        return null;
+    }
+
+    public record UiConfig(
+            String backendUrl,
+            String email,
+            List<String> sources,
+            String cron,
+            boolean encryptionEnabled,
+            String encryptionPassword,
+            String retentionMode,
+            Integer retentionDays
+    ) {
     }
 }

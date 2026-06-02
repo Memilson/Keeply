@@ -36,6 +36,13 @@ public class ProtectionPlan {
     @Column(name = "schedule_cron", length = 100)
     public String scheduleCron;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "retention_mode", nullable = false, length = 32)
+    public RetentionMode retentionMode = RetentionMode.KEEP_ALL;
+
+    @Column(name = "retention_days")
+    public Integer retentionDays;
+
     @Column(name = "encryption_password_hash", length = 255)
     public String encryptionPasswordHash;
 

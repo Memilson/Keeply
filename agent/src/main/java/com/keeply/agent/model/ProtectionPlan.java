@@ -9,10 +9,17 @@ public record ProtectionPlan(
         boolean cdpEnabled,
         boolean encryptionEnabled,
         String scheduleCron,
+        RetentionMode retentionMode,
+        Integer retentionDays,
         Instant updatedAt
 ) {
     public enum PlanType {
         DEFAULT,
         CUSTOM
+    }
+
+    public enum RetentionMode {
+        KEEP_ALL,
+        KEEP_DAYS
     }
 }
