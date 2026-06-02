@@ -51,8 +51,8 @@ export default function RegisterPage() {
 
   return (
     <AuthShell
-      title="Criar sua conta"
-      subtitle="Comece a proteger suas máquinas em minutos."
+      title="Criar conta"
+      subtitle=""
       footer={
         <>
           Já tem conta?{" "}

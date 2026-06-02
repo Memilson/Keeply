@@ -6,24 +6,50 @@ type Props = { title: string; subtitle: string; children: ReactNode; footer: Rea
 
 export function AuthShell({ title, subtitle, children, footer }: Props) {
   return (
-    <main className="flex flex-1 items-center justify-center px-6 py-12" style={{ background: "#F5F3FB" }}>
-      <div className="w-full max-w-sm">
-        <div className="mb-8 flex justify-center">
+    <main
+      className="relative flex flex-1 items-center justify-center overflow-hidden px-6 py-10"
+      style={{
+        background:
+          "radial-gradient(circle at 50% 0%, rgba(123,97,255,0.10), transparent 28%), #F5F3FB",
+      }}
+    >
+      <div
+        className="pointer-events-none absolute -left-[14%] top-[58%] h-[520px] w-[520px] rounded-full"
+        style={{ border: "1px solid rgba(123, 97, 255, 0.14)" }}
+      />
+      <div
+        className="pointer-events-none absolute -right-[12%] -top-[8%] h-[520px] w-[520px] rounded-full"
+        style={{ border: "1px solid rgba(123, 97, 255, 0.14)" }}
+      />
+
+      <div
+        className="relative w-full max-w-[500px] rounded-[26px] bg-white px-5 py-6 sm:px-7 sm:py-7"
+        style={{
+          border: "1px solid #E8E2FA",
+          boxShadow: "0 26px 80px rgba(95, 75, 255, 0.10)",
+        }}
+      >
+        <div className="flex justify-center">
           <Link href="/" className="inline-flex">
-            <KeeplyLogo size={34} />
+            <KeeplyLogo size={54} />
           </Link>
         </div>
 
-        <div className="text-center">
-          <h1 className="text-2xl font-bold" style={{ color: "#18163A" }}>{title}</h1>
-          <p className="mt-1.5 text-sm" style={{ color: "#6B6993" }}>{subtitle}</p>
+        <div className="mt-5 text-center">
+          <h1 className="text-[1.8rem] font-bold sm:text-[2.05rem]" style={{ color: "#18163A" }}>{title}</h1>
+          <p className="mt-1.5 text-[14px]" style={{ color: "#6B6993" }}>{subtitle}</p>
         </div>
 
-        <div className="mt-7 rounded-2xl bg-white p-8" style={{ border: "1px solid #E4E1F0", boxShadow: "0 2px 8px rgba(24, 22, 58, 0.06)" }}>
+        <div className="mx-auto mt-6 max-w-[390px]">
           {children}
         </div>
 
-        <div className="mt-5 text-center text-sm" style={{ color: "#6B6993" }}>{footer}</div>
+        <div
+          className="mx-auto mt-6 max-w-[390px] border-t pt-4 text-center text-sm"
+          style={{ borderColor: "#EEE9FA", color: "#6B6993" }}
+        >
+          {footer}
+        </div>
       </div>
     </main>
   );
