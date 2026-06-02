@@ -121,18 +121,6 @@ export default function DashboardOverview() {
             </p>
             <p className="dashboard-updated">Última atualização: {lastUpdated}</p>
           </div>
-
-          <div className="dashboard-actions">
-            <Link href="/dashboard/backups" className="kp-btn kp-btn-primary">
-              Executar backup
-            </Link>
-            <Link href="/dashboard/machines#agentes" className="kp-btn kp-btn-secondary">
-              Instalar agente
-            </Link>
-            <button type="button" className="kp-btn kp-btn-secondary">
-              Exportar relatório
-            </button>
-          </div>
         </section>
 
         {error && (
@@ -274,13 +262,13 @@ function KpiCard({
 
 function BackupActivityChart({ values, loading }: { values: { key: string; count: number; label: string }[]; loading: boolean }) {
   const max = Math.max(...values.map((v) => v.count), 1);
-  const guideValues = [max, Math.ceil(max / 2), 0];
+  const guideValues = Array.from(new Set([max, Math.ceil(max / 2), 0]));
 
   return (
     <div className="chart-wrap">
       <div className="chart-guides" aria-hidden="true">
-        {guideValues.map((value) => (
-          <span key={value}>{value}</span>
+        {guideValues.map((value, index) => (
+          <span key={`${value}-${index}`}>{value}</span>
         ))}
       </div>
       <div className="chart-bars">

@@ -1,468 +1,324 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
 import { KeeplyLogo } from "@/components/KeeplyLogo";
 
 export default function LandingPage() {
-  const [expandedPlans, setExpandedPlans] = useState<Record<string, boolean>>({
-    Pro: true,
-  });
-
-  function togglePlan(name: string) {
-    setExpandedPlans((current) => ({ ...current, [name]: !current[name] }));
-  }
-
   return (
-    <div className="flex flex-col bg-white text-[#111827]">
+    <main className="min-h-screen overflow-hidden bg-[#fbfaff] text-[#090b24]">
+      <div className="fixed left-0 right-0 top-0 z-50 border-b border-[#6f56ff] bg-[#7b61ff]">
+        <div className="mx-auto flex min-h-[44px] max-w-[1540px] items-center justify-center gap-3 px-6 text-center text-[14px] font-semibold text-white lg:px-12">
+          <span className="whitespace-nowrap">Live demo</span>
+          <span className="grid h-6 w-6 place-items-center rounded-full border border-white/70">
+            <svg aria-hidden="true" viewBox="0 0 12 12" className="h-3.5 w-3.5 fill-current">
+              <path d="M2 5.25h5.19L5.1 3.16 6.16 2.1 10.06 6l-3.9 3.9L5.1 8.84l2.09-2.09H2V5.25Z" />
+            </svg>
+          </span>
+          <span>Veja a plataforma em ação e conheça o fluxo completo de proteção e restauração.</span>
+        </div>
+      </div>
 
-      {/* NAV */}
-      <header className="sticky top-0 z-50 border-b border-gray-100 bg-white">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-6 px-6 py-4">
-          <KeeplyLogo />
-          <nav className="hidden items-center gap-8 text-sm text-gray-500 md:flex">
-            <a href="#features" className="hover:text-gray-900">Recursos</a>
-            <a href="#how" className="hover:text-gray-900">Como funciona</a>
-            <a href="#pricing" className="hover:text-gray-900">Planos</a>
-            <a href="#faq" className="hover:text-gray-900">FAQ</a>
+      <header className="fixed left-0 right-0 top-[44px] z-50 border-b border-[#e8e6f4] bg-white/92 backdrop-blur-xl">
+        <div className="mx-auto flex h-[76px] max-w-[1540px] items-center justify-between px-8 lg:px-12">
+          <Link href="/" aria-label="Keeply home">
+            <KeeplyLogo size={34} />
+          </Link>
+
+          <nav className="hidden items-center gap-8 lg:flex">
+            {HEADER_LINKS.map((link) => (
+              <Link
+                key={link.label}
+                href={link.href}
+                className="text-[14px] font-semibold text-[#17183d] transition hover:text-[#5d48ff]"
+              >
+                {link.label}
+              </Link>
+            ))}
           </nav>
-          <div className="flex items-center gap-3">
-            <Link href="/login" className="text-sm font-medium text-gray-600 hover:text-gray-900">
+
+          <div className="flex items-center gap-4">
+            <Link href="/login" className="hidden text-[14px] font-semibold text-[#17183d] transition hover:text-[#5d48ff] sm:inline">
               Entrar
             </Link>
-            <Link href="/register" className="kp-btn-primary rounded-lg px-5 py-2 text-sm font-semibold">
+            <Link
+              href="/register"
+              className="rounded-[8px] bg-[#634cff] px-6 py-3 text-[14px] font-bold text-white shadow-[0_10px_24px_rgba(99,76,255,0.28)] transition hover:bg-[#543de8]"
+            >
               Começar grátis
             </Link>
           </div>
         </div>
       </header>
 
-      {/* HERO */}
-      <section className="border-b border-gray-100 bg-white py-24">
-        <div className="mx-auto max-w-7xl px-6">
-          <div className="grid gap-16 lg:grid-cols-2 lg:items-center">
-            <div>
-              <span className="inline-flex items-center gap-2 rounded-full bg-violet-50 px-3 py-1 text-xs font-medium text-violet-700 ring-1 ring-violet-100">
-                <span className="h-1.5 w-1.5 rounded-full bg-violet-500" />
-                Backup inteligente para equipes
-              </span>
-              <h1 className="mt-6 text-5xl font-semibold leading-tight tracking-tight text-gray-900">
-                Proteja cada máquina.<br />
-                Restaure em minutos.
-              </h1>
-              <p className="mt-5 max-w-lg text-lg text-gray-500">
-                Snapshots incrementais automáticos, compressão real e painel centralizado.
-                Instale o agente em qualquer máquina e comece em menos de 2 minutos.
-              </p>
-              <div className="mt-8 flex flex-wrap gap-3">
-                <Link href="/register" className="kp-btn-primary rounded-lg px-6 py-3 text-sm font-semibold">
-                  Criar conta gratuita
-                </Link>
-                <Link
-                  href="/login"
-                  className="rounded-lg border border-gray-200 bg-white px-6 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-50"
-                >
-                  Já tenho conta →
-                </Link>
-              </div>
-              <p className="mt-4 text-xs text-gray-400">
-                Sem cartão de crédito · Sem configuração complexa
-              </p>
-              <div className="mt-10 grid grid-cols-3 gap-6 border-t border-gray-100 pt-8">
-                {[
-                  { v: "99.9%", l: "Uptime" },
-                  { v: "~3x", l: "Compressão" },
-                  { v: "< 2 min", l: "Setup" },
-                ].map((s) => (
-                  <div key={s.l}>
-                    <p className="text-2xl font-bold text-gray-900">{s.v}</p>
-                    <p className="mt-0.5 text-sm text-gray-400">{s.l}</p>
-                  </div>
+      <section className="relative pt-[120px]">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_80%_20%,rgba(99,76,255,0.16),transparent_34%),radial-gradient(circle_at_46%_50%,rgba(124,98,255,0.09),transparent_35%)]" />
+        <div className="absolute inset-x-0 top-[120px] h-px bg-[#e8e6f4]" />
+
+        <div className="relative mx-auto grid min-h-[660px] max-w-[1540px] grid-cols-1 items-center gap-12 px-8 pb-14 pt-14 lg:grid-cols-[0.64fr_1.36fr] lg:px-12 lg:pt-4">
+          <div className="z-10 max-w-[460px]">
+            <h1 className="text-[26px] font-black leading-[1.18] text-[#090b24] sm:text-[32px] lg:text-[36px]">
+              Proteja endpoints, servidores
+              <br />
+              e dados com confiança.
+              <br />
+              <span className="text-[#5f4bff]">Restaure em minutos,</span>
+              <br />
+              gerencie tudo em um só lugar.
+            </h1>
+
+            <p className="mt-5 max-w-[440px] text-[14px] font-medium leading-[1.65] text-[#565b83]">
+              Backups automáticos, proteção contínua e políticas centralizadas
+              para manter sua equipe e seus dados sempre seguros.
+              Recuperação rápida. Implantação simples.
+            </p>
+
+            <div className="mt-7 flex flex-col gap-4 sm:flex-row">
+              <Link
+                href="/register"
+                className="inline-flex h-[50px] min-w-[195px] items-center justify-center gap-4 rounded-[8px] bg-[#604bff] px-6 text-[14px] font-bold text-white shadow-[0_14px_28px_rgba(96,75,255,0.32)] transition hover:bg-[#513ee8]"
+              >
+                Criar conta gratuita
+                <span aria-hidden>›</span>
+              </Link>
+              <Link
+                href="/login"
+                className="inline-flex h-[50px] min-w-[155px] items-center justify-center gap-3 rounded-[8px] border border-[#dcd9ec] bg-white px-6 text-[14px] font-bold text-[#090b24] shadow-[0_12px_26px_rgba(29,23,78,0.08)] transition hover:border-[#bdb5ff]"
+              >
+                <span className="grid h-7 w-7 place-items-center rounded-full border-2 border-[#604bff] text-[#604bff]">
+                  <svg
+                    aria-hidden="true"
+                    viewBox="0 0 12 12"
+                    className="h-3.5 w-3.5 translate-x-[1px] fill-current"
+                  >
+                    <path d="M3 2.2v7.6L9 6 3 2.2Z" />
+                  </svg>
+                </span>
+                Ver Demo
+              </Link>
+            </div>
+          </div>
+
+          <div className="relative min-h-[470px] lg:min-h-[650px]">
+            <div className="absolute inset-0 bg-[linear-gradient(90deg,transparent,rgba(255,255,255,0.72)_18%,rgba(255,255,255,0)_55%)] lg:hidden" />
+            <div className="absolute inset-0 opacity-55 [background-image:linear-gradient(#dedbfd_1px,transparent_1px),linear-gradient(90deg,#dedbfd_1px,transparent_1px)] [background-size:42px_42px] [mask-image:radial-gradient(ellipse_at_center,black_8%,transparent_72%)]" />
+            <img
+              src="/landing3D.png"
+              alt="Ilustração 3D de proteção, backups, restaurações e políticas centralizadas"
+              width={611}
+              height={408}
+              className="relative z-10 h-auto w-full max-w-[940px] drop-shadow-[0_38px_55px_rgba(83,65,192,0.24)] lg:absolute lg:right-[-12px] lg:top-1/2 lg:-translate-y-1/2"
+            />
+          </div>
+        </div>
+
+        <TrustBar />
+      </section>
+
+      <section id="recursos" className="bg-white px-8 py-24">
+        <div className="mx-auto max-w-[1320px]">
+          <div className="max-w-[760px]">
+            <p className="text-sm font-bold text-[#604bff]">Plataforma</p>
+            <h2 className="mt-3 text-[42px] font-black leading-tight text-[#090b24]">
+              Uma plataforma simples para proteger, acompanhar e restaurar seus dados.
+            </h2>
+            <p className="mt-5 max-w-[680px] text-[18px] leading-8 text-[#62678f]">
+              A Keeply centraliza backups, dispositivos e restaurações em um só painel.
+              Você acompanha o ambiente, executa rotinas com controle e recupera dados sem processo manual.
+            </p>
+          </div>
+
+          <div className="mt-12 grid gap-5 md:grid-cols-3">
+            {FEATURES.map((feature) => (
+              <article key={feature.title} className="rounded-[8px] border border-[#e8e6f4] bg-[#fbfaff] p-7">
+                <div className="grid h-12 w-12 place-items-center rounded-[8px] bg-[#ede9ff] text-[#604bff]">
+                  {feature.icon}
+                </div>
+                <h3 className="mt-6 text-xl font-black text-[#090b24]">{feature.title}</h3>
+                <p className="mt-3 text-base leading-7 text-[#62678f]">{feature.text}</p>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <footer className="border-t border-[#e8e6f4] bg-[#f8f6ff] px-8 py-10">
+        <div className="mx-auto max-w-[1320px]">
+          <div className="flex flex-col gap-6 border-b border-[#ddd8f2] pb-8 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:gap-8">
+              <p className="text-[16px] font-semibold text-[#17183d]">Acompanhe a Keeply</p>
+              <div className="flex flex-wrap items-center gap-4 text-[#17183d]">
+                {SOCIALS.map((social) => (
+                  <a
+                    key={social.label}
+                    href={social.href}
+                    aria-label={social.label}
+                    className="grid h-10 w-10 place-items-center rounded-full border border-[#d8d2f1] bg-white transition hover:border-[#5d48ff] hover:text-[#5d48ff]"
+                  >
+                    {social.icon}
+                  </a>
                 ))}
               </div>
             </div>
 
-            {/* Dashboard preview */}
-            <div className="relative">
-              <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl shadow-gray-100">
-                {/* browser bar */}
-                <div className="flex items-center gap-2 border-b border-gray-100 bg-gray-50 px-4 py-3">
-                  <span className="h-3 w-3 rounded-full bg-red-400" />
-                  <span className="h-3 w-3 rounded-full bg-yellow-400" />
-                  <span className="h-3 w-3 rounded-full bg-green-400" />
-                  <div className="ml-3 flex-1 rounded bg-gray-200 px-3 py-1 text-xs text-gray-400">
-                    app.keeply.io/dashboard
-                  </div>
-                </div>
-                <div className="flex bg-white">
-                  {/* sidebar preview */}
-                  <div className="hidden w-44 shrink-0 border-r border-gray-100 bg-[#15102a] p-3 sm:block">
-                    <div className="mb-4 flex items-center gap-2 px-2 py-1">
-                      <div className="h-4 w-4 rounded bg-violet-500/40" />
-                      <div className="h-2.5 w-12 rounded bg-white/20" />
-                    </div>
-                    {["Visão geral", "Máquinas", "Backups", "Proteção"].map((l, i) => (
-                      <div
-                        key={l}
-                        className={`mb-1 flex items-center gap-2 rounded-lg px-2 py-1.5 ${
-                          i === 0 ? "bg-violet-600/50" : ""
-                        }`}
-                      >
-                        <div className="h-3 w-3 rounded-sm bg-white/20" />
-                        <span className={`text-[11px] ${i === 0 ? "text-white" : "text-white/40"}`}>{l}</span>
-                      </div>
-                    ))}
-                  </div>
-                  {/* main area */}
-                  <div className="flex-1 p-4">
-                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                      {[
-                        { l: "Máquinas", v: "12", color: "text-violet-600" },
-                        { l: "Backups", v: "248", color: "text-emerald-600" },
-                        { l: "Volume", v: "1.4 TB", color: "text-sky-600" },
-                        { l: "Sucesso", v: "99.2%", color: "text-violet-600" },
-                      ].map((k) => (
-                        <div key={k.l} className="rounded-lg border border-gray-100 bg-gray-50 p-2.5">
-                          <p className="text-[9px] text-gray-400">{k.l}</p>
-                          <p className={`mt-0.5 text-base font-bold ${k.color}`}>{k.v}</p>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="mt-3 flex h-20 items-end gap-1 rounded-lg border border-gray-100 bg-gray-50 p-2.5">
-                      {[30, 55, 40, 80, 60, 90, 45, 70, 85, 50, 75, 95, 60, 88].map((h, i) => (
-                        <div key={i} className="flex-1 rounded-sm bg-violet-500/70" style={{ height: `${h}%` }} />
-                      ))}
-                    </div>
-                    <div className="mt-3 space-y-1.5">
-                      {[
-                        { m: "workstation-01", s: "Concluído", ok: true },
-                        { m: "servidor-fiscal", s: "Em execução", ok: false },
-                        { m: "notebook-design", s: "Concluído", ok: true },
-                      ].map((r) => (
-                        <div key={r.m} className="flex items-center gap-2 rounded-lg border border-gray-100 px-2.5 py-1.5">
-                          <div className="h-6 w-6 shrink-0 rounded-md bg-violet-100" />
-                          <div className="min-w-0 flex-1">
-                            <div className="h-2 w-20 rounded bg-gray-200" />
-                          </div>
-                          <span className={`rounded-full px-2 py-0.5 text-[9px] font-medium ${r.ok ? "bg-emerald-50 text-emerald-600" : "bg-violet-50 text-violet-600"}`}>
-                            {r.s}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
-              {/* subtle glow behind card */}
-              <div className="pointer-events-none absolute -bottom-8 -right-8 -z-10 h-64 w-64 rounded-full bg-violet-100 blur-3xl" />
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* TRUST BAR */}
-      <section className="border-b border-gray-100 bg-gray-50 py-10">
-        <p className="text-center text-xs font-medium uppercase tracking-widest text-gray-400">
-          Confiado por equipes que não podem perder dados
-        </p>
-        <div className="mx-auto mt-6 flex max-w-4xl flex-wrap items-center justify-center gap-x-12 gap-y-3">
-          {["Startups", "Agências", "Desenvolvedores", "PMEs", "Freelancers", "DevOps"].map((l) => (
-            <span key={l} className="text-sm font-semibold text-gray-300">{l}</span>
-          ))}
-        </div>
-      </section>
-
-      {/* FEATURES */}
-      <section id="features" className="bg-white py-24">
-        <div className="mx-auto max-w-7xl px-6">
-          <div className="mx-auto max-w-2xl text-center">
-            <span className="text-xs font-semibold uppercase tracking-widest text-violet-600">Recursos</span>
-            <h2 className="mt-3 text-4xl font-semibold tracking-tight text-gray-900">
-              Tudo que você precisa para proteger sua operação
-            </h2>
-          </div>
-          <div className="mt-16 grid gap-5 md:grid-cols-2 lg:grid-cols-3">
-            {FEATURES.map((f) => (
-              <div key={f.title} className="rounded-xl border border-gray-100 bg-white p-6 hover:border-violet-200 hover:shadow-sm transition-all">
-                <div className="grid h-10 w-10 place-items-center rounded-lg bg-violet-50 text-violet-600">
-                  {f.icon}
-                </div>
-                <h3 className="mt-5 text-base font-semibold text-gray-900">{f.title}</h3>
-                <p className="mt-2 text-sm leading-relaxed text-gray-500">{f.desc}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* HOW IT WORKS */}
-      <section id="how" className="border-y border-gray-100 bg-gray-50 py-24">
-        <div className="mx-auto max-w-7xl px-6">
-          <div className="mx-auto max-w-2xl text-center">
-            <span className="text-xs font-semibold uppercase tracking-widest text-violet-600">Como funciona</span>
-            <h2 className="mt-3 text-4xl font-semibold tracking-tight text-gray-900">
-              Em produção em menos de 5 minutos
-            </h2>
-          </div>
-          <div className="mt-16 grid gap-8 md:grid-cols-3">
-            {STEPS.map((s, i) => (
-              <div key={s.title} className="relative text-center">
-                <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-violet-600 text-white shadow-lg shadow-violet-100">
-                  <span className="text-xl font-bold">{i + 1}</span>
-                </div>
-                {i < STEPS.length - 1 && (
-                  <div className="absolute left-[calc(50%+3.5rem)] top-7 hidden h-0.5 w-[calc(100%-7rem)] bg-gray-200 md:block" />
-                )}
-                <h3 className="mt-5 text-base font-semibold text-gray-900">{s.title}</h3>
-                <p className="mt-2 text-sm text-gray-500">{s.desc}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* STATS */}
-      <section className="bg-white py-20">
-        <div className="mx-auto max-w-5xl px-6">
-          <div className="grid gap-8 text-center md:grid-cols-4">
-            {STATS.map((s) => (
-              <div key={s.label}>
-                <p className="text-4xl font-bold text-gray-900">{s.value}</p>
-                <p className="mt-2 text-sm text-gray-400">{s.label}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* PRICING */}
-      <section id="pricing" className="border-y border-gray-100 bg-gray-50 py-24">
-        <div className="mx-auto max-w-7xl px-6">
-          <div className="mx-auto max-w-2xl text-center">
-            <span className="text-xs font-semibold uppercase tracking-widest text-violet-600">Planos</span>
-            <h2 className="mt-3 text-4xl font-semibold tracking-tight text-gray-900">
-              Simples, previsível, sem surpresas
-            </h2>
-          </div>
-          <div className="mt-16 grid gap-5 md:grid-cols-3">
-            {PLANS.map((p) => {
-              const expanded = Boolean(expandedPlans[p.name]);
-              const visibleFeatures = expanded ? p.features : p.features.slice(0, 2);
-              return (
-              <div
-                key={p.name}
-                className={`relative flex flex-col rounded-2xl bg-white p-8 ${
-                  p.featured
-                    ? "border-2 border-violet-500 shadow-lg shadow-violet-50"
-                    : "border border-gray-200"
-                }`}
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:gap-6">
+              <p className="text-[16px] font-semibold text-[#17183d]">Atualizações e novidades da plataforma</p>
+              <Link
+                href="/register"
+                className="inline-flex h-[48px] items-center justify-center rounded-[8px] bg-[#0d63f3] px-6 text-[15px] font-bold text-white transition hover:bg-[#0b57d8]"
               >
-                {p.featured && (
-                  <div className="absolute -top-3.5 left-1/2 -translate-x-1/2">
-                    <span className="rounded-full bg-violet-600 px-4 py-1 text-xs font-semibold text-white">
-                      Mais popular
-                    </span>
-                  </div>
-                )}
-                <p className="text-xs font-semibold uppercase tracking-wider text-violet-600">{p.name}</p>
-                <div className="mt-3 flex items-end gap-1">
-                  <span className="text-4xl font-bold text-gray-900">{p.price}</span>
-                  {p.period && <span className="mb-1 text-gray-400">{p.period}</span>}
-                </div>
-                <p className="mt-2 text-sm text-gray-500">{p.desc}</p>
-                <ul className="mt-6 flex-1 space-y-2.5">
-                  {visibleFeatures.map((f) => (
-                    <li key={f} className="flex items-start gap-2 text-sm text-gray-600">
-                      <span className="mt-0.5 font-bold text-violet-500">✓</span>
-                      {f}
-                    </li>
-                  ))}
-                </ul>
-                <button
-                  type="button"
-                  onClick={() => togglePlan(p.name)}
-                  className="mt-5 flex items-center justify-between rounded-lg border border-gray-200 px-3 py-2 text-left text-sm font-semibold text-violet-700 transition-colors hover:bg-violet-50"
-                >
-                  <span>{expanded ? "Ocultar recursos" : `Ver todos os ${p.features.length} recursos`}</span>
-                  <svg
-                    className={`h-4 w-4 transition-transform ${expanded ? "rotate-180" : ""}`}
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d="m6 9 6 6 6-6" />
-                  </svg>
-                </button>
-                <Link
-                  href="/register"
-                  className={`mt-8 rounded-lg px-4 py-2.5 text-center text-sm font-semibold transition-colors ${
-                    p.featured
-                      ? "kp-btn-primary"
-                      : "border border-gray-200 text-gray-700 hover:bg-gray-50"
-                  }`}
-                >
-                  {p.cta}
-                </Link>
-              </div>
-            )})}
-          </div>
-        </div>
-      </section>
-
-      {/* FAQ */}
-      <section id="faq" className="bg-white py-24">
-        <div className="mx-auto max-w-3xl px-6">
-          <h2 className="text-center text-3xl font-semibold tracking-tight text-gray-900">
-            Perguntas frequentes
-          </h2>
-          <div className="mt-10 space-y-3">
-            {FAQ.map((q) => (
-              <div key={q.q} className="rounded-xl border border-gray-100 bg-white px-6 py-5">
-                <h3 className="text-sm font-semibold text-gray-900">{q.q}</h3>
-                <p className="mt-2 text-sm text-gray-500">{q.a}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* CTA */}
-      <section className="border-t border-gray-100 bg-gray-50 py-24">
-        <div className="mx-auto max-w-3xl px-6 text-center">
-          <h2 className="text-4xl font-semibold tracking-tight text-gray-900">
-            Sua operação está protegida?
-          </h2>
-          <p className="mx-auto mt-4 max-w-xl text-lg text-gray-500">
-            Comece em menos de 5 minutos. Sem cartão, sem burocracia.
-          </p>
-          <div className="mt-8 flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
-            <Link href="/register" className="kp-btn-primary rounded-lg px-8 py-3.5 text-base font-semibold">
-              Criar conta gratuita
-            </Link>
-            <Link
-              href="/login"
-              className="rounded-lg border border-gray-200 bg-white px-8 py-3.5 text-base font-semibold text-gray-700 hover:bg-gray-50"
-            >
-              Entrar na conta
-            </Link>
-          </div>
-        </div>
-      </section>
-
-      {/* FOOTER */}
-      <footer className="border-t border-gray-100 bg-white">
-        <div className="mx-auto max-w-7xl px-6 py-16">
-          <div className="grid gap-10 md:grid-cols-5">
-            <div className="md:col-span-2">
-              <KeeplyLogo />
-              <p className="mt-4 max-w-xs text-sm text-gray-400 leading-relaxed">
-                Backup inteligente, restauração simples e total controle sobre todas as suas máquinas.
-              </p>
+                Criar conta
+              </Link>
             </div>
-            {FOOTER_COLS.map((col) => (
-              <div key={col.heading}>
-                <p className="text-xs font-semibold uppercase tracking-widest text-gray-400">{col.heading}</p>
-                <ul className="mt-4 space-y-2.5">
-                  {col.links.map((l) => (
-                    <li key={l}>
-                      <a href="#" className="text-sm text-gray-500 hover:text-gray-900">{l}</a>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
           </div>
-          <div className="mt-12 flex flex-col items-center justify-between gap-4 border-t border-gray-100 pt-8 text-xs text-gray-400 md:flex-row">
-            <p>© {new Date().getFullYear()} Keeply. Todos os direitos reservados.</p>
-            <div className="flex gap-6">
-              <a href="#" className="hover:text-gray-600">Privacidade</a>
-              <a href="#" className="hover:text-gray-600">Termos</a>
-              <a href="#" className="hover:text-gray-600">Segurança</a>
+
+          <div className="flex flex-col gap-6 pt-8 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex items-center">
+              <KeeplyLogo size={42} />
             </div>
+
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-3 text-[15px] text-[#275dc6]">
+              {FOOTER_LINKS.map((link) => (
+                <a key={link.label} href={link.href} className="transition hover:text-[#5d48ff]">
+                  {link.label}
+                </a>
+              ))}
+            </div>
+
+            <p className="text-[15px] text-[#17183d]">© 2026 Keeply</p>
           </div>
         </div>
       </footer>
+    </main>
+  );
+}
+
+function TrustBar() {
+  const carouselLogos = [...TRUST_LOGOS, ...TRUST_LOGOS];
+
+  return (
+    <div className="relative mb-12 w-full overflow-hidden">
+      <div className="border-y border-[#dcd9f0] bg-white/60 py-7 shadow-[0_18px_50px_rgba(70,60,150,0.08)] backdrop-blur-xl">
+        <div className="flex items-center justify-center gap-5 text-center text-[13px] font-black text-[#5960ae]">
+          <span className="hidden h-px w-8 bg-[#9c93ff] sm:block" />
+          <span className="grid h-6 w-6 place-items-center rounded-full border border-[#9c93ff] text-[#604bff]">♢</span>
+          <span>CONFIADO POR EQUIPES QUE NÃO PODEM PERDER DADOS</span>
+          <span className="hidden h-px w-8 bg-[#9c93ff] sm:block" />
+        </div>
+
+        <div className="trust-carousel mt-8 text-[#5f63b2]">
+          <div className="trust-carousel-track">
+            {carouselLogos.map((logo, index) => (
+              <div key={`${logo.name}-${index}`} className="trust-carousel-item">
+                <span className="text-[30px] text-[#6666bd]" aria-hidden>{logo.mark}</span>
+                <span>{logo.name}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
 
+const TRUST_LOGOS = [
+  { name: "Macrosoft", mark: "⬢" },
+  { name: "EBM", mark: "◇" },
+  { name: "OOGLE", mark: "⬡" },
+  { name: "NEXORA", mark: "×" },
+  { name: "CLOUDVANT", mark: "☁" },
+  { name: "DATAVIA", mark: "◐" },
+  { name: "Netflox", mark: "▰" },
+  { name: "Spotifly", mark: "◉" },
+  { name: "Amazin", mark: "⌁" },
+  { name: "Notionary", mark: "▣" },
+  { name: "Slackers", mark: "✣" },
+  { name: "GitHubby", mark: "⌘" },
+  { name: "Teslão", mark: "△" },
+  { name: "OpenMaybe", mark: "◎" },
+  { name: "Figmaço", mark: "⬟" },
+  { name: "Zoomerang", mark: "◌" },
+  { name: "PayPalito", mark: "◆" },
+  { name: "Cloudflare-ish", mark: "☼" },
+];
+
+const SOCIALS = [
+  {
+    label: "X",
+    href: "#",
+    icon: <span className="text-[15px] font-bold">X</span>,
+  },
+  {
+    label: "Blog",
+    href: "#",
+    icon: <span className="text-[15px] font-bold">↗</span>,
+  },
+  {
+    label: "RSS",
+    href: "#",
+    icon: <span className="text-[15px] font-bold">◔</span>,
+  },
+  {
+    label: "YouTube",
+    href: "#",
+    icon: <span className="text-[15px] font-bold">▶</span>,
+  },
+  {
+    label: "LinkedIn",
+    href: "#",
+    icon: <span className="text-[15px] font-bold">in</span>,
+  },
+  {
+    label: "GitHub",
+    href: "#",
+    icon: <span className="text-[15px] font-bold">gh</span>,
+  },
+];
+
+const FOOTER_LINKS = [
+  { label: "Informações legais", href: "#" },
+  { label: "Privacidade", href: "#" },
+  { label: "Cookies", href: "#" },
+  { label: "Contato", href: "mailto:angelolealpl14@gmail.com" },
+  { label: "Suporte", href: "#" },
+];
+
+const HEADER_LINKS = [
+  { label: "Documentação", href: "/documentacao" },
+  { label: "Roadmap", href: "/roadmap" },
+  { label: "Download", href: "/download" },
+];
+
 const FEATURES = [
   {
-    title: "Snapshots incrementais",
-    desc: "Apenas os blocos que mudaram são enviados — velocidade máxima, custo mínimo.",
-    icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>,
+    title: "Backups automáticos",
+    text: "Snapshots programados por política, com deduplicação e compressão para reduzir custo e tráfego.",
+    icon: (
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M4 7h16v12H4z" />
+        <path d="M8 7V5h8v2" />
+        <path d="M8 13h8" />
+      </svg>
+    ),
   },
   {
-    title: "Compressão e deduplicação",
-    desc: "Armazene até 3x mais com compressão de blocos e deduplicação automática.",
-    icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3" /><path d="M3 5v6c0 1.7 4 3 9 3s9-1.3 9-3V5" /><path d="M3 11v6c0 1.7 4 3 9 3s9-1.3 9-3v-6" /></svg>,
+    title: "Restaurações rápidas",
+    text: "Recupere arquivos, pastas ou snapshots completos em poucos cliques, sem processos manuais.",
+    icon: (
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M3 12a9 9 0 1 0 3-6.7" />
+        <path d="M3 4v6h6" />
+        <path d="M12 7v5l4 2" />
+      </svg>
+    ),
   },
   {
-    title: "Restauração granular",
-    desc: "Restaure um único arquivo, uma pasta ou o sistema inteiro a qualquer snapshot anterior.",
-    icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" /><path d="M12 7v5l4 2" /></svg>,
+    title: "Políticas centralizadas",
+    text: "Controle retenção, fontes protegidas e dispositivos em uma única interface para toda a equipe.",
+    icon: (
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M12 3 4 6v6c0 5 3.5 8.5 8 9 4.5-.5 8-4 8-9V6z" />
+        <path d="m9 12 2 2 4-4" />
+      </svg>
+    ),
   },
-  {
-    title: "Painel centralizado",
-    desc: "Todas as suas máquinas, snapshots e alertas em um único painel moderno.",
-    icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></svg>,
-  },
-  {
-    title: "Agente leve",
-    desc: "Processo em background com consumo mínimo de CPU e memória.",
-    icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="7" rx="1.5" /><rect x="3" y="13" width="18" height="7" rx="1.5" /><circle cx="7" cy="7.5" r="0.7" fill="currentColor" /><circle cx="7" cy="16.5" r="0.7" fill="currentColor" /></svg>,
-  },
-  {
-    title: "Multi-plataforma",
-    desc: "Suporte a Windows, Linux e macOS — proteja toda a sua infra.",
-    icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3 4 6v6c0 5 3.5 8.5 8 9 4.5-.5 8-4 8-9V6l-8-3Z" /><path d="m9 12 2 2 4-4" /></svg>,
-  },
-];
-
-const STEPS = [
-  { title: "Crie sua conta", desc: "Cadastro em segundos. Seu painel fica disponível imediatamente." },
-  { title: "Instale o agente", desc: "Um único comando na máquina. O agente se registra sozinho." },
-  { title: "Tudo protegido", desc: "Snapshots automáticos, compressão e deduplicação. Acompanhe pelo painel." },
-];
-
-const STATS = [
-  { value: "99.9%", label: "Uptime do serviço" },
-  { value: "~3x", label: "Compressão média" },
-  { value: "< 2 min", label: "Setup do agente" },
-  { value: "24/7", label: "Monitoramento" },
-];
-
-const PLANS = [
-  {
-    name: "Solo", price: "Grátis", period: "", desc: "Para desenvolvedores e uso pessoal.",
-    features: ["Até 2 máquinas", "10 GB armazenamento", "Snapshots diários", "7 dias de histórico"],
-    cta: "Começar grátis", featured: false,
-  },
-  {
-    name: "Pro", price: "R$ 49", period: "/mês", desc: "Para equipes que precisam de confiabilidade.",
-    features: ["Até 10 máquinas", "500 GB armazenamento", "Snapshots de hora em hora", "30 dias de histórico", "Restauração granular", "Suporte prioritário"],
-    cta: "Começar grátis", featured: true,
-  },
-  {
-    name: "Enterprise", price: "Custom", period: "", desc: "Para empresas com escala e requisitos especiais.",
-    features: ["Máquinas ilimitadas", "Armazenamento ilimitado", "Snapshots contínuos", "SSO / SAML", "SLA garantido", "Onboarding dedicado"],
-    cta: "Falar com vendas", featured: false,
-  },
-];
-
-const FAQ = [
-  { q: "É o mesmo login do agente?", a: "Sim — o painel web e o agente compartilham a mesma conta. Registre-se pelo painel e use as mesmas credenciais no agente." },
-  { q: "O agente consome muitos recursos?", a: "Não. Menos de 1% de CPU em idle. Upload apenas dos blocos modificados, sem impactar sua rede perceptivelmente." },
-  { q: "Onde ficam os dados armazenados?", a: "Em nosso object storage compatível com S3. Em planos Enterprise você pode usar seu próprio bucket." },
-  { q: "Consigo restaurar um arquivo específico?", a: "Sim. No painel você navega pelos arquivos de qualquer snapshot e faz download individual ou em lote." },
-  { q: "O que acontece se perder conexão durante o backup?", a: "O agente retoma de onde parou. Apenas os blocos ainda não enviados são transferidos na próxima tentativa." },
-];
-
-const FOOTER_COLS = [
-  { heading: "Produto", links: ["Recursos", "Planos", "Roadmap", "Changelog"] },
-  { heading: "Empresa", links: ["Sobre", "Blog", "Segurança", "Privacidade"] },
-  { heading: "Suporte", links: ["Documentação", "Status", "Comunidade", "Contato"] },
 ];
