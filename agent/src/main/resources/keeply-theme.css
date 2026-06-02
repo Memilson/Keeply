@@ -633,6 +633,38 @@
     -fx-text-fill: #64748B;
 }
 
+.banner-backup-progress {
+    -fx-min-width: 170px;
+    -fx-pref-width: 190px;
+}
+
+.banner-progress-title {
+    -fx-font-size: 12px;
+    -fx-font-weight: 800;
+    -fx-text-fill: #0F172A;
+}
+
+.banner-progress-subtitle {
+    -fx-font-size: 10px;
+    -fx-text-fill: #64748B;
+}
+
+.banner-progress-bar {
+    -fx-accent: #6D47FF;
+    -fx-control-inner-background: #E2E8F0;
+    -fx-pref-height: 7px;
+}
+
+.banner-progress-bar .track {
+    -fx-background-color: #E2E8F0;
+    -fx-background-radius: 10px;
+}
+
+.banner-progress-bar .bar {
+    -fx-background-color: #6D47FF;
+    -fx-background-radius: 10px;
+}
+
 /* SIDEBAR NEW STYLES */
 .active-nav-button {
     -fx-background-color: #F3F0FF;
@@ -1106,4 +1138,60 @@
     -fx-text-fill: #4B5563;
     -fx-font-size: 15px;
     -fx-font-family: "Segoe UI", "Noto Sans", sans-serif;
+}
+
+.activity-backup-progress-card {
+    -fx-background-color: #FFFFFF;
+    -fx-border-color: #E2E8F0;
+    -fx-border-radius: 10px;
+    -fx-background-radius: 10px;
+    -fx-padding: 14px;
+}
+
+.activity-backup-progress-icon {
+    -fx-background-color: #6D47FF;
+    -fx-background-radius: 10px;
+    -fx-min-width: 36px;
+    -fx-min-height: 36px;
+    -fx-pref-width: 36px;
+    -fx-pref-height: 36px;
+}
+
+.activity-backup-progress-icon-shape {
+    -fx-fill: white;
+    -fx-scale-x: 0.9;
+    -fx-scale-y: 0.9;
+}
+
+.activity-backup-progress-title {
+    -fx-text-fill: #0F172A;
+    -fx-font-size: 14px;
+    -fx-font-weight: 800;
+}
+
+.activity-backup-progress-detail {
+    -fx-text-fill: #64748B;
+    -fx-font-size: 12px;
+}
+
+.activity-backup-progress-percent {
+    -fx-text-fill: #6D47FF;
+    -fx-font-size: 24px;
+    -fx-font-weight: 900;
+}
+
+.activity-backup-progress-bar {
+    -fx-accent: #6D47FF;
+    -fx-control-inner-background: #E2E8F0;
+    -fx-pref-height: 8px;
+}
+
+.activity-backup-progress-bar .track {
+    -fx-background-color: #E2E8F0;
+    -fx-background-radius: 10px;
+}
+
+.activity-backup-progress-bar .bar {
+    -fx-background-color: #6D47FF;
+    -fx-background-radius: 10px;
 }

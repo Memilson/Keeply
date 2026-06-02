@@ -6,6 +6,7 @@ import com.keeply.agent.auth.DeviceIdentity;
 import com.keeply.agent.config.AgentConfigReader;
 import com.keeply.agent.config.AgentConfigWriter;
 import com.keeply.agent.core.BackupEngine;
+import com.keeply.agent.core.BackupProgressListener;
 import com.keeply.agent.core.LocalDatabase;
 import com.keeply.agent.core.RestoreEngine;
 import com.keeply.agent.core.RestoreEngine.OverwritePolicy;
@@ -80,6 +81,11 @@ public class KeeplyAgentApp extends Application {
     private final ObservableList<ActivityEvent> allActivityEvents = FXCollections.observableArrayList();
     private final FilteredList<ActivityEvent> filteredActivityEvents = new FilteredList<>(allActivityEvents, event -> true);
     private ListView<ActivityEvent> activityListView;
+    private VBox activityBackupProgressCard;
+    private Label activityBackupProgressTitle;
+    private Label activityBackupProgressPercent;
+    private Label activityBackupProgressDetail;
+    private ProgressBar activityBackupProgressBar;
 
     private TextField backendUrl;
     private TextField email;
@@ -396,30 +402,47 @@ public class KeeplyAgentApp extends Application {
                     return;
                 }
                 dashboardController.setBackupInProgress(true);
+                updateManualBackupProgress(0, "Preparando backup", null, BackupProgressState.RUNNING);
                 runAsync(() -> {
+                    boolean failed = false;
                     try {
                         log("Iniciando backup manual pelo Dashboard...");
                         var optPlan = backend.getDevicePlan(deviceId);
                         List<String> sources = optPlan.isPresent() ? optPlan.get().sources() : parseSources(backupSourcesConfig.getText());
                         if (sources == null || sources.isEmpty()) {
                             log("Nenhuma pasta configurada para backup.");
+                            ui(() -> {
+                                dashboardController.setBackupProgressVisible(false);
+                                hideActivityBackupProgress();
+                            });
                             return;
                         }
                         for (String sourcePath : sources) {
                             try {
                                 Path source = Path.of(sourcePath);
-                                UUID snapshotId = new BackupEngine(backend, db).backup(deviceId, source);
+                                BackupProgressListener progressListener = progress -> updateManualBackupProgress(
+                                        progress.percent(), progress.message(), progress.sourceRoot(), BackupProgressState.RUNNING);
+                                UUID snapshotId = new BackupEngine(backend, db, progressListener).backup(deviceId, source);
                                 if (snapshotId != null) {
                                     log("event=ui.backup.manual status=completed source=" + sourcePath + " snapshot_id=" + snapshotId);
                                 } else {
                                     log("event=ui.backup.manual status=skipped source=" + sourcePath + " reason=already_running");
+                                    updateManualBackupProgress(-1, "Backup já em andamento", source, BackupProgressState.FAILED);
                                 }
                             } catch (Exception ex) {
+                                failed = true;
                                 log("event=ui.backup.manual status=failed source=" + sourcePath + " message=" + getErrorMessage(ex));
+                                updateManualBackupProgress(-1, "Backup falhou", Path.of(sourcePath), BackupProgressState.FAILED);
                             }
                         }
                         refreshDashboard();
-                        log("event=ui.backup.manual status=all_complete");
+                        if (failed) {
+                            updateManualBackupProgress(-1, "Backup finalizado com falhas", null, BackupProgressState.FAILED);
+                            log("event=ui.backup.manual status=finished_with_errors");
+                        } else {
+                            updateManualBackupProgress(100, "Backup concluído", null, BackupProgressState.COMPLETED);
+                            log("event=ui.backup.manual status=all_complete");
+                        }
                     } finally {
                         ui(() -> dashboardController.setBackupInProgress(false));
                     }
@@ -505,8 +528,106 @@ public class KeeplyAgentApp extends Application {
         });
 
         VBox.setVgrow(activityListView, Priority.ALWAYS);
-        root.getChildren().addAll(toolbar, activityListView);
+        activityBackupProgressCard = createActivityBackupProgressCard();
+        activityBackupProgressCard.setVisible(false);
+        activityBackupProgressCard.setManaged(false);
+        root.getChildren().addAll(toolbar, activityBackupProgressCard, activityListView);
         return root;
+    }
+
+    private VBox createActivityBackupProgressCard() {
+        VBox card = new VBox(10);
+        card.getStyleClass().add("activity-backup-progress-card");
+
+        HBox header = new HBox(12);
+        header.setAlignment(Pos.CENTER_LEFT);
+
+        StackPane icon = new StackPane();
+        icon.getStyleClass().add("activity-backup-progress-icon");
+        SVGPath shield = new SVGPath();
+        shield.setContent("M8 1 15 4.5V11L8 15 1 11V4.5z M8 2.5v11 M2 5l6 3 6-3");
+        shield.getStyleClass().add("activity-backup-progress-icon-shape");
+        icon.getChildren().add(shield);
+
+        activityBackupProgressTitle = new Label("Backup em andamento");
+        activityBackupProgressTitle.getStyleClass().add("activity-backup-progress-title");
+        activityBackupProgressDetail = new Label("Preparando backup");
+        activityBackupProgressDetail.getStyleClass().add("activity-backup-progress-detail");
+        activityBackupProgressDetail.setWrapText(true);
+
+        VBox text = new VBox(3, activityBackupProgressTitle, activityBackupProgressDetail);
+        HBox.setHgrow(text, Priority.ALWAYS);
+
+        activityBackupProgressPercent = new Label("0%");
+        activityBackupProgressPercent.getStyleClass().add("activity-backup-progress-percent");
+
+        header.getChildren().addAll(icon, text, activityBackupProgressPercent);
+
+        activityBackupProgressBar = new ProgressBar(0);
+        activityBackupProgressBar.setMaxWidth(Double.MAX_VALUE);
+        activityBackupProgressBar.getStyleClass().add("activity-backup-progress-bar");
+
+        card.getChildren().addAll(header, activityBackupProgressBar);
+        return card;
+    }
+
+    private void updateManualBackupProgress(int percent, String message, Path sourceRoot, BackupProgressState state) {
+        ui(() -> {
+            int clampedPercent = percent < 0 ? currentActivityBackupPercent() : Math.max(0, Math.min(100, percent));
+            String shortMessage = message == null || message.isBlank() ? "Processando arquivos" : message;
+            String displayMessage = shortMessage;
+            if (sourceRoot != null) {
+                displayMessage = displayMessage + ": " + sourceRoot.toAbsolutePath().normalize();
+            }
+
+            if (dashboardController != null) {
+                dashboardController.setBackupProgressVisible(true);
+                dashboardController.updateBackupProgress(clampedPercent, shortMessage);
+            }
+
+            if (activityBackupProgressCard != null) {
+                activityBackupProgressCard.setVisible(true);
+                activityBackupProgressCard.setManaged(true);
+            }
+            if (activityBackupProgressTitle != null) {
+                activityBackupProgressTitle.setText(switch (state) {
+                    case RUNNING -> "Backup em andamento";
+                    case COMPLETED -> "Backup concluído";
+                    case FAILED -> "Backup falhou";
+                });
+            }
+            if (activityBackupProgressPercent != null) {
+                activityBackupProgressPercent.setText(clampedPercent + "%");
+            }
+            if (activityBackupProgressDetail != null) {
+                activityBackupProgressDetail.setText(displayMessage);
+            }
+            if (activityBackupProgressBar != null) {
+                activityBackupProgressBar.setProgress(clampedPercent / 100.0);
+            }
+        });
+    }
+
+    private int currentActivityBackupPercent() {
+        if (activityBackupProgressPercent == null) {
+            return 0;
+        }
+        String text = activityBackupProgressPercent.getText();
+        if (text == null || !text.endsWith("%")) {
+            return 0;
+        }
+        try {
+            return Integer.parseInt(text.substring(0, text.length() - 1));
+        } catch (NumberFormatException e) {
+            return 0;
+        }
+    }
+
+    private void hideActivityBackupProgress() {
+        if (activityBackupProgressCard != null) {
+            activityBackupProgressCard.setVisible(false);
+            activityBackupProgressCard.setManaged(false);
+        }
     }
 
     private ToggleButton createActivityFilter(String label, String category, ToggleGroup group, boolean selected) {
@@ -2357,6 +2478,12 @@ public class KeeplyAgentApp extends Application {
     @FunctionalInterface
     interface ThrowingRunnable {
         void run() throws Exception;
+    }
+
+    private enum BackupProgressState {
+        RUNNING,
+        COMPLETED,
+        FAILED
     }
 
     public static void main(String[] args) {
