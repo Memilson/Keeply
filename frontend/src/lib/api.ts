@@ -97,6 +97,18 @@ export type Device = {
   updatedAt?: string;
 };
 
+export type DevicePlan = {
+  planType: "DEFAULT" | "CUSTOM";
+  sources: string[];
+  cdpEnabled: boolean;
+  encryptionEnabled: boolean;
+  scheduleCron: string | null;
+  retentionMode: "KEEP_ALL" | "KEEP_DAYS";
+  retentionDays: number | null;
+  encryptionPasswordSet: boolean;
+  updatedAt?: string;
+};
+
 export type SnapshotStatus = "RUNNING" | "IN_PROGRESS" | "PROCESSING" | "COMPLETED" | "FAILED";
 
 export type Snapshot = {

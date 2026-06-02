@@ -16,6 +16,17 @@ services:
       timeout: 5s
       retries: 5
 
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.15.0
+    container_name: keeply-postgres-exporter
+    environment:
+      DATA_SOURCE_URI: postgres:5432/${POSTGRES_DB:-keeply}?sslmode=disable
+      DATA_SOURCE_USER: ${POSTGRES_USER:-keeply}
+      DATA_SOURCE_PASS: ${POSTGRES_PASSWORD:-keeply123}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   minio:
     image: minio/minio:latest
     container_name: keeply-minio
@@ -70,6 +81,75 @@ services:
     depends_on:
       - backend
 
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: keeply-prometheus
+    command:
+      - /bin/sh
+      - -c
+      - |
+        cat <<'EOF' >/etc/prometheus/prometheus.yml
+        global:
+          scrape_interval: 15s
+          evaluation_interval: 15s
+
+        scrape_configs:
+          - job_name: backend
+            metrics_path: /actuator/prometheus
+            static_configs:
+              - targets:
+                  - backend:8080
+
+          - job_name: postgres-exporter
+            static_configs:
+              - targets:
+                  - postgres-exporter:9187
+        EOF
+        exec /bin/prometheus \
+          --config.file=/etc/prometheus/prometheus.yml \
+          --storage.tsdb.path=/prometheus \
+          --web.enable-lifecycle
+    volumes:
+      - keeply_prometheus:/prometheus
+    ports:
+      - "127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"
+    depends_on:
+      - backend
+      - postgres-exporter
+
+  grafana:
+    image: grafana/grafana:11.1.4
+    container_name: keeply-grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    command:
+      - /bin/sh
+      - -c
+      - |
+        mkdir -p /etc/grafana/provisioning/datasources
+        cat <<'EOF' >/etc/grafana/provisioning/datasources/prometheus.yml
+        apiVersion: 1
+        datasources:
+          - name: Prometheus
+            uid: prometheus
+            type: prometheus
+            access: proxy
+            url: http://prometheus:9090
+            isDefault: true
+            editable: false
+        EOF
+        exec /run.sh
+    volumes:
+      - keeply_grafana:/var/lib/grafana
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT:-3001}:3000"
+    depends_on:
+      - prometheus
+
 volumes:
   keeply_postgres:
   keeply_minio:
+  keeply_prometheus:
+  keeply_grafana:

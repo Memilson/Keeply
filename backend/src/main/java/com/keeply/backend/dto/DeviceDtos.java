@@ -1,8 +1,10 @@
 package com.keeply.backend.dto;
 
 import com.keeply.backend.model.PlanType;
+import com.keeply.backend.model.RetentionMode;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
@@ -31,6 +33,8 @@ public final class DeviceDtos {
             Boolean cdpEnabled,
             Boolean encryptionEnabled,
             @Size(max = 100) String scheduleCron,
+            RetentionMode retentionMode,
+            @Positive Integer retentionDays,
             @Size(max = 128) String encryptionPassword
     ) {
     }
@@ -41,6 +45,8 @@ public final class DeviceDtos {
             boolean cdpEnabled,
             boolean encryptionEnabled,
             String scheduleCron,
+            RetentionMode retentionMode,
+            Integer retentionDays,
             boolean encryptionPasswordSet,
             Instant updatedAt
     ) {

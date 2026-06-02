@@ -8,7 +8,8 @@ public record AgentConfig(
         Auth auth,
         Device device,
         Backup backup,
-        Schedule schedule
+        Schedule schedule,
+        Retention retention
 ) {
     public record Backend(String url) {
     }
@@ -23,5 +24,8 @@ public record AgentConfig(
     }
 
     public record Schedule(String cron, Boolean runOnStartup) {
+    }
+
+    public record Retention(String mode, Integer days) {
     }
 }

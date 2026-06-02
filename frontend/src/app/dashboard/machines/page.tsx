@@ -1,30 +1,46 @@
 "use client";
 
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
-import { api, type Device, type Snapshot } from "@/lib/api";
+import { api, type Device, type DevicePlan, type Snapshot } from "@/lib/api";
 import { formatBytes, formatDateTime } from "@/lib/format";
 import { Topbar } from "@/components/Topbar";
 
+type DeviceWithPlan = Device & { plan: DevicePlan | null; planLoading: boolean };
+
 export default function MachinesPage() {
-  const [devices, setDevices] = useState<Device[]>([]);
+  const [devices, setDevices] = useState<DeviceWithPlan[]>([]);
   const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState<string>("");
-  const [openActionId, setOpenActionId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
       try {
-        const [d, s] = await Promise.all([api<Device[]>("/api/devices"), api<Snapshot[]>("/api/snapshots")]);
-        const list = d ?? [];
-        setDevices(list);
-        setSnapshots(s ?? []);
-        if (list.length > 0) setSelectedDeviceId(list[0].id);
+        const [deviceList, snapshotList] = await Promise.all([
+          api<Device[]>("/api/devices"),
+          api<Snapshot[]>("/api/snapshots"),
+        ]);
+        const withPlan = (deviceList ?? []).map((d) => ({ ...d, plan: null, planLoading: true }));
+        setDevices(withPlan);
+        setSnapshots(snapshotList ?? []);
+        if (withPlan.length > 0) setSelectedDeviceId(withPlan[0].id);
+        setLoading(false);
+
+        await Promise.all(
+          withPlan.map(async (d) => {
+            try {
+              const plan = await api<DevicePlan>(`/api/devices/${d.id}/plan`);
+              setDevices((prev) => prev.map((x) => (x.id === d.id ? { ...x, plan, planLoading: false } : x)));
+            } catch {
+              setDevices((prev) => prev.map((x) => (x.id === d.id ? { ...x, planLoading: false } : x)));
+            }
+          })
+        );
       } catch (e) {
         setError(e instanceof Error ? e.message : "Falha ao carregar máquinas.");
-      } finally {
         setLoading(false);
       }
     })();
@@ -43,11 +59,14 @@ export default function MachinesPage() {
     return map;
   }, [snapshots]);
 
+  const selected = devices.find((d) => d.id === selectedDeviceId) ?? null;
   const selectedSnapshots = selectedDeviceId ? snapshotsByDevice.get(selectedDeviceId) ?? [] : [];
+  const totalBytes = selectedSnapshots.reduce((acc, s) => acc + (s.totalCompressedSize ?? 0), 0);
+  const latestSnapshot = selectedSnapshots[0] ?? null;
 
   return (
     <>
-      <Topbar title="Máquinas" subtitle="Snapshots por máquina" />
+      <Topbar title="Máquinas" subtitle="Plano configurado por máquina" />
       <div className="p-7">
         {error && (
           <div className="mb-5 rounded-xl px-4 py-3 text-sm" style={{ background: "#FEF2F2", border: "1px solid #FECACA", color: "#DC2626" }}>
@@ -58,7 +77,7 @@ export default function MachinesPage() {
         <div className="grid gap-5 lg:grid-cols-[280px_minmax(0,1fr)]">
           <aside className="kp-card overflow-hidden">
             <div className="px-4 py-3 text-xs font-semibold uppercase tracking-wider" style={{ color: "#6B6993", borderBottom: "1px solid #F0EEF8", background: "#FAFAFE" }}>
-              Armazenamentos
+              Máquinas
             </div>
             {loading ? (
               <p className="px-4 py-6 text-sm" style={{ color: "#6B6993" }}>Carregando…</p>
@@ -69,7 +88,6 @@ export default function MachinesPage() {
                 {devices.map((d) => {
                   const active = selectedDeviceId === d.id;
                   const list = snapshotsByDevice.get(d.id) ?? [];
-                  const totalBytes = list.reduce((acc, s) => acc + (s.totalCompressedSize ?? 0), 0);
                   return (
                     <button
                       key={d.id}
@@ -77,9 +95,9 @@ export default function MachinesPage() {
                       className="mb-1.5 w-full rounded-lg px-3 py-2.5 text-left"
                       style={active ? { background: "#EDE9FF" } : { background: "transparent" }}
                     >
-                      <p className="truncate text-sm font-semibold" style={{ color: active ? "#6046F0" : "#18163A" }}>{d.name || d.hostname}</p>
+                      <p className="truncate text-sm font-semibold" style={{ color: active ? "#6046F0" : "#18163A" }}>{deviceName(d)}</p>
                       <p className="mt-0.5 text-xs" style={{ color: "#6B6993" }}>
-                        {list.length} snapshot{list.length !== 1 ? "s" : ""} · {formatBytes(totalBytes)}
+                        {list.length} snapshot{list.length !== 1 ? "s" : ""}
                       </p>
                     </button>
                   );
@@ -88,115 +106,121 @@ export default function MachinesPage() {
             )}
           </aside>
 
-          <section className="kp-card overflow-visible">
-            <div className="flex items-center justify-between px-5 py-3" style={{ borderBottom: "1px solid #F0EEF8", background: "#FAFAFE" }}>
-              <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "#6B6993" }}>
-                {selectedDeviceId ? "Snapshots da máquina" : "Snapshots"}
-              </p>
-              <span className="text-xs font-medium" style={{ color: "#6B6993" }}>
-                {selectedSnapshots.length} item{selectedSnapshots.length !== 1 ? "ns" : ""}
-              </span>
-            </div>
+          {!selected ? (
+            <section className="kp-card px-6 py-10 text-sm" style={{ color: "#6B6993" }}>
+              Selecione uma máquina na barra lateral.
+            </section>
+          ) : (
+            <section className="space-y-5">
+              <div className="kp-card overflow-hidden">
+                <div className="flex flex-wrap items-start justify-between gap-3 px-6 py-5" style={{ borderBottom: "1px solid #ECEAF5" }}>
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "#6B6993" }}>Máquina</p>
+                    <h2 className="mt-1 text-xl font-semibold" style={{ color: "#111827" }}>{deviceName(selected)}</h2>
+                    <p className="mt-1 text-sm" style={{ color: "#6B6993" }}>{selected.osName || "Sistema operacional não informado"}</p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Link
+                      href={`/dashboard/backups?device=${encodeURIComponent(selected.id)}`}
+                      className="rounded-lg px-3 py-2 text-sm font-medium transition-colors hover:opacity-80"
+                      style={{ border: "1px solid #E4E1F0", color: "#7B61FF", background: "#FAFAFE" }}
+                    >
+                      Ver snapshots
+                    </Link>
+                    <Link
+                      href={`/dashboard/protection?device=${encodeURIComponent(selected.id)}`}
+                      className="rounded-lg px-3 py-2 text-sm font-medium transition-colors hover:opacity-80"
+                      style={{ border: "1px solid #7B61FF", color: "#FFFFFF", background: "#7B61FF" }}
+                    >
+                      Configurar plano
+                    </Link>
+                  </div>
+                </div>
 
-            {!selectedDeviceId ? (
-              <p className="px-5 py-10 text-sm" style={{ color: "#6B6993" }}>Selecione uma máquina na barra lateral.</p>
-            ) : selectedSnapshots.length === 0 ? (
-              <p className="px-5 py-10 text-sm" style={{ color: "#6B6993" }}>Sem snapshots para essa máquina.</p>
-            ) : (
-              <table className="w-full text-sm">
-                <thead>
-                  <tr style={{ borderBottom: "1px solid #F0EEF8" }}>
-                    {["Origem", "Status", "Arquivos", "Tamanho", "Início", ""].map((h) => (
-                      <th key={h} className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-wider" style={{ color: "#6B6993" }}>
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {selectedSnapshots.map((s, idx) => (
-                    <tr key={s.id} style={{ borderTop: idx > 0 ? "1px solid #F5F3FC" : undefined }}>
-                      <td className="px-5 py-3.5" style={{ color: "#6B6993" }}>
-                        <span className="block max-w-[280px] truncate" title={s.sourcePath}>{s.sourcePath}</span>
-                      </td>
-                      <td className="px-5 py-3.5"><StatusPill status={s.status} /></td>
-                      <td className="px-5 py-3.5 tabular-nums" style={{ color: "#6B6993" }}>{s.totalFiles ?? 0}</td>
-                      <td className="px-5 py-3.5 tabular-nums" style={{ color: "#6B6993" }}>{formatBytes(s.totalCompressedSize ?? 0)}</td>
-                      <td className="px-5 py-3.5" style={{ color: "#6B6993" }}>{formatDateTime(s.startedAt)}</td>
-                      <td className="relative px-5 py-3.5 text-right">
-                        <button
-                          type="button"
-                          onClick={() => setOpenActionId((current) => (current === s.id ? null : s.id))}
-                          className="inline-grid h-8 w-8 place-items-center rounded-lg transition-colors hover:bg-[#F5F3FB]"
-                          style={{ border: "1px solid #E4E1F0", color: "#6B6993", background: "#FFFFFF" }}
-                          aria-label="Abrir ações"
-                        >
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                            <circle cx="5" cy="12" r="2" />
-                            <circle cx="12" cy="12" r="2" />
-                            <circle cx="19" cy="12" r="2" />
-                          </svg>
-                        </button>
+                <div className="grid gap-4 px-6 py-5 md:grid-cols-2">
+                  <InfoRow label="ID do dispositivo" value={selected.id} />
+                  <InfoRow label="Instalação" value={selected.deviceInstallationId ?? "Não informado"} />
+                  <InfoRow label="Agente" value={selected.agentVersion ?? "Não informado"} />
+                  <InfoRow label="Último contato" value={selected.lastSeenAt ? formatDateTime(selected.lastSeenAt) : "Nunca visto"} />
+                  <InfoRow label="Snapshots" value={`${selectedSnapshots.length}`} />
+                  <InfoRow label="Armazenamento usado" value={formatBytes(totalBytes)} />
+                  <InfoRow label="Último snapshot" value={latestSnapshot ? formatDateTime(latestSnapshot.startedAt) : "Nenhum snapshot"} />
+                </div>
+              </div>
 
-                        {openActionId === s.id && (
-                          <div
-                            className="absolute right-5 top-12 z-10 w-44 overflow-hidden rounded-xl bg-white py-1 text-left shadow-lg"
-                            style={{ border: "1px solid #E4E1F0" }}
-                          >
-                            <Link
-                              href={`/dashboard/backups/${s.id}`}
-                              onClick={() => setOpenActionId(null)}
-                              className="block px-4 py-2.5 text-sm transition-colors hover:bg-[#F5F3FB]"
-                              style={{ color: "#18163A" }}
-                            >
-                              Abrir snapshots
-                            </Link>
-                            <Link
-                              href="/dashboard/protection"
-                              onClick={() => setOpenActionId(null)}
-                              className="block px-4 py-2.5 text-sm transition-colors hover:bg-[#F5F3FB]"
-                              style={{ color: "#18163A" }}
-                            >
-                              Configurar plano
-                            </Link>
-                            <button
-                              type="button"
-                              onClick={() => setOpenActionId(null)}
-                              className="block w-full px-4 py-2.5 text-left text-sm transition-colors hover:bg-red-50"
-                              style={{ color: "#DC2626" }}
-                              title="Exclusão de máquina ainda não está disponível na API."
-                            >
-                              Excluir
-                            </button>
+              <div className="kp-card overflow-hidden">
+                <div className="px-6 py-5" style={{ borderBottom: "1px solid #ECEAF5" }}>
+                  <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "#6B6993" }}>Plano configurado</p>
+                  <h2 className="mt-1 text-xl font-semibold" style={{ color: "#111827" }}>Plano de Backup</h2>
+                </div>
+
+                {selected.planLoading ? (
+                  <p className="px-6 py-8 text-sm" style={{ color: "#6B6993" }}>Carregando plano…</p>
+                ) : !selected.plan ? (
+                  <p className="px-6 py-8 text-sm" style={{ color: "#6B6993" }}>Nenhum plano configurado para esta máquina.</p>
+                ) : (
+                  <>
+                    <PlanRow title="O que fazer backup" value={`${selected.plan.sources.length} pasta(s)`}>
+                      <div className="mt-3 space-y-2">
+                        {selected.plan.sources.map((src) => (
+                          <div key={src} className="rounded-xl px-4 py-3 text-sm" style={{ background: "#F3F4F6", color: "#334155" }}>
+                            {src}
                           </div>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </section>
+                        ))}
+                      </div>
+                    </PlanRow>
+                    <PlanRow title="Proteção contínua (CDP)" value={selected.plan.cdpEnabled ? "Ativada" : "Desativada"} />
+                    <PlanRow title="Agendamento" value={scheduleLabel(selected.plan.scheduleCron ?? "")} />
+                    <PlanRow title="Quanto tempo manter" value={retentionLabel(selected.plan)} />
+                    <PlanRow title="Criptografia" value={selected.plan.encryptionEnabled ? "AES-256 · SHA-256" : "Desativada"} />
+                  </>
+                )}
+              </div>
+            </section>
+          )}
         </div>
       </div>
     </>
   );
 }
 
-function StatusPill({ status }: { status: Snapshot["status"] }) {
-  const running = { label: "Em execução", dot: "#7B61FF", bg: "#EDE9FF", text: "#6046F0" };
-  const map: Record<Snapshot["status"], { label: string; dot: string; bg: string; text: string }> = {
-    COMPLETED: { label: "Concluído", dot: "#10B981", bg: "#ECFDF5", text: "#059669" },
-    RUNNING: running,
-    IN_PROGRESS: running,
-    PROCESSING: running,
-    FAILED: { label: "Falhou", dot: "#EF4444", bg: "#FEF2F2", text: "#DC2626" },
-  };
-  const m = map[status] ?? map.FAILED;
+function deviceName(device: Device) {
+  return device.name || device.hostname || "Máquina";
+}
+
+function scheduleLabel(cron: string) {
+  if (!cron || !cron.trim()) return "Não configurado";
+  const p = cron.trim().split(/\s+/);
+  if (p.length !== 5) return "Não configurado";
+  const min = p[0].padStart(2, "0");
+  const hour = p[1].padStart(2, "0");
+  return `Todos os dias às ${hour}:${min}`;
+}
+
+function retentionLabel(plan: DevicePlan) {
+  if (plan.retentionMode === "KEEP_DAYS" && plan.retentionDays && plan.retentionDays > 0) {
+    return `Manter por ${plan.retentionDays} dia${plan.retentionDays === 1 ? "" : "s"}`;
+  }
+  return "Manter todos os snapshots";
+}
+
+function InfoRow({ label, value }: { label: string; value: string }) {
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium" style={{ background: m.bg, color: m.text }}>
-      <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: m.dot }} />
-      {m.label}
-    </span>
+    <div className="min-w-0">
+      <p className="text-xs font-medium" style={{ color: "#64748B" }}>{label}</p>
+      <p className="mt-1 break-words text-sm" style={{ color: "#334155" }}>{value}</p>
+    </div>
+  );
+}
+
+function PlanRow({ title, value, children }: { title: string; value: string; children?: ReactNode }) {
+  return (
+    <div className="px-6 py-5" style={{ borderTop: "1px solid #ECEAF5" }}>
+      <div className="flex items-start justify-between gap-4">
+        <p className="text-sm font-medium" style={{ color: "#334155" }}>{title}</p>
+        <p className="text-right text-sm" style={{ color: "#64748B" }}>{value}</p>
+      </div>
+      {children}
+    </div>
   );
 }

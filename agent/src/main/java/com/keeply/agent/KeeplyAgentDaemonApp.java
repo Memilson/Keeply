@@ -43,26 +43,39 @@ public final class KeeplyAgentDaemonApp {
             DeviceAuthStore authStore = new DeviceAuthStore(AgentPaths.resolveDeviceAuthPath());
 
             AgentConfig config = new AgentConfigLoader().load(configPath);
-            BackupCycleRunner runner = new BackupCycleRunner(config, db, authStore);
+            BackupCycleRunner runner = new BackupCycleRunner(config, configPath, db, authStore);
 
             log.info("event=daemon.start config_path={}", configPath);
             try (DaemonInstanceLock lock = DaemonInstanceLock.acquire(lockPath)) {
-                if (Boolean.TRUE.equals(config.schedule().runOnStartup())) {
+                if (config.schedule() != null && Boolean.TRUE.equals(config.schedule().runOnStartup())) {
                     log.info("event=daemon.startup_run enabled=true action=run_cycle_now");
                     runner.runCycle();
                 } else {
                     log.info("event=daemon.startup_run enabled=false action=wait_cron");
                 }
 
-                CronScheduler scheduler = new CronScheduler(config.schedule().cron(), runner::runCycle);
+                CronScheduler scheduler = null;
+                String cron = config.schedule() != null ? config.schedule().cron() : null;
+                if (cron != null && !cron.isBlank()) {
+                    scheduler = new CronScheduler(cron, runner::runCycle);
+                } else {
+                    log.warn("event=daemon.schedule status=disabled reason=missing_schedule_cron");
+                }
+                CronScheduler finalScheduler = scheduler;
                 Runtime.getRuntime().addShutdownHook(new Thread(() -> {
                     log.info("event=daemon.shutdown status=started");
-                    scheduler.shutdown();
+                    if (finalScheduler != null) {
+                        finalScheduler.shutdown();
+                    }
                     log.info("event=daemon.shutdown status=completed");
                 }));
 
-                scheduler.start();
-                Thread.currentThread().join();
+                if (scheduler != null) {
+                    scheduler.start();
+                    Thread.currentThread().join();
+                } else {
+                    new java.util.concurrent.CountDownLatch(1).await();
+                }
             }
         } catch (Exception e) {
             log.error("event=daemon.boot status=fatal_error", e);

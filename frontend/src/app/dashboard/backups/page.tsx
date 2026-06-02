@@ -1,18 +1,25 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { api, type Device, type Snapshot } from "@/lib/api";
 import { formatBytes, formatDateTime } from "@/lib/format";
 import { Topbar } from "@/components/Topbar";
 
 export default function BackupsPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [devices, setDevices] = useState<Device[]>([]);
   const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [deviceFilter, setDeviceFilter] = useState<string>("all");
+  const [deviceFilter, setDeviceFilter] = useState<string>(() => searchParams.get("device") ?? "all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+
+  useEffect(() => {
+    setDeviceFilter(searchParams.get("device") ?? "all");
+  }, [searchParams]);
 
   useEffect(() => {
     (async () => {
@@ -57,7 +64,11 @@ export default function BackupsPage() {
           <div className="flex flex-wrap gap-2.5">
             <select
               value={deviceFilter}
-              onChange={(e) => setDeviceFilter(e.target.value)}
+              onChange={(e) => {
+                const value = e.target.value;
+                setDeviceFilter(value);
+                router.replace(value === "all" ? "/dashboard/backups" : `/dashboard/backups?device=${encodeURIComponent(value)}`);
+              }}
               className={selectCls}
               style={{ borderColor: "#E4E1F0", color: "#18163A" }}
             >

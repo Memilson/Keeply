@@ -1,0 +1,3 @@
+ALTER TABLE protection_plans
+    ADD COLUMN IF NOT EXISTS retention_mode VARCHAR(32) NOT NULL DEFAULT 'KEEP_ALL',
+    ADD COLUMN IF NOT EXISTS retention_days INTEGER;

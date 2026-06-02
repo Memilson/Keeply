@@ -31,7 +31,10 @@ public final class AgentConfigWriter {
         auth.remove("password"); // nunca persistir senha em YAML
         root.put("auth", auth);
 
-        // sources não são persistidos no YAML — o daemon busca do backend
+        Map<String, Object> backup = section(root, "backup");
+        backup.put("sources", sources == null ? List.of() : sources);
+        root.put("backup", backup);
+
         Map<String, Object> schedule = section(root, "schedule");
         schedule.put("cron", cron);
         root.put("schedule", schedule);
@@ -49,10 +52,22 @@ public final class AgentConfigWriter {
         auth.remove("password"); // nunca persistir senha em YAML
         root.put("auth", auth);
 
-        // sources não são persistidos no YAML — o daemon busca do backend
-        if (!(root.get("schedule") instanceof Map<?, ?>)) {
-            root.put("schedule", Map.of("cron", "0 2 * * *", "runOnStartup", false));
+        Map<String, Object> backup = section(root, "backup");
+        backup.put("sources", plan.sources());
+        root.put("backup", backup);
+
+        Map<String, Object> schedule = section(root, "schedule");
+        schedule.put("cron", plan.scheduleCron());
+        root.put("schedule", schedule);
+
+        Map<String, Object> retention = section(root, "retention");
+        retention.put("mode", plan.retentionMode() != null ? plan.retentionMode().name() : ProtectionPlan.RetentionMode.KEEP_ALL.name());
+        if (plan.retentionMode() == ProtectionPlan.RetentionMode.KEEP_DAYS && plan.retentionDays() != null) {
+            retention.put("days", plan.retentionDays());
+        } else {
+            retention.remove("days");
         }
+        root.put("retention", retention);
         write(root);
     }
 

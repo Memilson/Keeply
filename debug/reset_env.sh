@@ -5,8 +5,35 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "$PROJECT_ROOT"
 
+COMPOSE=(docker compose -f infra/docker-compose.yml)
+export DOCKER_BUILDKIT="${DOCKER_BUILDKIT:-1}"
+export BUILDKIT_PROGRESS="${BUILDKIT_PROGRESS:-plain}"
+export COMPOSE_PROGRESS="${COMPOSE_PROGRESS:-plain}"
+
+NO_CACHE="${KEEPLY_DOCKER_NO_CACHE:-1}"
+BUILD_ARGS=()
+if [ "$NO_CACHE" = "1" ]; then
+    BUILD_ARGS+=(--no-cache)
+fi
+
+time_step() {
+    local label="$1"
+    shift
+
+    echo
+    echo "==> $label"
+    local start end elapsed
+    start=$(date +%s)
+    "$@"
+    end=$(date +%s)
+    elapsed=$((end - start))
+    echo "<== $label concluido em ${elapsed}s"
+}
+
 echo "Iniciando reset destrutivo do ambiente Keeply para Zstd..."
 echo "Este procedimento remove snapshots, chunks, objetos MinIO e caches locais GZIP existentes."
+echo "Docker debug ativo: BUILDKIT_PROGRESS=$BUILDKIT_PROGRESS, COMPOSE_PROGRESS=$COMPOSE_PROGRESS"
+echo "Rebuild Docker sem cache: $NO_CACHE (use KEEPLY_DOCKER_NO_CACHE=0 para reaproveitar layers)"
 
 # Resolver caminhos XDG dinamicamente
 KEEPLY_CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/keeply"
@@ -41,12 +68,14 @@ pkill -9 -f "com.keeply.backend" || true
 
 # 1. Parar infra e remover volumes
 echo "Limpando volumes do Docker (Postgres, MinIO, backend e frontend)..."
-docker compose -f infra/docker-compose.yml down -v
+"${COMPOSE[@]}" down -v --remove-orphans
 
-# 2. Subir infra limpa e reconstruir backend com o código local
-echo "Subindo infraestrutura (com rebuild do backend)..."
-docker compose -f infra/docker-compose.yml up -d --build backend
-docker compose -f infra/docker-compose.yml up -d
+# 2. Reconstruir e subir tudo com logs detalhados para diagnosticar gargalos.
+echo "Reconstruindo imagens Docker (backend e frontend)..."
+time_step "docker compose build backend frontend" "${COMPOSE[@]}" build "${BUILD_ARGS[@]}" backend frontend
+
+echo "Subindo infraestrutura limpa..."
+time_step "docker compose up" "${COMPOSE[@]}" up -d --force-recreate
 
 # 3. Remover banco local do agente e arquivos de dados
 echo "Removendo arquivos de configuracao, estado e bancos do agente..."

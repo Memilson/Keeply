@@ -6,6 +6,7 @@ import com.keeply.backend.exception.NotFoundException;
 import com.keeply.backend.model.Device;
 import com.keeply.backend.model.PlanType;
 import com.keeply.backend.model.ProtectionPlan;
+import com.keeply.backend.model.RetentionMode;
 import com.keeply.backend.repository.DeviceRepository;
 import com.keeply.backend.repository.ProtectionPlanRepository;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -42,16 +43,21 @@ public class ProtectionPlanService {
     @Transactional
     public DeviceDtos.PlanResponse upsert(UUID userId, UUID deviceId, DeviceDtos.PlanRequest request) {
         Device device = ensureOwnedDevice(userId, deviceId);
-        validatePlanRequest(request);
-
         ProtectionPlan plan = plans.findByDeviceId(deviceId).orElseGet(ProtectionPlan::new);
+        RetentionMode retentionMode = resolveRetentionMode(request, plan);
+        validatePlanRequest(request, retentionMode);
+
         plan.device = device;
         plan.planType = request.planType();
         plan.sources = normalizeSources(request.sources());
         plan.cdpEnabled = Boolean.TRUE.equals(request.cdpEnabled());
         plan.encryptionEnabled = Boolean.TRUE.equals(request.encryptionEnabled());
         plan.scheduleCron = request.scheduleCron() != null && !request.scheduleCron().isBlank()
-                ? request.scheduleCron().trim() : null;
+                ? request.scheduleCron() : null;
+        plan.retentionMode = retentionMode;
+        plan.retentionDays = plan.retentionMode == RetentionMode.KEEP_DAYS
+                ? request.retentionDays() != null ? request.retentionDays() : plan.retentionDays
+                : null;
         if (request.encryptionPassword() != null && !request.encryptionPassword().isBlank()) {
             plan.encryptionPasswordHash = passwordEncoder.encode(request.encryptionPassword());
         } else if (!plan.encryptionEnabled) {
@@ -75,7 +81,7 @@ public class ProtectionPlanService {
                 .orElseThrow(() -> new ForbiddenException("Acesso negado ou Device não encontrado"));
     }
 
-    private void validatePlanRequest(DeviceDtos.PlanRequest request) {
+    private void validatePlanRequest(DeviceDtos.PlanRequest request, RetentionMode retentionMode) {
         if (request == null) {
             throw new IllegalArgumentException("Corpo da requisição é obrigatório");
         }
@@ -88,6 +94,24 @@ public class ProtectionPlanService {
         if (request.sources().stream().anyMatch(source -> source == null || source.isBlank())) {
             throw new IllegalArgumentException("sources não pode conter entradas nulas ou em branco");
         }
+
+        if (retentionMode == RetentionMode.KEEP_DAYS) {
+            if (request.retentionDays() == null || request.retentionDays() <= 0) {
+                throw new IllegalArgumentException("retentionDays deve ser maior que zero quando retentionMode=KEEP_DAYS");
+            }
+        } else if (request.retentionDays() != null) {
+            throw new IllegalArgumentException("retentionDays deve ser nulo quando retentionMode=KEEP_ALL");
+        }
+    }
+
+    private RetentionMode resolveRetentionMode(DeviceDtos.PlanRequest request, ProtectionPlan plan) {
+        if (request.retentionMode() != null) {
+            return request.retentionMode();
+        }
+        if (plan.retentionMode != null) {
+            return plan.retentionMode;
+        }
+        return RetentionMode.KEEP_ALL;
     }
 
     private List<String> normalizeSources(List<String> sources) {
@@ -102,6 +126,7 @@ public class ProtectionPlanService {
         return new DeviceDtos.PlanResponse(
                 plan.planType, List.copyOf(plan.sources),
                 plan.cdpEnabled, plan.encryptionEnabled, plan.scheduleCron,
+                plan.retentionMode, plan.retentionDays,
                 plan.encryptionPasswordHash != null && !plan.encryptionPasswordHash.isBlank(),
                 plan.updatedAt);
     }
