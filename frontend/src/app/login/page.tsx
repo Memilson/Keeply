@@ -52,8 +52,8 @@ export default function LoginPage() {
 
   return (
     <AuthShell
-      title="Entrar na sua conta"
-      subtitle="Acesse seu painel de proteção."
+      title="Entrar"
+      subtitle=""
       footer={
         <>
           Não tem conta?{" "}
