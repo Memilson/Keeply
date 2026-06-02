@@ -142,6 +142,11 @@
             <Label text="Keeply monitora, protege e mantém seus dados seguros em segundo plano." styleClass="banner-subtitle"/>
         </VBox>
         <Region HBox.hgrow="ALWAYS"/>
+        <VBox fx:id="backupProgressBox" styleClass="banner-backup-progress" spacing="5" visible="false" managed="false">
+            <Label fx:id="lblBackupProgressTitle" text="Backup 0%" styleClass="banner-progress-title"/>
+            <ProgressBar fx:id="pbBackupProgress" progress="0" maxWidth="Infinity" styleClass="banner-progress-bar"/>
+            <Label fx:id="lblBackupProgressMessage" text="Preparando backup" styleClass="banner-progress-subtitle"/>
+        </VBox>
         <Button fx:id="btnProtegerAgora" text="Fazer Backup" styleClass="btn-primary" alignment="CENTER_LEFT">
             <graphic>
                 <SVGPath content="M8 1 15 4.5V11L8 15 1 11V4.5z M8 2.5v11 M2 5l6 3 6-3" style="-fx-fill: white;" scaleX="0.8" scaleY="0.8"/>

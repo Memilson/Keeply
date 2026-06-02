@@ -29,11 +29,17 @@ public class BackupEngine {
     private static final long DEFAULT_AUDIT_TIMEOUT_SECONDS = 3_600L;
     private final BackendClient backend;
     private final LocalDatabase db;
+    private final BackupProgressListener progressListener;
     private static volatile boolean backingUp = false;
 
     public BackupEngine(BackendClient backend, LocalDatabase db) {
+        this(backend, db, BackupProgressListener.NONE);
+    }
+
+    public BackupEngine(BackendClient backend, LocalDatabase db, BackupProgressListener progressListener) {
         this.backend = backend;
         this.db = db;
+        this.progressListener = progressListener == null ? BackupProgressListener.NONE : progressListener;
     }
 
     public UUID backup(UUID deviceId, Path sourceRoot) {
@@ -45,7 +51,11 @@ public class BackupEngine {
         try {
             long startTotal = System.nanoTime();
             String sourcePath = sourceRoot.toAbsolutePath().normalize().toString();
+            emitProgress(0, "Preparando backup", sourceRoot);
             autoSyncCache(deviceId, sourceRoot);
+            emitProgress(0, "Contando arquivos", sourceRoot);
+            long expectedFiles = countFiles(sourceRoot);
+            emitProgress(expectedFiles == 0 ? 94 : 1, expectedFiles == 0 ? "Nenhum arquivo para processar" : "Processando arquivos", sourceRoot);
 
             StartedSnapshot started = backend.startSnapshot(deviceId, sourcePath);
             UUID snapshotId = started.snapshot().id();
@@ -194,6 +204,10 @@ public class BackupEngine {
                                 log.error("event=backup.file status=failed path={} message={}", relativePath, e.getMessage());
                                 fileFailures.add(new FileProcessingFailure(relativePath, "processing_failed", e));
                             }
+                        } finally {
+                            int processed = totalFiles.get();
+                            int percent = fileProcessingPercent(processed, expectedFiles);
+                            emitProgress(percent, "Processando arquivos", sourceRoot);
                         }
                     });
                 for (FileScanner.ScanFailure failure : scanStats.unreadableFailures()) {
@@ -238,10 +252,14 @@ public class BackupEngine {
 
                 Path manifestFile = Files.createTempFile("keeply-manifest-" + snapshotId, ".json.zst");
                 try {
+                    emitProgress(95, "Enviando manifesto", sourceRoot);
                     db.writeManifestZstd(manifestFile, snapshotId.toString(), sourcePath);
                     transferStorage.uploadManifest(manifestFile);
+                    emitProgress(97, "Concluindo snapshot", sourceRoot);
                     backend.completeSnapshot(snapshotId, transferStorage.sessionId(), totalFiles.get(), totalOriginalSize.get(), totalCompressedSize);
+                    emitProgress(99, "Aguardando auditoria", sourceRoot);
                     awaitSnapshotAudit(snapshotId);
+                    emitProgress(100, "Backup concluído", sourceRoot);
                 } finally {
                     Files.deleteIfExists(manifestFile);
                 }
@@ -276,6 +294,33 @@ public class BackupEngine {
             }
         } finally {
             backingUp = false;
+        }
+    }
+
+    private long countFiles(Path sourceRoot) {
+        try {
+            return FileScanner.walk(sourceRoot, file -> {
+            }).files();
+        } catch (Exception e) {
+            log.warn("event=backup.precount status=failed source_path={} message={}",
+                    sourceRoot.toAbsolutePath().normalize(), e.getMessage());
+            return 0;
+        }
+    }
+
+    private int fileProcessingPercent(int processedFiles, long expectedFiles) {
+        if (expectedFiles <= 0) {
+            return 94;
+        }
+        double ratio = Math.min(1.0, processedFiles / (double) expectedFiles);
+        return Math.max(1, Math.min(94, 1 + (int) Math.floor(ratio * 93)));
+    }
+
+    private void emitProgress(int percent, String message, Path sourceRoot) {
+        try {
+            progressListener.onProgress(new BackupProgressListener.BackupProgress(percent, message, sourceRoot));
+        } catch (Exception e) {
+            log.warn("event=backup.progress_listener status=failed message={}", e.getMessage());
         }
     }
 

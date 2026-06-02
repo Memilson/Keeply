@@ -5,6 +5,7 @@ import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
+import javafx.scene.control.ProgressBar;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
 import javafx.scene.shape.SVGPath;
@@ -28,6 +29,10 @@ public class DashboardController {
     @FXML private ListView<com.keeply.agent.model.SnapshotSummary> listSnapshots;
     @FXML private HBox foldersContainer;
     @FXML private VBox btnAddFolder;
+    @FXML private VBox backupProgressBox;
+    @FXML private Label lblBackupProgressTitle;
+    @FXML private Label lblBackupProgressMessage;
+    @FXML private ProgressBar pbBackupProgress;
     @FXML private Button btnRestaurar;
     @FXML private Button btnProtegerAgora;
     @FXML private Button btnVerAtividade;
@@ -196,8 +201,33 @@ public class DashboardController {
         this.backupInProgress = inProgress;
         if (btnProtegerAgora != null) {
             btnProtegerAgora.setDisable(inProgress);
-            btnProtegerAgora.setText(inProgress ? "Protegendo..." : "Proteger Agora");
+            btnProtegerAgora.setText(inProgress ? "Protegendo..." : "Fazer Backup");
             btnProtegerAgora.setOpacity(inProgress ? 0.6 : 1.0);
+        }
+        if (inProgress) {
+            setBackupProgressVisible(true);
+            updateBackupProgress(0, "Preparando backup");
+        }
+    }
+
+    public void setBackupProgressVisible(boolean visible) {
+        if (backupProgressBox == null) {
+            return;
+        }
+        backupProgressBox.setVisible(visible);
+        backupProgressBox.setManaged(visible);
+    }
+
+    public void updateBackupProgress(int percent, String message) {
+        int clampedPercent = Math.max(0, Math.min(100, percent));
+        if (lblBackupProgressTitle != null) {
+            lblBackupProgressTitle.setText("Backup " + clampedPercent + "%");
+        }
+        if (lblBackupProgressMessage != null) {
+            lblBackupProgressMessage.setText(message == null || message.isBlank() ? "Processando arquivos" : message);
+        }
+        if (pbBackupProgress != null) {
+            pbBackupProgress.setProgress(clampedPercent / 100.0);
         }
     }
 }
