@@ -1,31 +1,28 @@
 "use client";
 
+import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { api, type Device } from "@/lib/api";
+import { api, type Device, type DevicePlan } from "@/lib/api";
 import { Topbar } from "@/components/Topbar";
 
 type PlanType = "DEFAULT" | "CUSTOM";
-
-type DevicePlan = {
-  planType: PlanType;
-  sources: string[];
-  cdpEnabled: boolean;
-  encryptionEnabled: boolean;
-  scheduleCron: string | null;
-  encryptionPasswordSet: boolean;
-};
+type RetentionMode = "KEEP_ALL" | "KEEP_DAYS";
 
 type Draft = {
   planType: PlanType;
   sources: string[];
   cdpEnabled: boolean;
   encryptionEnabled: boolean;
-  scheduleCron: string;
+  scheduleCron: string | null;
+  retentionMode: RetentionMode;
+  retentionDays: number | null;
 };
 
 type DeviceWithPlan = Device & { plan: DevicePlan | null; planLoading: boolean };
 
 export default function ProtectionPage() {
+  const searchParams = useSearchParams();
+  const deviceParam = searchParams.get("device");
   const [devices, setDevices] = useState<DeviceWithPlan[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [loading, setLoading] = useState(true);
@@ -40,7 +37,8 @@ export default function ProtectionPage() {
         const devList = await api<Device[]>("/api/devices");
         const withPlan: DeviceWithPlan[] = (devList ?? []).map((d) => ({ ...d, plan: null, planLoading: true }));
         setDevices(withPlan);
-        if (withPlan.length > 0) setSelectedId(withPlan[0].id);
+        const requested = withPlan.find((d) => d.id === deviceParam);
+        if (requested || withPlan.length > 0) setSelectedId((requested ?? withPlan[0]).id);
         setLoading(false);
         await Promise.all(withPlan.map(async (d) => {
           try {
@@ -55,7 +53,7 @@ export default function ProtectionPage() {
         setLoading(false);
       }
     })();
-  }, []);
+  }, [deviceParam]);
 
   const selected = useMemo(
     () => devices.find((d) => d.id === selectedId) ?? null,
@@ -68,7 +66,9 @@ export default function ProtectionPage() {
       sources: device.plan?.sources ?? [],
       cdpEnabled: device.plan?.cdpEnabled ?? false,
       encryptionEnabled: device.plan?.encryptionEnabled ?? false,
-      scheduleCron: device.plan?.scheduleCron ?? "0 2 * * *",
+      scheduleCron: device.plan?.scheduleCron ?? null,
+      retentionMode: device.plan?.retentionMode ?? "KEEP_ALL",
+      retentionDays: device.plan?.retentionDays ?? null,
     };
   }
 
@@ -80,12 +80,20 @@ export default function ProtectionPage() {
     setDrafts((prev) => ({ ...prev, [selected.id]: { ...(prev[selected.id] ?? toDraft(selected)), ...update } }));
   }
 
-  function scheduleLabel(cron: string) {
+  function scheduleLabel(cron: string | null | undefined) {
+    if (!cron || !cron.trim()) return "Não configurado";
     const p = cron.trim().split(/\s+/);
     if (p.length !== 5) return "Não configurado";
     const min = p[0].padStart(2, "0");
     const hour = p[1].padStart(2, "0");
     return `Todos os dias às ${hour}:${min}`;
+  }
+
+  function retentionLabel(mode: RetentionMode, days: number | null) {
+    if (mode === "KEEP_DAYS" && days && days > 0) {
+      return `Manter por ${days} dia${days === 1 ? "" : "s"}`;
+    }
+    return "Manter todos os snapshots";
   }
 
   async function save() {
@@ -101,6 +109,8 @@ export default function ProtectionPage() {
           cdpEnabled: draft.cdpEnabled,
           encryptionEnabled: draft.encryptionEnabled,
           scheduleCron: draft.scheduleCron || null,
+          retentionMode: draft.retentionMode,
+          retentionDays: draft.retentionMode === "KEEP_DAYS" ? draft.retentionDays : null,
         }),
       });
       setDevices((prev) => prev.map((d) => (d.id === selected.id ? { ...d, plan: updated } : d)));
@@ -157,7 +167,7 @@ export default function ProtectionPage() {
                     ))}
                   </select>
                 )}
-                <Toggle value={draft?.planType !== "CUSTOM" || true} onChange={() => {}} />
+                <Toggle value={Boolean(selected.plan)} onChange={() => {}} disabled />
               </div>
             </div>
 
@@ -209,11 +219,18 @@ export default function ProtectionPage() {
               <Toggle value={!!draft?.cdpEnabled} onChange={(v) => patch({ cdpEnabled: v })} />
             </LineRow>
 
-            <LineRow title="Agendamento" value={scheduleLabel(draft?.scheduleCron ?? "0 2 * * *")}>
+            <LineRow title="Agendamento" value={scheduleLabel(draft?.scheduleCron)}>
               <button
                 onClick={() => {
-                  const value = window.prompt("Informe horário (HH:MM)", "02:00");
-                  if (!value) return;
+                  const defaultValue = draft?.scheduleCron
+                    ? scheduleLabel(draft.scheduleCron).replace("Todos os dias às ", "")
+                    : "";
+                  const value = window.prompt("Informe horário (HH:MM). Deixe vazio para remover.", defaultValue);
+                  if (value === null) return;
+                  if (!value.trim()) {
+                    patch({ scheduleCron: null });
+                    return;
+                  }
                   const m = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(value);
                   if (!m) return;
                   patch({ scheduleCron: `${Number(m[2])} ${Number(m[1])} * * *` });
@@ -225,7 +242,33 @@ export default function ProtectionPage() {
               </button>
             </LineRow>
 
-            <LineRow title="Quanto tempo manter" value="Manter todos os snapshots" />
+            <LineRow title="Quanto tempo manter" value={retentionLabel(draft?.retentionMode ?? "KEEP_ALL", draft?.retentionDays ?? null)}>
+              <select
+                value={draft?.retentionMode ?? "KEEP_ALL"}
+                onChange={(e) => {
+                  const mode = e.target.value as RetentionMode;
+                  patch({
+                    retentionMode: mode,
+                    retentionDays: mode === "KEEP_DAYS" ? draft?.retentionDays ?? 30 : null,
+                  });
+                }}
+                className="rounded-lg border px-2 py-1 text-sm"
+                style={{ borderColor: "#E4E1F0", color: "#374151" }}
+              >
+                <option value="KEEP_ALL">Manter todos</option>
+                <option value="KEEP_DAYS">Manter por dias</option>
+              </select>
+              {(draft?.retentionMode ?? "KEEP_ALL") === "KEEP_DAYS" && (
+                <input
+                  type="number"
+                  min={1}
+                  value={draft?.retentionDays ?? 30}
+                  onChange={(e) => patch({ retentionDays: Number(e.target.value) > 0 ? Number(e.target.value) : null })}
+                  className="w-24 rounded-lg border px-3 py-2 text-sm"
+                  style={{ borderColor: "#E4E1F0" }}
+                />
+              )}
+            </LineRow>
 
             <div className="flex items-center justify-between px-6 py-5" style={{ borderTop: "1px solid #ECEAF5" }}>
               <div>
@@ -304,10 +347,11 @@ function LineRow({ title, value, children }: { title: string; value?: string; ch
   );
 }
 
-function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
+function Toggle({ value, onChange, disabled = false }: { value: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
   return (
     <button
-      onClick={() => onChange(!value)}
+      onClick={() => !disabled && onChange(!value)}
+      disabled={disabled}
       className="relative inline-flex h-8 w-14 items-center rounded-full"
       style={{ background: value ? "#6D47FF" : "#CBD5E1" }}
     >

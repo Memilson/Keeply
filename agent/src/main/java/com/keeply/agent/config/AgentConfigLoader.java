@@ -42,13 +42,17 @@ public final class AgentConfigLoader {
             errors.add("backend.url é obrigatório");
         }
 
-        if (config.schedule() == null || isBlank(config.schedule().cron())) {
-            errors.add("schedule.cron é obrigatório");
-        } else {
+        if (config.schedule() != null && !isBlank(config.schedule().cron())) {
             try {
                 cronParser.parse(config.schedule().cron()).validate();
             } catch (Exception e) {
                 errors.add("schedule.cron inválido: " + config.schedule().cron());
+            }
+        }
+
+        if (config.retention() != null && "KEEP_DAYS".equals(config.retention().mode())) {
+            if (config.retention().days() == null || config.retention().days() <= 0) {
+                errors.add("retention.days deve ser maior que zero quando retention.mode=KEEP_DAYS");
             }
         }
 

@@ -106,23 +106,10 @@ export default function DashboardOverview() {
     };
   }, [asOf, devices, snapshots]);
 
-  const lastUpdated = loading || !asOf ? "Atualizando..." : new Date(asOf).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
-
   return (
     <>
-      <Topbar title="Visão geral do ambiente" />
+      <Topbar />
       <main className="dashboard-page">
-        <section className="dashboard-hero">
-          <div className="min-w-0">
-            <p className="dashboard-eyebrow">Dashboard</p>
-            <h1>Visão geral do ambiente</h1>
-            <p className="dashboard-subtitle">
-              Acompanhe proteção, atividade de backups e capacidade usada pelas máquinas conectadas.
-            </p>
-            <p className="dashboard-updated">Última atualização: {lastUpdated}</p>
-          </div>
-        </section>
-
         {error && (
           <div className="kp-alert-error">
             {error} <span>(backend em {API_BASE} está online?)</span>

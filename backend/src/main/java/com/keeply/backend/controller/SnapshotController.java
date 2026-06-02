@@ -73,6 +73,15 @@ public class SnapshotController {
         fileDownload.streamFile(CurrentUser.get().userId(), snapshotId, path, response);
     }
 
+    @PostMapping("/{snapshotId}/archive-selected")
+    public void downloadSelectedArchive(
+            @PathVariable UUID snapshotId,
+            @Valid @RequestBody SnapshotDtos.SelectedArchiveRequest request,
+            jakarta.servlet.http.HttpServletResponse response
+    ) throws java.io.IOException {
+        fileDownload.streamSelectedArchive(CurrentUser.get().userId(), snapshotId, request.paths(), response);
+    }
+
     @GetMapping("/{snapshotId}/files")
     public SnapshotDtos.SnapshotFileListResponse listFiles(
             @PathVariable UUID snapshotId,
