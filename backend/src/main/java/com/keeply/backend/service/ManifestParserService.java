@@ -104,10 +104,16 @@ public class ManifestParserService {
 
         } catch (Exception e) {
             log.error("event=snapshot.audit status=failed snapshot_id={} session_id={} cause={}", snapshotId, sessionId, e.getMessage(), e);
-            if (snapshot != null) {
-                snapshot.status = SnapshotStatus.FAILED;
-                snapshot.errorMessage = e.getMessage();
-                snapshots.save(snapshot);
+            // Recarrega o snapshot do banco para evitar StaleObjectStateException: o objeto
+            // em memória pode ter versão desatualizada caso o save anterior tenha falhado.
+            try {
+                snapshots.findById(snapshotId).ifPresent(fresh -> {
+                    fresh.status = SnapshotStatus.FAILED;
+                    fresh.errorMessage = e.getMessage();
+                    snapshots.save(fresh);
+                });
+            } catch (Exception saveEx) {
+                log.error("event=snapshot.audit.fail_persist snapshot_id={} cause={}", snapshotId, saveEx.getMessage());
             }
             transferBroker.completeProcessing(sessionId, false, e.getMessage());
             storage.deletePrefix(stagingPrefix);

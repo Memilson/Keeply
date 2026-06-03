@@ -9,6 +9,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.Instant;
 import java.util.*;
@@ -92,7 +94,19 @@ public class SnapshotService {
         s.completedAt = Instant.now();
         snapshots.save(s);
 
-        manifestParser.auditAndPromoteAsync(s.id, session.id, session.stagingPrefix, principal.userId(), manifestKey);
+        // Dispara a auditoria apenas após o commit da transação corrente para evitar
+        // que o thread async leia a versão antiga do snapshot (@Version) e falhe com
+        // ObjectOptimisticLockingFailureException ao tentar salvar o status final.
+        UUID sid = s.id;
+        UUID sessionId = session.id;
+        String stagingPrefix = session.stagingPrefix;
+        UUID userId = principal.userId();
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                manifestParser.auditAndPromoteAsync(sid, sessionId, stagingPrefix, userId, manifestKey);
+            }
+        });
 
         return toResponse(s);
     }
