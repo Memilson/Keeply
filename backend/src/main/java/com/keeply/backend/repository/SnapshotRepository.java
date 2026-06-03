@@ -6,6 +6,8 @@ package com.keeply.backend.repository;
 
 import com.keeply.backend.model.Snapshot;
 import com.keeply.backend.model.SnapshotStatus;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -14,8 +16,11 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface SnapshotRepository extends JpaRepository<Snapshot, UUID> {
-    @Query("SELECT s FROM Snapshot s JOIN FETCH s.device WHERE s.device.user.id = :userId ORDER BY s.createdAt DESC")
-    List<Snapshot> findByDeviceUserIdOrderByCreatedAtDesc(@Param("userId") UUID userId);
+    @Query(
+        value = "SELECT s FROM Snapshot s JOIN FETCH s.device WHERE s.device.user.id = :userId ORDER BY s.createdAt DESC",
+        countQuery = "SELECT COUNT(s) FROM Snapshot s WHERE s.device.user.id = :userId"
+    )
+    Page<Snapshot> findByDeviceUserIdOrderByCreatedAtDesc(@Param("userId") UUID userId, Pageable pageable);
     List<Snapshot> findByDeviceUserIdAndDeviceIdAndStatusOrderByCreatedAtDesc(UUID userId, UUID deviceId, SnapshotStatus status);
     @Query("SELECT s FROM Snapshot s JOIN FETCH s.device WHERE s.id = :id AND s.device.user.id = :userId")
     Optional<Snapshot> findByIdAndDeviceUserId(@Param("id") UUID id, @Param("userId") UUID userId);

@@ -11,7 +11,6 @@ import com.keeply.backend.util.CurrentUser;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -68,8 +67,16 @@ public class SnapshotController {
     }
 
     @GetMapping
-    public List<SnapshotDtos.SnapshotResponse> list() {
-        return snapshots.list(CurrentUser.get().userId());
+    public SnapshotDtos.PagedSnapshotResponse list(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size
+    ) {
+        return snapshots.list(CurrentUser.get().userId(), page, Math.min(size, 200));
+    }
+
+    @GetMapping("/{snapshotId}")
+    public SnapshotDtos.SnapshotResponse get(@PathVariable UUID snapshotId) {
+        return snapshots.get(CurrentUser.get().userId(), snapshotId);
     }
 
     @DeleteMapping("/{snapshotId}")

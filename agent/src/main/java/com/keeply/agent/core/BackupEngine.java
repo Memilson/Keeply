@@ -424,10 +424,7 @@ public class BackupEngine {
         long timeoutSeconds = Long.getLong("keeply.agent.snapshot.audit-timeout-seconds", DEFAULT_AUDIT_TIMEOUT_SECONDS);
         long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(timeoutSeconds);
         while (true) {
-            SnapshotSummary snapshot = backend.listSnapshots().stream()
-                    .filter(s -> s.id().equals(snapshotId))
-                    .findFirst()
-                    .orElseThrow(() -> new IllegalStateException("Snapshot não encontrado após conclusão: " + snapshotId));
+            SnapshotSummary snapshot = backend.getSnapshot(snapshotId);
             if ("COMPLETED".equals(snapshot.status())) {
                 log.info("event=backup.snapshot status=audit_completed snapshot_id={}", snapshotId);
                 return;

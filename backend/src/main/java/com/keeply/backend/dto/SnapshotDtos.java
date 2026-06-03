@@ -57,6 +57,11 @@ public final class SnapshotDtos {
             int size
     ) {}
 
+    public record PagedSnapshotResponse(
+            List<SnapshotResponse> items,
+            PageMetadata pagination
+    ) {}
+
     public record SnapshotFileListResponse(
             List<SnapshotFileItem> items,
             PageMetadata pagination
