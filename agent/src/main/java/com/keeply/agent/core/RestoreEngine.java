@@ -52,6 +52,7 @@ public class RestoreEngine {
         AtomicLong totalRestoredSize = new AtomicLong(0);
 
         TransferCredentials credentials = null;
+        boolean restoreSucceeded = false;
         try {
             log.info("Iniciando restauracao do snapshot: {}", snapshotId);
             Set<String> selected = selectedPaths == null ? null : new HashSet<>(selectedPaths);
@@ -105,15 +106,21 @@ public class RestoreEngine {
                     String.format(java.util.Locale.ROOT, "%.2f", totalDuration),
                     String.format(java.util.Locale.ROOT, "%.2f", throughput));
             log.info("Restore concluido com integridade validada.");
+            restoreSucceeded = true;
         } catch (Exception e) {
             log.error("Restore falhou: {}", e.getMessage(), e);
             throw new IllegalStateException("Restore falhou", e);
         } finally {
             if (credentials != null) {
                 try {
-                    backend.finishTransferSession(credentials.transferSessionId());
+                    if (restoreSucceeded) {
+                        backend.finishTransferSession(credentials.transferSessionId());
+                    } else {
+                        backend.cancelTransferSession(credentials.transferSessionId());
+                    }
                 } catch (Exception e) {
-                    log.warn("event=restore.transfer_session status=finish_failed message={}", e.getMessage());
+                    String status = restoreSucceeded ? "finish_failed" : "cancel_failed";
+                    log.warn("event=restore.transfer_session status={} message={}", status, e.getMessage());
                 }
             }
         }

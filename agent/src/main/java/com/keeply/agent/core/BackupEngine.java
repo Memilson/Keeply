@@ -10,6 +10,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
@@ -148,6 +149,12 @@ public class BackupEngine {
                                     try {
                                         compressedSize = writeCodec.compressToFile(chunkData.data(), compressedFile);
                                         compressionNanos.addAndGet(System.nanoTime() - compressStart);
+                                        try (java.io.InputStream decompressed = writeCodec.openDecompressing(Files.newInputStream(compressedFile))) {
+                                            String roundtripHash = Sha256Hasher.hashBytes(decompressed.readAllBytes());
+                                            if (!roundtripHash.equals(chunkHash)) {
+                                                throw new IllegalStateException("Integridade do chunk falhou após compressão: " + chunkHash);
+                                            }
+                                        }
                                     } catch (Exception e) {
                                         Files.deleteIfExists(compressedFile);
                                         throw e;
@@ -193,13 +200,11 @@ public class BackupEngine {
 
                                 db.addManifestFile(relativePath, size, mtime, fileHash);
                             }
-                        } catch (java.nio.file.NoSuchFileException e) {
+                        } catch (NoSuchFileException e) {
                             log.warn("event=backup.file status=failed reason=changed_during_read path={}", relativePath);
-                            fileFailures.add(new FileProcessingFailure(relativePath, "changed_during_read", e));
                         } catch (Exception e) {
-                            if (e.getCause() instanceof java.nio.file.NoSuchFileException) {
+                            if (isToleratedRemovedDuringScan(e)) {
                                 log.warn("event=backup.file status=failed reason=changed_during_read path={}", relativePath);
-                                fileFailures.add(new FileProcessingFailure(relativePath, "changed_during_read", e));
                             } else {
                                 log.error("event=backup.file status=failed path={} message={}", relativePath, e.getMessage());
                                 fileFailures.add(new FileProcessingFailure(relativePath, "processing_failed", e));
@@ -212,6 +217,10 @@ public class BackupEngine {
                     });
                 for (FileScanner.ScanFailure failure : scanStats.unreadableFailures()) {
                     String failedPath = relativePath(sourceRoot, failure.path());
+                    if (isToleratedRemovedDuringScan(failure.cause())) {
+                        log.warn("event=backup.file status=failed reason=changed_during_scan path={}", failedPath);
+                        continue;
+                    }
                     log.error("event=backup.file status=failed reason=unreadable_entry path={} message={}",
                             failedPath, failure.cause().getMessage());
                     fileFailures.add(new FileProcessingFailure(failedPath, "unreadable_entry", failure.cause()));
@@ -395,6 +404,16 @@ public class BackupEngine {
 
     private static String safeMessage(Throwable throwable) {
         return throwable.getMessage() == null ? throwable.getClass().getSimpleName() : throwable.getMessage();
+    }
+
+    private static boolean isToleratedRemovedDuringScan(Throwable throwable) {
+        while (throwable != null) {
+            if (throwable instanceof NoSuchFileException) {
+                return true;
+            }
+            throwable = throwable.getCause();
+        }
+        return false;
     }
 
     private static String secondsSince(long start) {
