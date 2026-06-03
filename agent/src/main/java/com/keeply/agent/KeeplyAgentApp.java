@@ -264,8 +264,13 @@ public class KeeplyAgentApp extends Application {
                     });
                     log("event=ui.login status=completed device_id=" + deviceId);
                 } catch (Exception ex) {
-                    log("Erro no login: " + ex.getMessage());
-                    ui(() -> loginBtn.setDisable(false));
+                    String userMessage = getErrorMessage(ex);
+                    log("Erro no login: " + userMessage);
+                    ui(() -> {
+                        status.setText(userMessage);
+                        loginBtn.setDisable(false);
+                    });
+                    throw ex;
                 }
             });
         });
@@ -2282,6 +2287,8 @@ public class KeeplyAgentApp extends Application {
                 String userMessage = getErrorMessage(ex);
                 if (isInvalidCredentialsError(ex)) {
                     log("ERRO: Credenciais inválidas");
+                } else if (isRateLimitError(ex)) {
+                    log("ERRO: Limite temporário de tentativas atingido");
                 } else if (isBusinessError(ex)) {
                     log("ERRO: " + userMessage);
                 } else {
@@ -2307,7 +2314,19 @@ public class KeeplyAgentApp extends Application {
         Throwable current = t;
         while (current != null) {
             String msg = current.getMessage();
-            if (msg != null && msg.toLowerCase().contains("credenciais inválidas")) {
+            if (msg != null && (msg.toLowerCase().contains("credenciais inválidas") || msg.toLowerCase().contains("credenciais invalidas"))) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
+    private boolean isRateLimitError(Throwable t) {
+        Throwable current = t;
+        while (current != null) {
+            String msg = current.getMessage();
+            if (msg != null && msg.toLowerCase().contains("muitas tentativas")) {
                 return true;
             }
             current = current.getCause();

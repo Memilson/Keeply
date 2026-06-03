@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { AuthShell, AuthInput } from "@/components/AuthShell";
-import { api, ApiError, setTokens, type AuthResponse } from "@/lib/api";
+import { api, setTokens, type AuthResponse } from "@/lib/api";
+import { authCountdownLabel, resolveAuthError } from "@/lib/authFeedback";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -14,9 +15,24 @@ export default function RegisterPage() {
   const [confirm, setConfirm] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [cooldownUntil, setCooldownUntil] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!cooldownUntil) return;
+    const timer = window.setInterval(() => {
+      if (cooldownUntil <= Date.now()) {
+        setCooldownUntil(null);
+      }
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [cooldownUntil]);
+
+  const cooldownLabel = authCountdownLabel(cooldownUntil);
+  const blocked = !!cooldownLabel;
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
+    if (blocked) return;
     if (password !== confirm) {
       setError("As senhas não coincidem.");
       return;
@@ -42,8 +58,9 @@ export default function RegisterPage() {
         router.push("/login");
       }
     } catch (err) {
-      if (err instanceof ApiError) setError(err.message);
-      else setError("Não foi possível criar a conta. Tente novamente.");
+      const feedback = resolveAuthError(err);
+      setError(feedback.message);
+      if (feedback.cooldownUntil) setCooldownUntil(feedback.cooldownUntil);
     } finally {
       setLoading(false);
     }
@@ -107,12 +124,17 @@ export default function RegisterPage() {
         {error && (
           <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
         )}
+        {cooldownLabel && (
+          <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            Novo cadastro liberado em {cooldownLabel}.
+          </p>
+        )}
         <button
           type="submit"
-          disabled={loading}
+          disabled={loading || blocked}
           className="kp-btn-primary w-full rounded-xl px-4 py-2.5 text-sm font-semibold"
         >
-          {loading ? "Criando conta…" : "Criar conta"}
+          {loading ? "Criando conta…" : blocked ? `Aguarde ${cooldownLabel}` : "Criar conta"}
         </button>
       </form>
     </AuthShell>

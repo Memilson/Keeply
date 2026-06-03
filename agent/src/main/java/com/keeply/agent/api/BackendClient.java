@@ -13,6 +13,8 @@ import com.keeply.agent.model.TransferCredentials;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.net.ConnectException;
+import java.net.http.HttpTimeoutException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -288,7 +290,50 @@ public class BackendClient {
     }
 
     private static IllegalStateException failure(String message, String traceId, Exception cause) {
-        return new IllegalStateException(message + " [Trace-ID: " + traceId + "]", cause);
+        String resolved = resolveUserMessage(message, cause);
+        return new IllegalStateException(resolved + " [Trace-ID: " + traceId + "]", cause);
+    }
+
+    private static String resolveUserMessage(String fallback, Throwable cause) {
+        if (cause instanceof ApiException api) {
+            if (api.getStatusCode() == 401 || api.getStatusCode() == 403) {
+                return "Credenciais inválidas. Verifique e-mail e senha.";
+            }
+            if (api.getStatusCode() == 429) {
+                return api.getMessage() != null && !api.getMessage().isBlank()
+                        ? api.getMessage()
+                        : "Muitas tentativas. Aguarde alguns minutos antes de tentar novamente.";
+            }
+            if (api.getStatusCode() >= 500) {
+                return "O backend Keeply respondeu com erro interno. Tente novamente em instantes.";
+            }
+            if (api.getMessage() != null && !api.getMessage().isBlank()) {
+                return api.getMessage();
+            }
+        }
+        if (isNetworkError(cause)) {
+            return "Não foi possível conectar ao backend Keeply. Verifique a URL do servidor e a conectividade.";
+        }
+        return fallback;
+    }
+
+    private static boolean isNetworkError(Throwable throwable) {
+        Throwable current = throwable;
+        while (current != null) {
+            if (current instanceof ConnectException || current instanceof HttpTimeoutException) {
+                return true;
+            }
+            String message = current.getMessage();
+            if (message != null && (
+                    message.contains("Connection refused")
+                            || message.contains("Connect timed out")
+                            || message.contains("timeout")
+                            || message.contains("HTTP connect timed out"))) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 
     private static boolean blank(String value) {

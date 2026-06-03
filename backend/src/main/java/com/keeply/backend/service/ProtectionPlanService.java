@@ -22,6 +22,8 @@ import java.util.UUID;
 
 @Service
 public class ProtectionPlanService {
+    private static final String DEFAULT_DAILY_CRON = "0 2 * * *";
+
     private final DeviceRepository devices;
     private final ProtectionPlanRepository plans;
     private final PasswordEncoder passwordEncoder;
@@ -52,8 +54,7 @@ public class ProtectionPlanService {
         plan.sources = normalizeSources(request.sources());
         plan.cdpEnabled = Boolean.TRUE.equals(request.cdpEnabled());
         plan.encryptionEnabled = Boolean.TRUE.equals(request.encryptionEnabled());
-        plan.scheduleCron = request.scheduleCron() != null && !request.scheduleCron().isBlank()
-                ? request.scheduleCron() : null;
+        plan.scheduleCron = normalizeSchedule(request.scheduleCron());
         plan.retentionMode = retentionMode;
         plan.retentionDays = plan.retentionMode == RetentionMode.KEEP_DAYS
                 ? request.retentionDays() != null ? request.retentionDays() : plan.retentionDays
@@ -125,9 +126,16 @@ public class ProtectionPlanService {
     private DeviceDtos.PlanResponse toResponse(ProtectionPlan plan) {
         return new DeviceDtos.PlanResponse(
                 plan.planType, List.copyOf(plan.sources),
-                plan.cdpEnabled, plan.encryptionEnabled, plan.scheduleCron,
+                plan.cdpEnabled, plan.encryptionEnabled, normalizeSchedule(plan.scheduleCron),
                 plan.retentionMode, plan.retentionDays,
                 plan.encryptionPasswordHash != null && !plan.encryptionPasswordHash.isBlank(),
                 plan.updatedAt);
+    }
+
+    private String normalizeSchedule(String scheduleCron) {
+        if (scheduleCron == null || scheduleCron.isBlank()) {
+            return DEFAULT_DAILY_CRON;
+        }
+        return scheduleCron.trim();
     }
 }
