@@ -15,6 +15,10 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 512m
 
   postgres-exporter:
     image: prometheuscommunity/postgres-exporter:v0.15.0
@@ -61,6 +65,7 @@ services:
       KEEPLY_MINIO_BUCKET: ${KEEPLY_MINIO_BUCKET:-keeply}
       KEEPLY_JWT_SECRET: ${KEEPLY_JWT_SECRET:-dev-jwt-secret-change-me-32chars-min}
       KEEPLY_MASTER_KEY: ${KEEPLY_MASTER_KEY:-dev-master-key-change-me-64hex}
+      JAVA_TOOL_OPTIONS: "-Xms256m -Xmx512m"
     ports:
       - "127.0.0.1:${BACKEND_PORT:-8080}:8080"
     depends_on:
@@ -68,6 +73,10 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 700m
 
   frontend:
     build:
@@ -80,6 +89,10 @@ services:
       - "127.0.0.1:${FRONTEND_PORT:-3000}:3000"
     depends_on:
       - backend
+    deploy:
+      resources:
+        limits:
+          memory: 512m
 
   prometheus:
     image: prom/prometheus:v2.54.1
@@ -124,6 +137,10 @@ services:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
       GF_USERS_ALLOW_SIGN_UP: "false"
+    deploy:
+      resources:
+        limits:
+          memory: 256m
     command:
       - /bin/sh
       - -c
