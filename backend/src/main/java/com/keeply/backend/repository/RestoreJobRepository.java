@@ -11,4 +11,5 @@ import java.util.UUID;
 
 public interface RestoreJobRepository extends JpaRepository<RestoreJob, UUID> {
     List<RestoreJob> findBySnapshotDeviceUserIdOrderByCreatedAtDesc(UUID userId);
+    void deleteBySnapshot_Id(UUID snapshotId);
 }

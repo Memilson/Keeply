@@ -41,4 +41,18 @@ class AgentConfigWriterTest {
         assertEquals(15, saved.retentionDays());
         assertTrue(configPath.toFile().isFile());
     }
+
+    @Test
+    void saveSchedulePersistsDailyCronFromSelectedTime() throws Exception {
+        Path configPath = tempDir.resolve("agent.yaml");
+        AgentConfigWriter writer = new AgentConfigWriter(configPath);
+        AgentConfigReader reader = new AgentConfigReader(configPath);
+
+        writer.saveSchedule("http://localhost:8080", "user@example.com", List.of("/data/a"), "0 4 * * *");
+
+        AgentConfigReader.UiConfig saved = reader.read().orElseThrow();
+        assertEquals("0 4 * * *", saved.cron());
+        assertEquals(List.of("/data/a"), saved.sources());
+        assertTrue(configPath.toFile().isFile());
+    }
 }

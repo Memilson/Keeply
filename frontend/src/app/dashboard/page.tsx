@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { api, API_BASE, type Device, type Snapshot, type SnapshotStatus } from "@/lib/api";
-import { formatBytes, formatDateTime, formatRelative } from "@/lib/format";
+import { formatBytes, formatDateTime } from "@/lib/format";
 import { Topbar } from "@/components/Topbar";
 import { DonutGauge } from "@/components/Sparkline";
 
@@ -106,9 +106,19 @@ export default function DashboardOverview() {
     };
   }, [asOf, devices, snapshots]);
 
+  const donutSegments = useMemo(() => {
+    const segments = [
+      { label: "Máquinas protegidas", value: devices.length, color: "#7B61FF" },
+      { label: "Backups 24h", value: dashboard.backups24h, color: "#22C55E" },
+      { label: "Em execução", value: dashboard.running.length, color: "#F59E0B" },
+      { label: "Falhas críticas", value: dashboard.failed.length, color: "#EF4444" },
+    ];
+    return segments.some((segment) => segment.value > 0) ? segments : [{ label: "Sem atividade", value: 1, color: "#E4E1F0" }];
+  }, [dashboard.backups24h, dashboard.failed.length, dashboard.running.length, devices.length]);
+
   return (
     <>
-      <Topbar />
+      <Topbar title="Dashboard" />
       <main className="dashboard-page">
         {error && (
           <div className="kp-alert-error">
@@ -116,58 +126,23 @@ export default function DashboardOverview() {
           </div>
         )}
 
-        <section className="kpi-grid">
-          <KpiCard
-            label="Máquinas protegidas"
-            value={loading ? "..." : String(devices.length)}
-            hint={`${dashboard.activeDevices} ativas, ${dashboard.offlineDevices} offline`}
-            tone="purple"
-            icon={ICONS.devices}
-          />
-          <KpiCard
-            label="Backups últimas 24h"
-            value={loading ? "..." : String(dashboard.backups24h)}
-            hint={`${dashboard.running.length} em execução agora`}
-            tone="green"
-            icon={ICONS.backup}
-          />
-          <KpiCard
-            label="Armazenamento usado"
-            value={loading ? "..." : formatBytes(dashboard.totalCompressed)}
-            hint="Snapshots concluídos"
-            tone="blue"
-            icon={ICONS.storage}
-          />
-          <KpiCard
-            label="Saúde do ambiente"
-            value={loading ? "..." : `${dashboard.successRate}%`}
-            hint="Sucesso entre concluídos e falhos"
-            tone="green"
-            icon={ICONS.shield}
-          />
-          <KpiCard
-            label="Último snapshot"
-            value={loading ? "..." : formatRelative(dashboard.latestSnapshot?.startedAt)}
-            hint={dashboard.latestSnapshot ? statusLabel(dashboard.latestSnapshot.status) : "Sem snapshots"}
-            tone="purple"
-            icon={ICONS.clock}
-          />
-          <KpiCard
-            label="Falhas críticas"
-            value={loading ? "..." : String(dashboard.failed.length)}
-            hint={dashboard.failed.length > 0 ? "Requer atenção" : "Nenhuma falha registrada"}
-            tone={dashboard.failed.length > 0 ? "red" : "green"}
-            icon={ICONS.warning}
-          />
+        <section className="dashboard-summary">
+          <div className="dashboard-summary-chart">
+            <MultiDonutChart
+              segments={donutSegments}
+              centerValue={loading ? "..." : `${dashboard.successRate}%`}
+              centerLabel="saúde"
+            />
+          </div>
         </section>
 
         <section className="dashboard-grid-main">
-          <article className="kp-card dashboard-card activity-card">
+          <article className="dashboard-card activity-card">
             <CardHeader title="Atividade de backups" description="Snapshots registrados nos últimos 7 dias" />
             <BackupActivityChart values={dashboard.activity} loading={loading} />
           </article>
 
-          <article className="kp-card dashboard-card">
+          <article className="dashboard-card">
             <CardHeader title="Status de proteção" description="Saúde geral do ambiente" />
             <div className="protection-status">
               <DonutGauge
@@ -193,7 +168,7 @@ export default function DashboardOverview() {
         </section>
 
         <section className="dashboard-grid-bottom">
-          <article className="kp-card dashboard-card snapshots-card">
+          <article className="dashboard-card snapshots-card">
             <div className="card-heading-row">
               <CardHeader title="Snapshots recentes" description="Últimas execuções no seu ambiente" />
               <Link href="/dashboard/backups" className="kp-link">
@@ -203,7 +178,7 @@ export default function DashboardOverview() {
             <RecentSnapshotsTable snapshots={dashboard.recentSnapshots} devices={devices} loading={loading} />
           </article>
 
-          <article className="kp-card dashboard-card">
+          <article className="dashboard-card">
             <CardHeader title="Top máquinas por volume" description="Ranking por armazenamento usado" />
             <TopDevices devices={dashboard.topDevices} loading={loading} />
           </article>
@@ -222,28 +197,80 @@ function CardHeader({ title, description }: { title: string; description: string
   );
 }
 
-function KpiCard({
-  label,
-  value,
-  hint,
-  tone,
-  icon,
+function MultiDonutChart({
+  segments,
+  centerValue,
+  centerLabel,
 }: {
-  label: string;
-  value: string;
-  hint: string;
-  tone: "purple" | "green" | "blue" | "red";
-  icon: React.ReactNode;
+  segments: { label: string; value: number; color: string }[];
+  centerValue: string;
+  centerLabel: string;
 }) {
+  const size = 220;
+  const strokeWidth = 18;
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const total = segments.reduce((sum, segment) => sum + segment.value, 0) || 1;
+  const arcs = segments.reduce<Array<{ label: string; color: string; dashArray: string; dashOffset: number }>>(
+    (acc, segment) => {
+      const usedLength = acc.reduce((sum, arc) => sum + Number(arc.dashArray.split(" ")[0]), 0);
+      const segmentLength = (segment.value / total) * circumference;
+      acc.push({
+        label: segment.label,
+        color: segment.color,
+        dashArray: `${segmentLength} ${circumference - segmentLength}`,
+        dashOffset: -usedLength,
+      });
+      return acc;
+    },
+    []
+  );
+
   return (
-    <article className="kp-card kpi-card">
-      <div className={`kpi-icon kpi-icon-${tone}`}>{icon}</div>
-      <div className="min-w-0">
-        <p className="kpi-label">{label}</p>
-        <p className="kpi-value">{value}</p>
-        <p className="kpi-hint">{hint}</p>
+    <div className="multi-donut">
+      <div className="multi-donut-visual">
+        <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden="true">
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            fill="none"
+            stroke="#EEEAFB"
+            strokeWidth={strokeWidth}
+          />
+          {arcs.map((arc) => {
+            return (
+              <circle
+                key={arc.label}
+                cx={size / 2}
+                cy={size / 2}
+                r={radius}
+                fill="none"
+                stroke={arc.color}
+                strokeWidth={strokeWidth}
+                strokeLinecap="round"
+                strokeDasharray={arc.dashArray}
+                strokeDashoffset={arc.dashOffset}
+                transform={`rotate(-90 ${size / 2} ${size / 2})`}
+              />
+            );
+          })}
+        </svg>
+        <div className="multi-donut-center">
+          <strong>{centerValue}</strong>
+          <span>{centerLabel}</span>
+        </div>
       </div>
-    </article>
+      <div className="multi-donut-legend">
+        {segments.map((segment) => (
+          <div key={segment.label} className="multi-donut-legend-item">
+            <span className="multi-donut-dot" style={{ background: segment.color }} />
+            <span>{segment.label}</span>
+            <strong>{segment.value}</strong>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -382,12 +409,6 @@ function isRunningStatus(snapshot: Snapshot) {
   return snapshot.status === "RUNNING" || snapshot.status === "IN_PROGRESS" || snapshot.status === "PROCESSING";
 }
 
-function statusLabel(status: SnapshotStatus) {
-  if (status === "COMPLETED") return "Concluído";
-  if (status === "FAILED") return "Falhou";
-  return "Em execução";
-}
-
 function deviceName(device?: Device) {
   return device?.name || device?.hostname || "Máquina";
 }
@@ -405,43 +426,3 @@ function formatDuration(startedAt?: string, completedAt?: string) {
   const remainingMinutes = minutes % 60;
   return remainingMinutes ? `${hours}h ${remainingMinutes}m` : `${hours}h`;
 }
-
-const ICONS = {
-  devices: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="3" y="4" width="18" height="6" rx="1.5" />
-      <rect x="3" y="14" width="18" height="6" rx="1.5" />
-      <path d="M7 7h.01M7 17h.01" />
-    </svg>
-  ),
-  backup: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M20 6 9 17l-5-5" />
-    </svg>
-  ),
-  storage: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
-      <ellipse cx="12" cy="5" rx="8" ry="3" />
-      <path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5" />
-      <path d="M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6" />
-    </svg>
-  ),
-  shield: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M12 3 5 6v5c0 4.7 3 8.2 7 9 4-.8 7-4.3 7-9V6l-7-3Z" />
-      <path d="m9 12 2 2 4-4" />
-    </svg>
-  ),
-  clock: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="8" />
-      <path d="M12 8v5l3 2" />
-    </svg>
-  ),
-  warning: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
-      <path d="m12 3 9 16H3L12 3Z" />
-      <path d="M12 9v4M12 17h.01" />
-    </svg>
-  ),
-};

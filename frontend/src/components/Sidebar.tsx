@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useMemo, useSyncExternalStore } from "react";
 import { KeeplyMark } from "./KeeplyLogo";
 
 type Item = { href: string; label: string; icon: React.ReactNode; activePrefix?: string };
@@ -50,12 +51,38 @@ const ITEMS: Item[] = [
   { href: "/dashboard/activities", label: "Atividades", icon: ICONS.chart },
 ];
 
+function getStoredUserSnapshot() {
+  if (typeof window === "undefined") return "";
+  return localStorage.getItem("keeply.user") ?? "";
+}
+
+function subscribeToStoredUser(callback: () => void) {
+  window.addEventListener("storage", callback);
+  return () => window.removeEventListener("storage", callback);
+}
+
+function parseStoredUser(raw: string) {
+  try {
+    if (!raw) return { initials: "KP", userName: "Conta" };
+    const user = JSON.parse(raw) as { name?: string; email?: string };
+    const source = user.name ?? user.email ?? "Keeply";
+    const parts = source.split(/[\s@]+/).filter(Boolean);
+    const initials = `${parts[0]?.[0] ?? "K"}${parts[1]?.[0] ?? ""}`.toUpperCase();
+    return { initials, userName: user.name ?? user.email ?? "Conta" };
+  } catch {
+    return { initials: "KP", userName: "Conta" };
+  }
+}
+
 export function Sidebar() {
   const pathname = usePathname();
+  const rawUser = useSyncExternalStore(subscribeToStoredUser, getStoredUserSnapshot, () => "");
+  const { initials, userName } = useMemo(() => parseStoredUser(rawUser), [rawUser]);
+
   return (
     <aside className="hidden h-screen w-[276px] shrink-0 flex-col overflow-hidden p-3 lg:flex" style={{ background: "#F8F7FD", borderRight: "1px solid #E9E6F4" }}>
       {/* Logo */}
-      <div className="flex items-center gap-3 rounded-2xl bg-white px-4 py-4" style={{ border: "1px solid #E9E6F4" }}>
+      <div className="flex items-center gap-3 rounded-2xl px-4 py-4">
         <KeeplyMark size={30} />
         <div className="min-w-0">
           <span className="block text-[17px] font-semibold tracking-tight" style={{ color: "#18163A" }}>Keeply</span>
@@ -83,24 +110,6 @@ export function Sidebar() {
         })}
       </nav>
 
-      {/* Bottom agent install card */}
-      <div className="rounded-2xl bg-white p-4" style={{ border: "1px solid #E9E6F4", boxShadow: "0 10px 28px rgba(24, 22, 58, 0.06)" }}>
-        <div className="flex items-start gap-2.5">
-          <div className="grid h-8 w-8 shrink-0 place-items-center rounded-xl" style={{ background: "#EDE9FF" }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7B61FF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 3 4 6v6c0 5 3.5 8.5 8 9 4.5-.5 8-4 8-9V6l-8-3Z" />
-            </svg>
-          </div>
-          <div className="min-w-0">
-            <p className="text-xs font-semibold" style={{ color: "#18163A" }}>Instalar agente</p>
-            <p className="mt-0.5 text-[11px] leading-relaxed" style={{ color: "#6B6993" }}>Adicione novas máquinas ao seu ambiente.</p>
-          </div>
-        </div>
-        <button className="mt-3 w-full rounded-xl py-2 text-xs font-medium text-white transition-colors hover:opacity-90" style={{ background: "#7B61FF" }}>
-          Ver guia
-        </button>
-      </div>
-
       {/* Version */}
       <button className="mt-3 flex items-center gap-2 rounded-xl px-3 py-2.5 text-left text-xs font-medium transition-colors hover:bg-white" style={{ color: "#8A87A8" }}>
         <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -108,6 +117,23 @@ export function Sidebar() {
         </svg>
         Recolher menu
       </button>
+
+      <div className="mt-2 flex items-center gap-3 rounded-xl px-3 py-3">
+        <span
+          className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-xs font-semibold text-white"
+          style={{ background: "#7B61FF" }}
+        >
+          {initials}
+        </span>
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold" style={{ color: "#18163A" }}>
+            {userName.split("@")[0]}
+          </p>
+          <p className="truncate text-[11px]" style={{ color: "#8A87A8" }}>
+            Administrador
+          </p>
+        </div>
+      </div>
 
       <div className="px-3 pb-1 pt-2 text-[10px]" style={{ color: "#A9A6C0" }}>
         Keeply v1.0
