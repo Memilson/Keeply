@@ -28,8 +28,10 @@ public final class AuthDtos {
             @NotBlank @Size(max = 128) String password,
             @NotBlank @Size(max = 255) String deviceInstallationId,
             @NotBlank @Size(max = 255) String hostname,
-            @NotBlank @Size(max = 100) String osName,
-            @NotBlank @Size(max = 100) String agentVersion
+            // VULN-012: osName e agentVersion são opcionais — agentes antigos podem não os enviar
+            // nullableTrim() no AuthService já trata null/blank corretamente
+            @Size(max = 100) String osName,
+            @Size(max = 100) String agentVersion
     ) {
     }
 

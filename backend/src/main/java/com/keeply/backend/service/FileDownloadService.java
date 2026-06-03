@@ -16,6 +16,8 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.file.InvalidPathException;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
 import java.util.UUID;
@@ -26,6 +28,8 @@ import java.util.zip.ZipOutputStream;
 @Transactional(readOnly = true)
 public class FileDownloadService {
     private static final int MAX_SELECTED_FILES = 10;
+    // VULN-015: limite de 5 GB para download de archive (evita exhaustão de banda/memória)
+    private static final long MAX_ARCHIVE_TOTAL_BYTES = 5L * 1024 * 1024 * 1024;
 
     private final SnapshotRepository snapshotRepository;
     private final SnapshotFileRepository snapshotFileRepository;
@@ -45,8 +49,9 @@ public class FileDownloadService {
 
     public void streamFile(UUID userId, UUID snapshotId, String filePath, HttpServletResponse response) throws IOException {
         requireCompletedSnapshot(userId, snapshotId);
-        SnapshotFile file = requireSnapshotFile(snapshotId, filePath);
-        String basename = Paths.get(filePath).getFileName().toString();
+        String sanitized = sanitizeFilePath(filePath); // VULN-007: previne path traversal
+        SnapshotFile file = requireSnapshotFile(snapshotId, sanitized);
+        String basename = Paths.get(sanitized).getFileName().toString();
 
         response.setContentType("application/octet-stream");
         response.setHeader("Content-Disposition", "attachment; filename=\"" + basename + "\"");
@@ -61,6 +66,14 @@ public class FileDownloadService {
         List<SnapshotFile> files = paths.stream()
                 .map(path -> requireSnapshotFile(snapshotId, path))
                 .toList();
+
+        // VULN-015: verificar tamanho total antes de iniciar o stream
+        long totalSize = files.stream().mapToLong(f -> f.size).sum();
+        if (totalSize > MAX_ARCHIVE_TOTAL_BYTES) {
+            throw new IllegalArgumentException(
+                    "Tamanho total dos arquivos selecionados excede o limite de 5 GB para download"
+            );
+        }
 
         ByteArrayOutputStream buffer = new ByteArrayOutputStream();
         try (ZipOutputStream zip = new ZipOutputStream(buffer)) {
@@ -96,6 +109,32 @@ public class FileDownloadService {
     private SnapshotFile requireSnapshotFile(UUID snapshotId, String filePath) {
         return snapshotFileRepository.findBySnapshotIdAndPath(snapshotId, filePath)
                 .orElseThrow(() -> new IllegalArgumentException("File not found in snapshot: " + filePath));
+    }
+
+    /**
+     * VULN-007: Sanitiza o path recebido do usuário para prevenir path traversal.
+     * Normaliza separadores e rejeita qualquer path que contenha componentes relativos
+     * após normalização (ex: ../../outro-usuario/arquivo.txt).
+     */
+    private String sanitizeFilePath(String path) {
+        if (path == null || path.isBlank()) {
+            throw new IllegalArgumentException("path é obrigatório");
+        }
+        try {
+            // Normaliza separadores e resolve componentes ..
+            String normalized = Path.of(path).normalize().toString();
+            // Rejeitar qualquer path que ainda comece com .. após normalização
+            if (normalized.startsWith("..") || normalized.contains("/../")) {
+                throw new IllegalArgumentException("path inválido: tentativa de path traversal detectada");
+            }
+            // Rejeitar paths absolutos que possam tentar acessar o filesystem do servidor
+            if (Path.of(normalized).isAbsolute() && !normalized.startsWith("/")) {
+                throw new IllegalArgumentException("path inválido");
+            }
+            return normalized;
+        } catch (InvalidPathException e) {
+            throw new IllegalArgumentException("path inválido: " + e.getMessage());
+        }
     }
 
     private void streamSnapshotFileContent(UUID userId, SnapshotFile file, OutputStream out) throws IOException {

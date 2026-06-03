@@ -37,6 +37,9 @@ public class TransferSession implements Persistable<UUID> {
     @Column(name = "snapshot_id", nullable = false)
     public UUID snapshotId;
 
+    @Column(name = "minio_access_key", length = 255)
+    public String minioAccessKey;
+
     @Column(name = "expires_at")
     public Instant expiresAt;
 

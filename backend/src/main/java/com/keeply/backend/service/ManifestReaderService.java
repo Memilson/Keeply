@@ -38,7 +38,10 @@ public class ManifestReaderService {
             throw new IllegalStateException("Snapshot ainda não concluído (Status: " + snapshot.status + ")");
         }
 
-        PageRequest pageable = PageRequest.of(Math.max(page, 0), size, Sort.by("path").ascending());
+        // VULN-010: limites aplicados internamente para proteger todos os call-sites
+        int safePage = Math.max(page, 0);
+        int safeSize = Math.min(Math.max(size, 1), 200);
+        PageRequest pageable = PageRequest.of(safePage, safeSize, Sort.by("path").ascending());
         Page<SnapshotFile> result;
         if (prefix != null && !prefix.isBlank()) {
             result = snapshotFiles.findBySnapshotIdAndPathStartingWith(snapshotId, prefix, pageable);

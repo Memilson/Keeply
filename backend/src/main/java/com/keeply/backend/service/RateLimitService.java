@@ -2,14 +2,24 @@ package com.keeply.backend.service;
 
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
 import java.util.concurrent.atomic.AtomicInteger;
 
+/**
+ * VULN-005: Rate Limit com Caffeine (in-memory).
+ *
+ * AVISO: Em produção com múltiplas réplicas, os contadores são independentes por instância.
+ * Para rate limiting distribuído, use Redis + spring-boot-starter-data-redis
+ * ou configure o rate limit no API Gateway (Nginx/Traefik/Kong).
+ */
 @Service
 public class RateLimitService {
+    private static final Logger log = LoggerFactory.getLogger(RateLimitService.class);
     private final int maxAttemptsIp;
     private final int maxAttemptsEmail;
     private final int maxRefreshAttemptsIp;
@@ -60,6 +70,10 @@ public class RateLimitService {
         this.archiveDownloadUserCache = Caffeine.newBuilder()
                 .expireAfterWrite(Duration.ofMinutes(archiveDownloadWindowMinutes))
                 .build();
+
+        // VULN-005: aviso de startup — lembrar ops team sobre a limitação em produção
+        log.warn("[SECURITY] RateLimitService usando cache IN-MEMORY. "
+                + "Em produção multi-instância configure Redis ou rate limit no API Gateway.");
     }
 
     public void checkRateLimit(String ip, String email) {

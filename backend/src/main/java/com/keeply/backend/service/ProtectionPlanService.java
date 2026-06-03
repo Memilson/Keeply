@@ -13,16 +13,20 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 @Service
 public class ProtectionPlanService {
     private static final String DEFAULT_DAILY_CRON = "0 2 * * *";
+    // VULN-011: padrão unix-cron com 5 campos (minuto hora dia-mês mês dia-semana)
+    private static final Pattern UNIX_CRON_PATTERN = Pattern.compile(
+            "^(\\S+\\s){4}\\S+$"
+    );
 
     private final DeviceRepository devices;
     private final ProtectionPlanRepository plans;
@@ -116,9 +120,13 @@ public class ProtectionPlanService {
     }
 
     private List<String> normalizeSources(List<String> sources) {
+        // VULN-014: não resolver paths no servidor — armazenar como veio do cliente
+        // Path.of().toAbsolutePath() resolvia em relação ao cwd do processo Java, não do cliente
         Set<String> unique = new LinkedHashSet<>();
         for (String source : sources) {
-            unique.add(Path.of(source).toAbsolutePath().normalize().toString());
+            if (source != null && !source.isBlank()) {
+                unique.add(source.trim());
+            }
         }
         return new ArrayList<>(unique);
     }
@@ -136,6 +144,13 @@ public class ProtectionPlanService {
         if (scheduleCron == null || scheduleCron.isBlank()) {
             return DEFAULT_DAILY_CRON;
         }
-        return scheduleCron.trim();
+        String trimmed = scheduleCron.trim();
+        // VULN-011: validar formato unix-cron antes de persistir
+        if (!UNIX_CRON_PATTERN.matcher(trimmed).matches()) {
+            throw new IllegalArgumentException(
+                    "scheduleCron inválido: esperado 5 campos unix-cron (ex: '0 2 * * *'), recebido: '" + trimmed + "'"
+            );
+        }
+        return trimmed;
     }
 }

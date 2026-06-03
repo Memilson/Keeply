@@ -21,27 +21,31 @@ import java.util.UUID;
 @Service
 public class TransferCredentialBroker {
     private static final Logger log = LoggerFactory.getLogger(TransferCredentialBroker.class);
-    private static final Duration CREDENTIAL_LIFETIME = Duration.ofMinutes(30);
-    private static final Duration RENEW_WINDOW = Duration.ofMinutes(10);
 
     private final TransferSessionRepository sessions;
     private final TemporaryCredentialIssuer issuer;
     private final ObjectStorageService storage;
     private final String bucket;
     private final String endpoint;
+    private final Duration credentialLifetime;
+    private final Duration renewWindow;
 
     public TransferCredentialBroker(
             TransferSessionRepository sessions,
             TemporaryCredentialIssuer issuer,
             ObjectStorageService storage,
             @Value("${keeply.minio.bucket}") String bucket,
-            @Value("${keeply.minio.public-endpoint:${keeply.minio.endpoint}}") String endpoint
+            @Value("${keeply.minio.public-endpoint:${keeply.minio.endpoint}}") String endpoint,
+            @Value("${keeply.transfer.credentials.lifetime-minutes:10}") long credentialLifetimeMinutes,
+            @Value("${keeply.transfer.credentials.renew-window-minutes:3}") long renewWindowMinutes
     ) {
         this.sessions = sessions;
         this.issuer = issuer;
         this.storage = storage;
         this.bucket = bucket;
         this.endpoint = endpoint;
+        this.credentialLifetime = Duration.ofMinutes(credentialLifetimeMinutes);
+        this.renewWindow = Duration.ofMinutes(renewWindowMinutes);
     }
 
     @Transactional
@@ -130,16 +134,17 @@ public class TransferCredentialBroker {
 
     private TransferSessionDtos.Credentials issue(TransferSession session) {
         Instant now = Instant.now();
-        session.expiresAt = now.plus(CREDENTIAL_LIFETIME);
+        session.expiresAt = now.plus(credentialLifetime);
         session.lastRenewedAt = now;
         TemporaryCredentialIssuer.IssuedCredential credential =
                 issuer.issue(policy(session), session.expiresAt);
+        session.minioAccessKey = credential.accessKey();
         sessions.save(session);
         log.info("event=transfer_session.issued type={} session_id={} snapshot_id={} expires_at={}",
                 session.type, session.id, session.snapshotId, session.expiresAt);
         return new TransferSessionDtos.Credentials(
                 session.id, session.type, bucket, endpoint, credential.accessKey(), credential.secretKey(),
-                credential.sessionToken(), session.expiresAt, session.expiresAt.minus(RENEW_WINDOW), session.stagingPrefix
+                credential.sessionToken(), session.expiresAt, session.expiresAt.minus(renewWindow), session.stagingPrefix
         );
     }
 
@@ -177,8 +182,11 @@ public class TransferCredentialBroker {
     }
 
     private void revokeCurrent(TransferSession session) {
-        // MinIO STS credentials are bounded by expiration and policy. The access key is not
-        // persisted because storing it does not provide reliable server-side revocation here.
+        if (session.minioAccessKey == null || session.minioAccessKey.isBlank()) {
+            return;
+        }
+        issuer.revoke(session.minioAccessKey);
+        session.minioAccessKey = null;
     }
 
     private void close(TransferSession session, TransferSessionStatus status, String reason) {
