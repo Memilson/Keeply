@@ -1,5 +1,6 @@
 package com.keeply.agent;
 
+import com.keeply.agent.api.BackendClient;
 import com.keeply.agent.auth.DeviceAuthStore;
 import com.keeply.agent.config.AgentConfig;
 import com.keeply.agent.config.AgentConfigLoader;
@@ -14,6 +15,9 @@ import org.slf4j.LoggerFactory;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 public final class KeeplyAgentDaemonApp {
     private static final Logger log = LoggerFactory.getLogger(KeeplyAgentDaemonApp.class);
@@ -43,6 +47,7 @@ public final class KeeplyAgentDaemonApp {
             DeviceAuthStore authStore = new DeviceAuthStore(AgentPaths.resolveDeviceAuthPath());
 
             AgentConfig config = new AgentConfigLoader().load(configPath);
+            BackendClient backend = new BackendClient(config.backend().url(), authStore);
             BackupCycleRunner runner = new BackupCycleRunner(config, configPath, db, authStore);
 
             log.info("event=daemon.start config_path={}", configPath);
@@ -61,9 +66,29 @@ public final class KeeplyAgentDaemonApp {
                 } else {
                     log.warn("event=daemon.schedule status=disabled reason=missing_schedule_cron");
                 }
+
+                ScheduledExecutorService heartbeatExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
+                    Thread t = new Thread(r, "keeply-heartbeat");
+                    t.setDaemon(true);
+                    return t;
+                });
+                heartbeatExecutor.scheduleAtFixedRate(() -> {
+                    try {
+                        backend.refreshSession();
+                        var session = backend.getSession();
+                        if (session != null && session.deviceId() != null) {
+                            backend.heartbeat(session.deviceId());
+                            log.debug("event=heartbeat status=ok device_id={}", session.deviceId());
+                        }
+                    } catch (Exception e) {
+                        log.warn("event=heartbeat status=failed message={}", e.getMessage());
+                    }
+                }, 5, 5, TimeUnit.MINUTES);
+
                 CronScheduler finalScheduler = scheduler;
                 Runtime.getRuntime().addShutdownHook(new Thread(() -> {
                     log.info("event=daemon.shutdown status=started");
+                    heartbeatExecutor.shutdownNow();
                     if (finalScheduler != null) {
                         finalScheduler.shutdown();
                     }

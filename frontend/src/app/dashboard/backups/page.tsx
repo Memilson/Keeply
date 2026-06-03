@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Fragment, useEffect, useMemo, useState } from "react";
-import { api, type Device, type Snapshot } from "@/lib/api";
+import { api, type Device, type PagedResponse, type Snapshot } from "@/lib/api";
 import { formatBytes, formatDateTime } from "@/lib/format";
 import { Topbar } from "@/components/Topbar";
 
@@ -25,10 +25,10 @@ export default function BackupsPage() {
       try {
         const [d, s] = await Promise.all([
           api<Device[]>("/api/devices"),
-          api<Snapshot[]>("/api/snapshots"),
+          api<PagedResponse<Snapshot>>("/api/snapshots"),
         ]);
         setDevices(d ?? []);
-        setSnapshots(s ?? []);
+        setSnapshots(s?.items ?? []);
       } catch (e) {
         setError(e instanceof Error ? e.message : "Falha ao carregar backups.");
       } finally {

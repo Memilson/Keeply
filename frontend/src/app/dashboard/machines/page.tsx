@@ -5,7 +5,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Topbar } from "@/components/Topbar";
-import { api, type Device, type DevicePlan, type Snapshot } from "@/lib/api";
+import { api, type Device, type DevicePlan, type PagedResponse, type Snapshot } from "@/lib/api";
 import { formatBytes, formatDateTime } from "@/lib/format";
 
 type DeviceWithPlan = Device & { plan: DevicePlan | null; planLoading: boolean };
@@ -55,9 +55,9 @@ export default function MachinesPage() {
     setError(null);
 
     try {
-      const [deviceList, snapshotList] = await Promise.all([
+      const [deviceList, snapshotPage] = await Promise.all([
         api<Device[]>("/api/devices"),
-        api<Snapshot[]>("/api/snapshots"),
+        api<PagedResponse<Snapshot>>("/api/snapshots"),
       ]);
 
       const baseDevices = (deviceList ?? []).map((device) => ({
@@ -67,7 +67,7 @@ export default function MachinesPage() {
       }));
 
       setDevices(baseDevices);
-      setSnapshots(snapshotList ?? []);
+      setSnapshots(snapshotPage?.items ?? []);
       setSelectedDeviceId((current) => {
         if (current && baseDevices.some((device) => device.id === current)) return current;
         return baseDevices[0]?.id ?? "";

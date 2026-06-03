@@ -6,10 +6,15 @@ WORKDIR /app
 COPY gradlew build.gradle settings.gradle ./
 COPY gradle ./gradle
 COPY backend ./backend
-COPY agent ./agent
+# agent/build.gradle é necessário para o Gradle configurar o multi-project,
+# mas a src não precisa ser copiada pois :backend:bootJar não depende de :agent
+COPY agent/build.gradle ./agent/build.gradle
 
 RUN --mount=type=cache,target=/root/.gradle \
-    chmod +x ./gradlew && ./gradlew :backend:bootJar -x test --no-daemon
+    chmod +x ./gradlew && \
+    JAVA_TOOL_OPTIONS="-Xmx1g -XX:MaxMetaspaceSize=384m" \
+    GRADLE_OPTS="-Dorg.gradle.jvmargs=-Xmx1g -Dorg.gradle.daemon=false" \
+    ./gradlew :backend:bootJar -x test --no-daemon
 
 FROM eclipse-temurin:25-jre
 WORKDIR /app

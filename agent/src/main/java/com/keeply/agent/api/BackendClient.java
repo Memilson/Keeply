@@ -100,6 +100,15 @@ public class BackendClient {
         }
     }
 
+    public void heartbeat(UUID deviceId) {
+        String traceId = traceId();
+        try {
+            devices.heartbeat(deviceId, traceId);
+        } catch (Exception e) {
+            throw failure("Falha ao enviar heartbeat", traceId, e);
+        }
+    }
+
     public ProtectionPlan upsertDevicePlan(UUID deviceId, ProtectionPlan.PlanType type, List<String> sources) {
         return upsertDevicePlan(deviceId, type, sources, false, false, null);
     }

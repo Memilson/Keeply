@@ -125,6 +125,11 @@ export type Snapshot = {
   errorMessage?: string;
 };
 
+export type PagedResponse<T> = {
+  items: T[];
+  pagination: { totalElements: number; page: number; size: number };
+};
+
 export type SnapshotFile = {
   path: string;
   size: number;
