@@ -41,8 +41,22 @@ public final class SnapshotApiClient {
                 mapper.writeValueAsString(Map.of("errorMessage", errorMessage)), "POST", traceId);
     }
 
+    SnapshotSummary get(UUID snapshotId, String traceId) throws Exception {
+        return mapper.readValue(executor.get("/api/snapshots/" + snapshotId, traceId).body(), SnapshotSummary.class);
+    }
+
     List<SnapshotSummary> list(String traceId) throws Exception {
-        return mapper.readValue(executor.get("/api/snapshots", traceId).body(), new TypeReference<>() {});
+        List<SnapshotSummary> all = new java.util.ArrayList<>();
+        int page = 0;
+        while (true) {
+            String path = "/api/snapshots?page=" + page + "&size=200";
+            BackendClient.SnapshotPage result = mapper.readValue(
+                    executor.get(path, traceId).body(), BackendClient.SnapshotPage.class);
+            all.addAll(result.items());
+            if (result.items().isEmpty() || all.size() >= result.pagination().totalElements()) break;
+            page++;
+        }
+        return all;
     }
 
     void delete(UUID snapshotId, String traceId) throws Exception {

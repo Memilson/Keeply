@@ -108,11 +108,19 @@ public class SnapshotService {
     }
 
     @Transactional(readOnly = true)
-    public List<SnapshotDtos.SnapshotResponse> list(UUID userId) {
-        return snapshots.findByDeviceUserIdOrderByCreatedAtDesc(userId)
-                .stream()
-                .map(this::toResponse)
-                .toList();
+    public SnapshotDtos.SnapshotResponse get(UUID userId, UUID snapshotId) {
+        return toResponse(findOwned(userId, snapshotId));
+    }
+
+    @Transactional(readOnly = true)
+    public SnapshotDtos.PagedSnapshotResponse list(UUID userId, int page, int size) {
+        var pageable = org.springframework.data.domain.PageRequest.of(page, size);
+        var result = snapshots.findByDeviceUserIdOrderByCreatedAtDesc(userId, pageable);
+        var items = result.getContent().stream().map(this::toResponse).toList();
+        return new SnapshotDtos.PagedSnapshotResponse(
+                items,
+                new SnapshotDtos.PageMetadata(result.getTotalElements(), page, size)
+        );
     }
 
     @Transactional
