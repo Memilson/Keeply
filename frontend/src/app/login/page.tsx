@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { AuthShell, AuthInput } from "@/components/AuthShell";
-import { api, ApiError, setTokens, type AuthResponse } from "@/lib/api";
+import { api, setTokens, type AuthResponse } from "@/lib/api";
+import { authCountdownLabel, resolveAuthError } from "@/lib/authFeedback";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -12,9 +13,24 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [cooldownUntil, setCooldownUntil] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!cooldownUntil) return;
+    const timer = window.setInterval(() => {
+      if (cooldownUntil <= Date.now()) {
+        setCooldownUntil(null);
+      }
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [cooldownUntil]);
+
+  const cooldownLabel = authCountdownLabel(cooldownUntil);
+  const blocked = !!cooldownLabel;
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
+    if (blocked) return;
     setLoading(true);
     setError(null);
     try {
@@ -32,19 +48,9 @@ export default function LoginPage() {
       } catch {}
       router.push("/dashboard");
     } catch (err) {
-      if (err instanceof ApiError) {
-        if (err.status === 401 || err.status === 403) {
-          setError("E-mail ou senha incorretos.");
-        } else {
-          setError(err.message || `Erro ${err.status}`);
-        }
-      } else if (err instanceof TypeError) {
-        setError(
-          "Não foi possível conectar ao servidor. Verifique se o backend está rodando em http://localhost:8080 e se foi reiniciado após a última alteração."
-        );
-      } else {
-        setError("Erro inesperado. Tente novamente.");
-      }
+      const feedback = resolveAuthError(err);
+      setError(feedback.message);
+      if (feedback.cooldownUntil) setCooldownUntil(feedback.cooldownUntil);
     } finally {
       setLoading(false);
     }
@@ -87,12 +93,17 @@ export default function LoginPage() {
         {error && (
           <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
         )}
+        {cooldownLabel && (
+          <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            Novo login liberado em {cooldownLabel}.
+          </p>
+        )}
         <button
           type="submit"
-          disabled={loading}
+          disabled={loading || blocked}
           className="kp-btn-primary w-full rounded-xl px-4 py-2.5 text-sm font-semibold"
         >
-          {loading ? "Entrando…" : "Entrar"}
+          {loading ? "Entrando…" : blocked ? `Aguarde ${cooldownLabel}` : "Entrar"}
         </button>
       </form>
     </AuthShell>

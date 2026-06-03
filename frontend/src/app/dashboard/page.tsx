@@ -5,7 +5,6 @@ import { useEffect, useMemo, useState } from "react";
 import { api, API_BASE, type Device, type Snapshot, type SnapshotStatus } from "@/lib/api";
 import { formatBytes, formatDateTime } from "@/lib/format";
 import { Topbar } from "@/components/Topbar";
-import { DonutGauge } from "@/components/Sparkline";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -126,44 +125,23 @@ export default function DashboardOverview() {
           </div>
         )}
 
-        <section className="dashboard-summary">
-          <div className="dashboard-summary-chart">
-            <MultiDonutChart
-              segments={donutSegments}
-              centerValue={loading ? "..." : `${dashboard.successRate}%`}
-              centerLabel="saúde"
-            />
-          </div>
-        </section>
+        <section className="dashboard-grid-main dashboard-grid-overview">
+          <article className="dashboard-card">
+            <CardHeader title="Saúde do ambiente" description="Panorama rápido do ambiente" />
+            <div className="dashboard-summary">
+              <div className="dashboard-summary-chart">
+                <MultiDonutChart
+                  segments={donutSegments}
+                  centerValue={loading ? "..." : `${dashboard.successRate}%`}
+                  centerLabel="saúde"
+                />
+              </div>
+            </div>
+          </article>
 
-        <section className="dashboard-grid-main">
           <article className="dashboard-card activity-card">
             <CardHeader title="Atividade de backups" description="Snapshots registrados nos últimos 7 dias" />
             <BackupActivityChart values={dashboard.activity} loading={loading} />
-          </article>
-
-          <article className="dashboard-card">
-            <CardHeader title="Status de proteção" description="Saúde geral do ambiente" />
-            <div className="protection-status">
-              <DonutGauge
-                value={loading ? 0 : dashboard.successRate}
-                label={loading ? "..." : `${dashboard.successRate}%`}
-                sublabel="sucesso"
-                size={156}
-                thickness={13}
-                color="#7B61FF"
-                trackColor="#EDE9FF"
-              />
-              <div className="protection-ok">
-                <span className="protection-dot" />
-                {dashboard.failed.length === 0 ? "Ambiente protegido" : "Falhas detectadas"}
-              </div>
-              <div className="status-counters">
-                <StatTag label="Concluído" count={dashboard.completed.length} color="#10B981" />
-                <StatTag label="Rodando" count={dashboard.running.length} color="#7B61FF" />
-                <StatTag label="Falhou" count={dashboard.failed.length} color="#EF4444" />
-              </div>
-            </div>
           </article>
         </section>
 
@@ -379,16 +357,6 @@ function TopDevices({ devices, loading }: { devices: { id: string; name: string;
           </div>
         </div>
       ))}
-    </div>
-  );
-}
-
-function StatTag({ label, count, color }: { label: string; count: number; color: string }) {
-  return (
-    <div className="status-counter">
-      <span style={{ background: color }} />
-      <strong>{count}</strong>
-      <small>{label}</small>
     </div>
   );
 }

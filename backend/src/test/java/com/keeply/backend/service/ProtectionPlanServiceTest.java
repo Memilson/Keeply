@@ -93,6 +93,23 @@ class ProtectionPlanServiceTest {
 
         assertEquals(RetentionMode.KEEP_DAYS, response.retentionMode());
         assertEquals(30, response.retentionDays());
+        assertEquals("0 2 * * *", response.scheduleCron());
+    }
+
+    @Test
+    void getNormalizesBlankStoredScheduleToDefaultDailyCron() {
+        ProtectionPlan stored = new ProtectionPlan();
+        stored.device = device;
+        stored.planType = PlanType.CUSTOM;
+        stored.sources = List.of("/tmp/source");
+        stored.scheduleCron = " ";
+        stored.retentionMode = RetentionMode.KEEP_ALL;
+
+        when(planRepository.findByDeviceId(deviceId)).thenReturn(Optional.of(stored));
+
+        DeviceDtos.PlanResponse response = service.get(userId, deviceId);
+
+        assertEquals("0 2 * * *", response.scheduleCron());
     }
 
     @Test

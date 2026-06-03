@@ -48,12 +48,23 @@ keeply:
     rate-limit:
       login:
         ip:
-          max-attempts: ${KEEPLY_RATE_LOGIN_IP_MAX_ATTEMPTS:20}
+          max-attempts: ${KEEPLY_RATE_LOGIN_IP_MAX_ATTEMPTS:5}
+          window-minutes: ${KEEPLY_RATE_LOGIN_IP_WINDOW_MINUTES:15}
         email:
           max-attempts: ${KEEPLY_RATE_LOGIN_EMAIL_MAX_ATTEMPTS:5}
+          window-minutes: ${KEEPLY_RATE_LOGIN_EMAIL_WINDOW_MINUTES:15}
       refresh:
         ip:
           max-attempts: ${KEEPLY_RATE_REFRESH_IP_MAX_ATTEMPTS:30}
+      download:
+        file:
+          user:
+            max-attempts: ${KEEPLY_RATE_DOWNLOAD_FILE_USER_MAX_ATTEMPTS:10}
+            window-minutes: ${KEEPLY_RATE_DOWNLOAD_FILE_USER_WINDOW_MINUTES:5}
+        archive:
+          user:
+            max-attempts: ${KEEPLY_RATE_DOWNLOAD_ARCHIVE_USER_MAX_ATTEMPTS:1}
+            window-minutes: ${KEEPLY_RATE_DOWNLOAD_ARCHIVE_USER_WINDOW_MINUTES:10}
   jwt:
     secret: ${KEEPLY_JWT_SECRET}
     expiration-minutes: 120
