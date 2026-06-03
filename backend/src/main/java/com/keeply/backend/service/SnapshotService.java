@@ -103,6 +103,7 @@ public class SnapshotService {
         s.status = SnapshotStatus.FAILED;
         s.errorMessage = request.errorMessage();
         s.completedAt = Instant.now();
+        snapshots.save(s); // VULN-009: persistência explícita — não depende do dirty checking do JPA
         return toResponse(s);
     }
 
