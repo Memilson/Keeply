@@ -68,6 +68,7 @@ async function parseResponse<T>(res: Response): Promise<T> {
   if (!res.ok) {
     const message =
       (body && typeof body === "object" && "message" in body && (body as { message?: string }).message) ||
+      (body && typeof body === "object" && "error" in body && (body as { error?: string }).error) ||
       (typeof body === "string" && body) ||
       `HTTP ${res.status}`;
     throw new ApiError(res.status, message, body);
