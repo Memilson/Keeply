@@ -21,6 +21,10 @@ spring:
     multipart:
       max-file-size: 50MB
       max-request-size: 50MB
+  mvc:
+    # VULN-004: timeout de requisição async para não bloquear threads em downloads grandes
+    async:
+      request-timeout: 300000 # 5 minutos
 
 management:
   prometheus:
@@ -45,6 +49,9 @@ keeply:
   security:
     trust-proxy-headers: ${KEEPLY_TRUST_PROXY_HEADERS:false}
     trusted-proxy-ips: ${KEEPLY_TRUSTED_PROXY_IPS:}
+    # VULN-006: origins permitidos — configurar em produção via env var
+    # Produção: KEEPLY_ALLOWED_ORIGINS=https://keeply.app.br,https://minio.keeply.app.br
+    allowed-origins: ${KEEPLY_ALLOWED_ORIGINS:http://localhost:*,http://127.0.0.1:*}
     rate-limit:
       login:
         ip:
@@ -73,6 +80,14 @@ keeply:
     access-key: ${KEEPLY_MINIO_ACCESS_KEY:keeply}
     secret-key: ${KEEPLY_MINIO_SECRET_KEY}
     bucket: ${KEEPLY_MINIO_BUCKET:keeply}
+    # VULN-004: timeouts HTTP do cliente MinIO (evita thread starvation)
+    connect-timeout-seconds: ${KEEPLY_MINIO_CONNECT_TIMEOUT_SECONDS:5}
+    write-timeout-seconds: ${KEEPLY_MINIO_WRITE_TIMEOUT_SECONDS:30}
+    read-timeout-seconds: ${KEEPLY_MINIO_READ_TIMEOUT_SECONDS:120}
+  transfer:
+    credentials:
+      lifetime-minutes: ${KEEPLY_TRANSFER_CREDENTIAL_LIFETIME_MINUTES:10}
+      renew-window-minutes: ${KEEPLY_TRANSFER_CREDENTIAL_RENEW_WINDOW_MINUTES:3}
   audit:
     workers: ${KEEPLY_AUDIT_WORKERS:4}
     queue-size: ${KEEPLY_AUDIT_QUEUE_SIZE:16}

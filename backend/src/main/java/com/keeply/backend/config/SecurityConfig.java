@@ -2,6 +2,7 @@ package com.keeply.backend.config;
 
 import com.keeply.backend.security.JwtAuthenticationFilter;
 import com.keeply.backend.security.TraceIdFilter;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -16,10 +17,18 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
+import java.util.Arrays;
 import java.util.List;
+import java.util.stream.Collectors;
 
 @Configuration
 public class SecurityConfig {
+
+    // VULN-006: origins configuráveis via env var — evita wildcard (*) em produção
+    // Produção: KEEPLY_ALLOWED_ORIGINS=https://keeply.app.br,https://minio.keeply.app.br
+    // Dev: padrão localhost:* (sem necessidade de configurar a var)
+    @Value("${keeply.security.allowed-origins:http://localhost:*,http://127.0.0.1:*}")
+    private String allowedOriginsRaw;
 
     @Bean
     SecurityFilterChain securityFilterChain(HttpSecurity http, JwtAuthenticationFilter jwtFilter, TraceIdFilter traceIdFilter) throws Exception {
@@ -48,8 +57,14 @@ public class SecurityConfig {
 
     @Bean
     CorsConfigurationSource corsConfigurationSource() {
+        // VULN-006: origins vindos de configuração, nunca hardcoded
+        List<String> origins = Arrays.stream(allowedOriginsRaw.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isBlank())
+                .collect(Collectors.toList());
+
         CorsConfiguration cfg = new CorsConfiguration();
-        cfg.setAllowedOriginPatterns(List.of("http://localhost:*", "http://127.0.0.1:*"));
+        cfg.setAllowedOriginPatterns(origins);
         cfg.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         cfg.setAllowedHeaders(List.of("*"));
         cfg.setExposedHeaders(List.of("Authorization"));

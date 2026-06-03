@@ -1,5 +1,6 @@
 package com.keeply.backend.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.keeply.backend.dto.AuthDtos;
 import com.keeply.backend.exception.UnauthorizedException;
 import com.keeply.backend.model.AuditLog;
@@ -16,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Instant;
+import java.util.Map;
 import java.util.Optional;
 
 @Service
@@ -26,15 +28,18 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final RateLimitService rateLimit;
+    private final ObjectMapper objectMapper;
 
     public AuthService(UserRepository users, DeviceRepository devices, AuditLogRepository auditLogs,
-                       PasswordEncoder passwordEncoder, JwtService jwtService, RateLimitService rateLimit) {
+                       PasswordEncoder passwordEncoder, JwtService jwtService, RateLimitService rateLimit,
+                       ObjectMapper objectMapper) {
         this.users = users;
         this.devices = devices;
         this.auditLogs = auditLogs;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
         this.rateLimit = rateLimit;
+        this.objectMapper = objectMapper;
     }
 
     @Transactional
@@ -48,7 +53,9 @@ public class AuthService {
         }
 
         UserAccount user = new UserAccount();
-        user.name = nullableTrim(request.name());
+        // VULN-019: @NotBlank no DTO garante que name não é branco;
+        // usar trim() direto evita null retornado por nullableTrim() que quebraria o NOT NULL do banco
+        user.name = request.name().trim();
         user.email = email;
         user.passwordHash = passwordEncoder.encode(request.password());
         users.save(user);
@@ -158,13 +165,15 @@ public class AuthService {
         Optional<UserAccount> userOpt = users.findByEmail(normalizedEmail);
 
         if (userOpt.isEmpty()) {
-            recordAudit(null, null, "LOGIN_FAILED", "Email nao encontrado: " + normalizedEmail, ip);
+            // VULN-008: mensagem genérica — não revelar se o email existe ou não
+            recordAudit(null, null, "LOGIN_FAILED", "Credenciais invalidas", ip);
             throw new IllegalArgumentException("Credenciais invalidas");
         }
 
         UserAccount user = userOpt.get();
         if (!passwordEncoder.matches(password, user.passwordHash)) {
-            recordAudit(user, null, "LOGIN_FAILED", "Senha incorreta para o usuario: " + normalizedEmail, ip);
+            // VULN-008: mensagem genérica — não revelar que o email existe mas a senha é errada
+            recordAudit(user, null, "LOGIN_FAILED", "Credenciais invalidas", ip);
             throw new IllegalArgumentException("Credenciais invalidas");
         }
         return user;
@@ -176,8 +185,16 @@ public class AuthService {
         log.device = device;
         log.eventType = type;
         log.message = message;
-        log.metadataJson = "{\"ip\": \"" + ip + "\"}";
+        log.metadataJson = serializeAuditMetadata(ip);
         auditLogs.save(log);
+    }
+
+    private String serializeAuditMetadata(String ip) {
+        try {
+            return objectMapper.writeValueAsString(Map.of("ip", ip == null ? "" : ip));
+        } catch (Exception e) {
+            throw new IllegalStateException("Falha ao serializar metadata de auditoria", e);
+        }
     }
 
     private String normalizedEmail(String email) {

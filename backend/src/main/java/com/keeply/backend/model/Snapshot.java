@@ -12,6 +12,10 @@ public class Snapshot {
     @GeneratedValue(strategy = GenerationType.UUID)
     public UUID id;
 
+    // VULN-018: optimistic locking — previne lost updates em complete()/fail() concorrentes
+    @Version
+    public Long version;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "device_id", nullable = false, foreignKey = @ForeignKey(name = "fk_snapshot_device"))
     public Device device;
