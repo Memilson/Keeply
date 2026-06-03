@@ -47,12 +47,20 @@ public final class FileScanner {
                         stats.ignoredDirectories++;
                         return FileVisitResult.SKIP_SUBTREE;
                     }
+                    if (!Files.isReadable(dir)) {
+                        stats.unreadableFailures.add(ScanFailure.unreadableDirectory(dir));
+                        return FileVisitResult.SKIP_SUBTREE;
+                    }
                     return FileVisitResult.CONTINUE;
                 }
 
                 @Override
                 public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
                     if (attrs.isRegularFile() && !attrs.isSymbolicLink()) {
+                        if (!Files.isReadable(file)) {
+                            stats.unreadableFailures.add(ScanFailure.unreadableFile(file));
+                            return FileVisitResult.CONTINUE;
+                        }
                         handler.accept(file);
                         stats.files++;
                     }
@@ -62,6 +70,14 @@ public final class FileScanner {
                 @Override
                 public FileVisitResult visitFileFailed(Path file, IOException exc) {
                     stats.unreadableFailures.add(new ScanFailure(file, exc));
+                    return FileVisitResult.CONTINUE;
+                }
+
+                @Override
+                public FileVisitResult postVisitDirectory(Path dir, IOException exc) {
+                    if (exc != null) {
+                        stats.unreadableFailures.add(new ScanFailure(dir, exc));
+                    }
                     return FileVisitResult.CONTINUE;
                 }
             });
@@ -129,6 +145,13 @@ public final class FileScanner {
     }
 
     public record ScanFailure(Path path, IOException cause) {
+        static ScanFailure unreadableFile(Path path) {
+            return new ScanFailure(path, new AccessDeniedException(path.toString(), null, "Unreadable file"));
+        }
+
+        static ScanFailure unreadableDirectory(Path path) {
+            return new ScanFailure(path, new AccessDeniedException(path.toString(), null, "Unreadable directory"));
+        }
     }
 
     private record ExcludedPaths(Set<String> names, Set<String> relativePaths) {

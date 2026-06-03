@@ -229,6 +229,9 @@ public class KeeplyAgentApp extends Application {
         backendUrl.setPromptText("URL do Servidor");
         email.setPromptText("Seu email");
         password.setPromptText("Sua senha");
+        status.setWrapText(true);
+        status.setMaxWidth(420);
+        status.setStyle("-fx-text-fill: #6B6993;");
 
         Button loginBtn = new Button("ENTRAR NA CONTA");
         loginBtn.setMaxWidth(Double.MAX_VALUE);
@@ -236,6 +239,8 @@ public class KeeplyAgentApp extends Application {
 
         loginBtn.setOnAction(e -> {
             loginBtn.setDisable(true);
+            status.setText("Validando credenciais...");
+            status.setStyle("-fx-text-fill: #6B6993;");
             runAsync(() -> {
                 String userEmail = email.getText().trim();
                 String userPass = password.getText();
@@ -256,6 +261,7 @@ public class KeeplyAgentApp extends Application {
 
                     ui(() -> {
                         status.setText("Conectado. Device: " + deviceId);
+                        status.setStyle("-fx-text-fill: #047857;");
                         if (mainShellController != null && session.email() != null) {
                             mainShellController.setProfile(session.email());
                         }
@@ -268,6 +274,7 @@ public class KeeplyAgentApp extends Application {
                     log("Erro no login: " + userMessage);
                     ui(() -> {
                         status.setText(userMessage);
+                        status.setStyle("-fx-text-fill: #B91C1C;");
                         loginBtn.setDisable(false);
                     });
                     throw ex;
@@ -278,28 +285,22 @@ public class KeeplyAgentApp extends Application {
         grid.addRow(0, new Label("E-mail:"), email);
         grid.addRow(1, new Label("Senha:"), password);
         grid.add(loginBtn, 1, 2);
+        grid.add(status, 1, 3);
 
-        // Bloco avançado colapsável para a URL do servidor
-        VBox advancedBox = new VBox(6);
-        advancedBox.setVisible(false);
-        advancedBox.setManaged(false);
-        GridPane advGrid = grid();
-        advGrid.setAlignment(Pos.CENTER);
-        advGrid.setHgap(10);
-        advGrid.setVgap(10);
-        advGrid.addRow(0, new Label("Servidor:"), backendUrl);
-        advancedBox.getChildren().add(advGrid);
+        Label serverLabel = new Label(backendUrl.getText() != null && !backendUrl.getText().isBlank()
+                ? backendUrl.getText().trim()
+                : "—");
+        serverLabel.setWrapText(true);
+        serverLabel.setMaxWidth(420);
+        serverLabel.setStyle("-fx-text-fill: #6B6993;");
 
-        Hyperlink advLink = new Hyperlink("Configurações avançadas ▾");
-        advLink.getStyleClass().add("card-subtitle");
-        advLink.setOnAction(e -> {
-            boolean visible = advancedBox.isManaged();
-            advancedBox.setVisible(!visible);
-            advancedBox.setManaged(!visible);
-            advLink.setText(visible ? "Configurações avançadas ▾" : "Configurações avançadas ▴");
-        });
+        VBox serverBox = new VBox(6);
+        Label serverTitle = new Label("Servidor");
+        serverTitle.getStyleClass().add("card-subtitle");
+        serverBox.setAlignment(Pos.CENTER);
+        serverBox.getChildren().addAll(serverTitle, serverLabel);
 
-        box.getChildren().addAll(title, new Label("Faça login para sincronizar seus backups com a nuvem."), grid, advLink, advancedBox);
+        box.getChildren().addAll(title, new Label("Faça login para sincronizar seus backups com a nuvem."), grid, serverBox);
         return box;
     }
 
