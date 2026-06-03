@@ -64,6 +64,11 @@ public class SnapshotController {
         return snapshots.list(CurrentUser.get().userId());
     }
 
+    @DeleteMapping("/{snapshotId}")
+    public void delete(@PathVariable UUID snapshotId) {
+        snapshots.delete(CurrentUser.get().userId(), snapshotId);
+    }
+
     @GetMapping("/{snapshotId}/files/download")
     public void downloadFile(
             @PathVariable UUID snapshotId,

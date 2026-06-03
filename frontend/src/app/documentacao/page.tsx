@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { KeeplyLogo } from "@/components/KeeplyLogo";
+import { LiveDemoBanner } from "@/components/LiveDemoBanner";
 
 const HEADER_LINKS = [
   { label: "Documentação", href: "/documentacao" },
@@ -72,6 +73,8 @@ export default async function DocumentacaoPage() {
           </div>
         </div>
       </header>
+
+      <LiveDemoBanner />
 
       <section className="px-8 py-16">
         <div className="mx-auto max-w-[1100px]">

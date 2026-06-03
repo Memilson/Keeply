@@ -148,8 +148,8 @@ body {
 .dashboard-page {
   display: flex;
   flex-direction: column;
-  gap: 22px;
-  padding: 28px;
+  gap: 0;
+  padding: 28px 0 0;
 }
 
 .dashboard-hero {
@@ -213,7 +213,81 @@ body {
 .kpi-grid {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 16px;
+  gap: 0;
+}
+
+.dashboard-summary {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 12px 0 18px;
+}
+
+.dashboard-summary-chart {
+  padding: 0;
+}
+
+.multi-donut {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+}
+
+.multi-donut-visual {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 220px;
+  height: 220px;
+}
+
+.multi-donut-center {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  text-align: center;
+}
+
+.multi-donut-center strong {
+  color: var(--kp-ink);
+  font-size: 2rem;
+  font-weight: 850;
+  line-height: 1;
+}
+
+.multi-donut-center span {
+  margin-top: 6px;
+  color: var(--kp-muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.multi-donut-legend {
+  display: grid;
+  gap: 10px;
+  min-width: 220px;
+}
+
+.multi-donut-legend-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  color: var(--kp-muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.multi-donut-legend-item strong {
+  color: var(--kp-ink);
+  font-size: 0.9rem;
+}
+
+.multi-donut-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
 }
 
 .kpi-card {
@@ -284,7 +358,7 @@ body {
 .dashboard-grid-bottom {
   display: grid;
   grid-template-columns: minmax(0, 2fr) minmax(320px, 1fr);
-  gap: 20px;
+  gap: 0;
 }
 
 .dashboard-card {
@@ -610,7 +684,26 @@ body {
 
 @media (max-width: 1024px) {
   .dashboard-page {
-    padding: 22px;
+    padding: 22px 0 0;
+  }
+
+  .dashboard-summary {
+    justify-content: center;
+    padding: 18px 0;
+  }
+
+  .dashboard-summary-chart {
+    padding: 18px 22px;
+  }
+
+  .multi-donut {
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .multi-donut-legend {
+    min-width: 0;
+    width: 100%;
   }
 
   .dashboard-grid-main,
@@ -621,7 +714,7 @@ body {
 
 @media (max-width: 760px) {
   .dashboard-page {
-    padding: 18px;
+    padding: 18px 0 0;
   }
 
   .dashboard-hero {
@@ -639,6 +732,11 @@ body {
 
   .kpi-grid {
     grid-template-columns: 1fr;
+  }
+
+  .multi-donut-visual {
+    width: 180px;
+    height: 180px;
   }
 
   .chart-wrap {

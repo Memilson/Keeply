@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { KeeplyLogo } from "@/components/KeeplyLogo";
+import { LiveDemoBanner } from "@/components/LiveDemoBanner";
 
 const HEADER_LINKS = [
   { label: "Documentação", href: "/documentacao" },
@@ -41,6 +42,8 @@ export default function DownloadPage() {
           </div>
         </div>
       </header>
+
+      <LiveDemoBanner />
 
       <section className="px-8 py-20">
         <div className="mx-auto max-w-[1540px] lg:px-12">

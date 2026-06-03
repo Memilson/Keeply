@@ -50,9 +50,9 @@ export default function ActivitiesPage() {
 
   return (
     <>
-      <Topbar title="Atividades" subtitle="Eventos de backup de todos os dispositivos" />
+      <Topbar title="Atividades" />
       <div className="space-y-5 p-7">
-        <div className="kp-card overflow-hidden">
+        <div className="overflow-hidden">
           <div className="flex flex-wrap items-center gap-2 px-5 py-4" style={{ borderBottom: "1px solid #F0EEF8", background: "#FAFAFE" }}>
             <FilterPill label="Todos" active={filter === "ALL"} onClick={() => setFilter("ALL")} />
             <FilterPill label="Backup" active={filter === "BACKUP"} onClick={() => setFilter("BACKUP")} />

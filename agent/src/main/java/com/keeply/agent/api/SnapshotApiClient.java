@@ -45,6 +45,10 @@ public final class SnapshotApiClient {
         return mapper.readValue(executor.get("/api/snapshots", traceId).body(), new TypeReference<>() {});
     }
 
+    void delete(UUID snapshotId, String traceId) throws Exception {
+        executor.delete("/api/snapshots/" + snapshotId, traceId);
+    }
+
     BackendClient.SnapshotFilePage listFiles(UUID snapshotId, int page, int size, String search,
                                              String prefix, String traceId) throws Exception {
         StringBuilder path = new StringBuilder("/api/snapshots/").append(snapshotId)

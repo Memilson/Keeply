@@ -189,6 +189,15 @@ public class BackendClient {
         }
     }
 
+    public void deleteSnapshot(UUID snapshotId) {
+        String traceId = traceId();
+        try {
+            snapshots.delete(snapshotId, traceId);
+        } catch (Exception e) {
+            throw failure("Falha ao apagar snapshot " + snapshotId, traceId, e);
+        }
+    }
+
     public long getStorageUsedBytes() {
         String traceId = traceId();
         try {
