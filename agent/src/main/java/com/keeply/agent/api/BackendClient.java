@@ -182,6 +182,15 @@ public class BackendClient {
         }
     }
 
+    public SnapshotSummary getSnapshot(UUID snapshotId) {
+        String traceId = traceId();
+        try {
+            return snapshots.get(snapshotId, traceId);
+        } catch (Exception e) {
+            throw failure("Falha ao obter snapshot " + snapshotId, traceId, e);
+        }
+    }
+
     public List<SnapshotSummary> listSnapshots() {
         String traceId = traceId();
         try {
@@ -356,4 +365,5 @@ public class BackendClient {
     public record SnapshotFileItem(String path, long size, Instant lastModified) {}
     public record PageMetadata(long totalElements, int page, int size) {}
     public record SnapshotFilePage(List<SnapshotFileItem> items, PageMetadata pagination) {}
+    public record SnapshotPage(List<SnapshotSummary> items, PageMetadata pagination) {}
 }
