@@ -54,9 +54,10 @@ public class BackupEngine {
             String sourcePath = sourceRoot.toAbsolutePath().normalize().toString();
             emitProgress(0, "Preparando backup", sourceRoot);
             autoSyncCache(deviceId, sourceRoot);
-            emitProgress(0, "Contando arquivos", sourceRoot);
-            long expectedFiles = countFiles(sourceRoot);
-            emitProgress(expectedFiles == 0 ? 94 : 1, expectedFiles == 0 ? "Nenhum arquivo para processar" : "Processando arquivos", sourceRoot);
+            emitProgress(1, "Processando arquivos", sourceRoot);
+            // expectedFiles é estimado sob demanda para evitar travessia dupla do filesystem;
+            // o progresso é atualizado à medida que os arquivos são processados.
+            long expectedFiles = 0;
 
             StartedSnapshot started = backend.startSnapshot(deviceId, sourcePath);
             UUID snapshotId = started.snapshot().id();
@@ -125,79 +126,108 @@ public class BackupEngine {
                             } else {
                                 log.debug("Cache miss: {}", relativePath);
                                 filesChanged.incrementAndGet();
+
+                                // Leitura única: hash + compressão em um único pass.
+                                // Chunks candidatos (não confirmados no servidor) são comprimidos
+                                // imediatamente e guardados em temp files. Após o checkChunks HTTP,
+                                // apenas os realmente novos são enviados; os existentes têm o temp
+                                // file deletado. Elimina a segunda leitura do arquivo.
+                                Map<String, CompressedCandidate> candidates = new LinkedHashMap<>();
                                 List<PendingChunk> pending = new ArrayList<>();
-                                String fileHash = chunker.process(file, chunkData -> {
-                                    String chunkHash = Sha256Hasher.hashBytes(chunkData.data());
-                                    pending.add(new PendingChunk(chunkData.index(), chunkHash, chunkData.originalSize()));
-                                    chunksSeen.incrementAndGet();
-                                });
-                                confirmRemoteChunks(pending, sessionChunks);
-                                chunker.process(file, chunkData -> {
-                                    PendingChunk reference = pending.get(chunkData.index());
-                                    String chunkHash = reference.hash();
-                                    int originalSize = reference.originalSize();
-                                    ChunkMetadata reusable = sessionChunks.get(chunkHash);
-                                    if (reusable != null) {
-                                        db.addManifestChunk(relativePath, chunkData.index(), chunkHash,
-                                                reusable.originalSize(), reusable.storedSize());
-                                        chunksReused.incrementAndGet();
-                                        return;
-                                    }
-                                    Path compressedFile = Files.createTempFile("keeply-chunk-", writeCodec.extension());
-                                    long compressedSize;
-                                    long compressStart = System.nanoTime();
-                                    try {
-                                        compressedSize = writeCodec.compressToFile(chunkData.data(), compressedFile);
-                                        compressionNanos.addAndGet(System.nanoTime() - compressStart);
-                                        try (java.io.InputStream decompressed = writeCodec.openDecompressing(Files.newInputStream(compressedFile))) {
-                                            String roundtripHash = Sha256Hasher.hashBytes(decompressed.readAllBytes());
-                                            if (!roundtripHash.equals(chunkHash)) {
-                                                throw new IllegalStateException("Integridade do chunk falhou após compressão: " + chunkHash);
-                                            }
-                                        }
-                                    } catch (Exception e) {
-                                        Files.deleteIfExists(compressedFile);
-                                        throw e;
-                                    }
-                                    ChunkMetadata metadata = new ChunkMetadata(chunkHash, originalSize, compressedSize, writeCodec.algorithm(), writeCodec.level());
-                                    sessionChunks.put(chunkHash, metadata);
-                                    chunksCompressed.incrementAndGet();
-                                    bytesCompressed.addAndGet(compressedSize);
-                                    db.addManifestChunk(relativePath, chunkData.index(), chunkHash, originalSize, compressedSize);
+                                String fileHash;
+                                try {
+                                    fileHash = chunker.process(file, chunkData -> {
+                                        String chunkHash = Sha256Hasher.hashBytes(chunkData.data());
+                                        pending.add(new PendingChunk(chunkData.index(), chunkHash, chunkData.originalSize()));
+                                        chunksSeen.incrementAndGet();
 
-                                    if (db.claimChunkForSession(chunkHash)) {
-                                        Path uploadFile = compressedFile;
-                                        uploaderPool.execute(() -> {
+                                        if (!sessionChunks.containsKey(chunkHash) && !candidates.containsKey(chunkHash)) {
+                                            Path tempFile = Files.createTempFile("keeply-chunk-", writeCodec.extension());
+                                            long compressedSize;
+                                            long compressStart = System.nanoTime();
                                             try {
-                                                long uploadStart = System.nanoTime();
-                                                transferStorage.uploadChunk(chunkHash, uploadFile, writeCodec);
-                                                sentCount.incrementAndGet();
-                                                bytesUploaded.addAndGet(compressedSize);
-                                                db.addKnownChunks(List.of(metadata));
-                                                uploadNanos.addAndGet(System.nanoTime() - uploadStart);
-                                                long latencyMs = (System.nanoTime() - uploadStart) / 1_000_000;
-                                                log.debug("event=chunk.upload hash={} compressed_bytes={} stored={} latency_ms={} in_flight={}",
-                                                        chunkHash, compressedSize, true, latencyMs,
-                                                        uploaderPool.getActiveCount());
-                                            } catch (Exception e) {
-                                                failedBatchItems.incrementAndGet();
-                                                uploadErrors.add(e);
-                                                log.error("event=chunk.upload status=failed hash={} message={}", chunkHash, e.getMessage(), e);
-                                            } finally {
-                                                try {
-                                                    Files.deleteIfExists(uploadFile);
-                                                } catch (Exception e) {
-                                                    log.warn("event=chunk.temp_file status=cleanup_failed path={} message={}", uploadFile, e.getMessage());
+                                                compressedSize = writeCodec.compressToFile(chunkData.data(), tempFile);
+                                                compressionNanos.addAndGet(System.nanoTime() - compressStart);
+                                                try (java.io.InputStream decompressed = writeCodec.openDecompressing(Files.newInputStream(tempFile))) {
+                                                    String roundtripHash = Sha256Hasher.hashBytes(decompressed.readAllBytes());
+                                                    if (!roundtripHash.equals(chunkHash)) {
+                                                        throw new IllegalStateException("Integridade do chunk falhou após compressão: " + chunkHash);
+                                                    }
                                                 }
+                                            } catch (Exception e) {
+                                                Files.deleteIfExists(tempFile);
+                                                throw e;
                                             }
-                                        });
-                                        maxQueueDepth.accumulateAndGet(uploaderPool.getQueue().size(), Math::max);
-                                    } else {
-                                        chunksReused.incrementAndGet();
-                                        Files.deleteIfExists(compressedFile);
+                                            chunksCompressed.incrementAndGet();
+                                            candidates.put(chunkHash, new CompressedCandidate(tempFile,
+                                                    new ChunkMetadata(chunkHash, chunkData.originalSize(), compressedSize,
+                                                            writeCodec.algorithm(), writeCodec.level())));
+                                        }
+                                    });
+                                } catch (Exception e) {
+                                    // Limpa todos os temp files criados se o chunking falhar
+                                    for (CompressedCandidate c : candidates.values()) {
+                                        try { Files.deleteIfExists(c.tempFile()); } catch (Exception ignore) {}
                                     }
-                                });
+                                    throw e;
+                                }
 
+                                // Verifica no servidor quais candidatos já existem → atualiza sessionChunks
+                                confirmRemoteChunks(pending, sessionChunks);
+
+                                // Roteia candidatos: descarta existentes, enfileira upload dos novos
+                                for (Map.Entry<String, CompressedCandidate> entry : candidates.entrySet()) {
+                                    String chunkHash = entry.getKey();
+                                    CompressedCandidate candidate = entry.getValue();
+                                    if (sessionChunks.containsKey(chunkHash)) {
+                                        chunksReused.incrementAndGet();
+                                        Files.deleteIfExists(candidate.tempFile());
+                                    } else {
+                                        ChunkMetadata metadata = candidate.metadata();
+                                        sessionChunks.put(chunkHash, metadata);
+                                        bytesCompressed.addAndGet(metadata.storedSize());
+                                        if (db.claimChunkForSession(chunkHash)) {
+                                            Path uploadFile = candidate.tempFile();
+                                            uploaderPool.execute(() -> {
+                                                try {
+                                                    long uploadStart = System.nanoTime();
+                                                    transferStorage.uploadChunk(chunkHash, uploadFile, writeCodec);
+                                                    sentCount.incrementAndGet();
+                                                    bytesUploaded.addAndGet(metadata.storedSize());
+                                                    db.addKnownChunks(List.of(metadata));
+                                                    long latencyMs = (System.nanoTime() - uploadStart) / 1_000_000;
+                                                    uploadNanos.addAndGet(latencyMs * 1_000_000);
+                                                    log.debug("event=chunk.upload hash={} compressed_bytes={} latency_ms={} in_flight={}",
+                                                            chunkHash, metadata.storedSize(), latencyMs,
+                                                            uploaderPool.getActiveCount());
+                                                } catch (Exception e) {
+                                                    failedBatchItems.incrementAndGet();
+                                                    uploadErrors.add(e);
+                                                    log.error("event=chunk.upload status=failed hash={} message={}", chunkHash, e.getMessage(), e);
+                                                } finally {
+                                                    try {
+                                                        Files.deleteIfExists(uploadFile);
+                                                    } catch (Exception e) {
+                                                        log.warn("event=chunk.temp_file status=cleanup_failed path={} message={}", uploadFile, e.getMessage());
+                                                    }
+                                                }
+                                            });
+                                            maxQueueDepth.accumulateAndGet(uploaderPool.getQueue().size(), Math::max);
+                                        } else {
+                                            chunksReused.incrementAndGet();
+                                            Files.deleteIfExists(candidate.tempFile());
+                                        }
+                                    }
+                                }
+
+                                // Registra todos os chunks no manifesto (sessionChunks agora tem o quadro completo)
+                                for (PendingChunk p : pending) {
+                                    ChunkMetadata meta = sessionChunks.get(p.hash());
+                                    if (meta != null) {
+                                        db.addManifestChunk(relativePath, p.index(), p.hash(),
+                                                meta.originalSize(), meta.storedSize());
+                                    }
+                                }
                                 db.addManifestFile(relativePath, size, mtime, fileHash);
                             }
                         } catch (NoSuchFileException e) {
@@ -318,11 +348,15 @@ public class BackupEngine {
     }
 
     private int fileProcessingPercent(int processedFiles, long expectedFiles) {
-        if (expectedFiles <= 0) {
-            return 94;
+        if (expectedFiles > 0) {
+            double ratio = Math.min(1.0, processedFiles / (double) expectedFiles);
+            return Math.max(1, Math.min(94, 1 + (int) Math.floor(ratio * 93)));
         }
-        double ratio = Math.min(1.0, processedFiles / (double) expectedFiles);
-        return Math.max(1, Math.min(94, 1 + (int) Math.floor(ratio * 93)));
+        // Sem total conhecido: cresce de 1% até 85% usando curva logarítmica
+        // para dar sensação de progresso sem travar num valor fixo.
+        if (processedFiles <= 0) return 1;
+        int percent = (int) (1 + 84.0 * (Math.log1p(processedFiles) / Math.log1p(10_000)));
+        return Math.max(1, Math.min(85, percent));
     }
 
     private void emitProgress(int percent, String message, Path sourceRoot) {
@@ -446,6 +480,9 @@ public class BackupEngine {
     }
 
     private record FileProcessingFailure(String path, String reason, Exception cause) {
+    }
+
+    private record CompressedCandidate(Path tempFile, ChunkMetadata metadata) {
     }
 
     private void autoSyncCache(UUID deviceId, Path sourceRoot) {

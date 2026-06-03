@@ -18,6 +18,10 @@ public final class DeviceApiClient {
         this.mapper = mapper;
     }
 
+    void heartbeat(UUID deviceId, String traceId) throws Exception {
+        executor.require2xx(executor.sendJson("/api/devices/" + deviceId + "/heartbeat", "", "PATCH", traceId));
+    }
+
     Optional<ProtectionPlan> getPlan(UUID deviceId, String traceId) throws Exception {
         HttpResponse<String> response = executor.getAllowingNotFound("/api/devices/" + deviceId + "/plan", traceId);
         if (response.statusCode() == 404) {

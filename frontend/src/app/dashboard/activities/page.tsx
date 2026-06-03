@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { api, type Device, type Snapshot, type SnapshotStatus } from "@/lib/api";
+import { api, type Device, type PagedResponse, type Snapshot, type SnapshotStatus } from "@/lib/api";
 import { formatDateTime } from "@/lib/format";
 import { Topbar } from "@/components/Topbar";
 
@@ -19,10 +19,10 @@ export default function ActivitiesPage() {
       try {
         const [d, s] = await Promise.all([
           api<Device[]>("/api/devices"),
-          api<Snapshot[]>("/api/snapshots"),
+          api<PagedResponse<Snapshot>>("/api/snapshots"),
         ]);
         setDevices(d ?? []);
-        setSnapshots(s ?? []);
+        setSnapshots(s?.items ?? []);
       } catch (e) {
         setError(e instanceof Error ? e.message : "Falha ao carregar atividades.");
       } finally {
