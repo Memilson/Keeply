@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { use, useCallback, useEffect, useRef, useState } from "react";
+import { use, useCallback, useEffect, useState } from "react";
 import {
   API_BASE,
   api,
@@ -216,16 +216,12 @@ export default function BackupDetailPage({ params }: { params: Promise<{ id: str
   const { id } = use(params);
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [roots, setRoots] = useState<TreeNode[]>([]);
-  const [search, setSearch] = useState("");
-  const [searchFiles, setSearchFiles] = useState<SnapshotFile[]>([]);
-  const [searchLoading, setSearchLoading] = useState(false);
   const [treeLoading, setTreeLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
   const [downloadMsg, setDownloadMsg] = useState<string | null>(null);
   const [selectionMsg, setSelectionMsg] = useState<string | null>(null);
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
-  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -259,26 +255,6 @@ export default function BackupDetailPage({ params }: { params: Promise<{ id: str
       cancelled = true;
     };
   }, [id, snapshot]);
-
-  useEffect(() => {
-    if (!search.trim()) return;
-    if (searchTimer.current) clearTimeout(searchTimer.current);
-    searchTimer.current = setTimeout(async () => {
-      setSearchLoading(true);
-      try {
-        const qs = new URLSearchParams({ page: "0", size: "200", search: search.trim() });
-        const res = await api<FileListResponse>(`/api/snapshots/${id}/files?${qs}`);
-        setSearchFiles(res.items ?? []);
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "Falha na busca.");
-      } finally {
-        setSearchLoading(false);
-      }
-    }, 300);
-    return () => {
-      if (searchTimer.current) clearTimeout(searchTimer.current);
-    };
-  }, [search, id]);
 
   const handleToggle = useCallback((path: string) => {
     setRoots((prev) => toggleNode(prev, path));
@@ -359,41 +335,28 @@ export default function BackupDetailPage({ params }: { params: Promise<{ id: str
     URL.revokeObjectURL(url);
   }
 
-  const isSearching = search.trim().length > 0;
   const loading = treeLoading;
   const selectedCount = selectedPaths.size;
   const canDownloadSelected = !!snapshot && snapshot.status === "COMPLETED" && selectedCount > 0 && selectedCount <= MAX_SELECTED_FILES && !downloading;
 
   return (
     <>
-      <Topbar title={snapshot?.sourcePath ?? "Snapshot"} subtitle="Detalhes do backup" />
-      <div className="space-y-6 p-8">
-        <Link href="/dashboard/backups" className="text-sm text-keeply-700 hover:text-keeply-800">
-          ← Backups
+      <Topbar />
+      <div className="space-y-6 px-0 pb-8 pt-6">
+        <Link href="/dashboard/backups" className="inline-flex items-center gap-2 text-sm text-keeply-700 hover:text-keeply-800">
+          <i className="bi bi-arrow-left" aria-hidden="true" />
+          <span>Backups</span>
         </Link>
-
-        <header className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <p className="text-sm text-keeply-ink/50">Snapshot</p>
-            <h1 className="text-2xl font-semibold tracking-tight text-keeply-ink">
-              {snapshot?.sourcePath ?? "—"}
-            </h1>
-            <p className="mt-1 text-sm text-keeply-ink/60">
-              Iniciado em {formatDateTime(snapshot?.startedAt)} ·{" "}
-              {snapshot ? formatBytes(snapshot.totalCompressedSize ?? 0) : "—"} ·{" "}
-              {snapshot?.totalFiles ?? 0} arquivos
-            </p>
-          </div>
-        </header>
 
         {downloadMsg && <p className="rounded-xl bg-keeply-100 px-4 py-3 text-sm text-keeply-800">{downloadMsg}</p>}
         {selectionMsg && <p className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800">{selectionMsg}</p>}
         {error && <p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
 
-        <section className="kp-card overflow-hidden">
+        <section className="overflow-hidden">
           <div className="flex flex-col gap-4 border-b border-keeply-100 px-6 py-4 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex flex-wrap items-center gap-3">
               <h2 className="text-base font-semibold text-keeply-ink">Arquivos</h2>
+              <span className="text-sm text-keeply-ink/60">{snapshot?.sourcePath ?? "—"}</span>
               <button
                 onClick={downloadSelected}
                 disabled={!canDownloadSelected}
@@ -402,19 +365,6 @@ export default function BackupDetailPage({ params }: { params: Promise<{ id: str
                 {downloading ? "Preparando…" : `Baixar selecionados (${selectedCount}/${MAX_SELECTED_FILES})`}
               </button>
             </div>
-            <input
-              type="search"
-              value={search}
-              onChange={(e) => {
-                const value = e.target.value;
-                setSearch(value);
-                if (!value.trim()) {
-                  setSearchFiles([]);
-                }
-              }}
-              placeholder="Buscar arquivo…"
-              className="rounded-xl border border-keeply-200 bg-white px-3 py-1.5 text-sm focus:border-keeply-500 focus:outline-none focus:ring-2 focus:ring-keeply-200"
-            />
           </div>
 
           {loading ? (
@@ -423,54 +373,6 @@ export default function BackupDetailPage({ params }: { params: Promise<{ id: str
             <p className="px-6 py-12 text-center text-sm text-keeply-ink/60">
               Arquivos disponíveis apenas para backups concluídos.
             </p>
-          ) : isSearching ? (
-            searchLoading ? (
-              <p className="px-6 py-8 text-sm text-keeply-ink/50">Buscando…</p>
-            ) : searchFiles.length === 0 ? (
-              <p className="px-6 py-12 text-center text-sm text-keeply-ink/60">Nenhum arquivo encontrado.</p>
-            ) : (
-              <div className="overflow-y-auto" style={{ maxHeight: "520px" }}>
-                <table className="w-full text-sm">
-                  <thead className="sticky top-0 bg-keeply-soft/60 text-left text-xs uppercase tracking-wide text-keeply-ink/50">
-                    <tr>
-                      <th className="px-6 py-3 w-12">Sel.</th>
-                      <th className="px-6 py-3">Caminho</th>
-                      <th className="px-6 py-3">Tamanho</th>
-                      <th className="px-6 py-3">Modificado em</th>
-                      <th className="px-6 py-3" />
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-keeply-100">
-                    {searchFiles.map((f) => (
-                      <tr key={f.path} className="hover:bg-keeply-soft/30">
-                        <td className="px-6 py-2.5">
-                          <input
-                            type="checkbox"
-                            checked={selectedPaths.has(f.path)}
-                            onChange={(e) => handleSelectionChange(f.path, e.target.checked)}
-                            className="h-4 w-4 accent-keeply-700"
-                            aria-label={`Selecionar ${f.path}`}
-                          />
-                        </td>
-                        <td className="px-6 py-2.5 text-keeply-ink">
-                          <span className="block max-w-[520px] truncate" title={f.path}>{f.path}</span>
-                        </td>
-                        <td className="px-6 py-2.5 text-keeply-ink/70">{formatBytes(f.size)}</td>
-                        <td className="px-6 py-2.5 text-keeply-ink/70">{formatDateTime(f.lastModified)}</td>
-                        <td className="px-6 py-2.5 text-right">
-                          <button
-                            onClick={() => downloadFile(f.path)}
-                            className="rounded-full border border-keeply-200 px-3 py-1 text-xs font-medium text-keeply-700 hover:bg-keeply-50"
-                          >
-                            Baixar
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )
           ) : roots.length === 0 ? (
             <p className="px-6 py-12 text-center text-sm text-keeply-ink/60">Nenhum arquivo encontrado.</p>
           ) : (

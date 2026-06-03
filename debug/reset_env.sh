@@ -113,7 +113,7 @@ fi
 echo "Criando usuario de teste (keeply@keeply.com)..."
 HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST http://localhost:8080/api/auth/register \
      -H "Content-Type: application/json" \
-     -d '{"name": "Keeply Test", "email": "keeply@keeply.com", "password": "keeply123"}')
+     -d '{"name": "Keeply Test", "email": "keeply@keeply.com", "password": "NP1LxW2T3rwTJL54dSlFoFep4SGwrCmP"}')
 
 if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "201" ] || [ "$HTTP_CODE" = "409" ]; then
     echo "Usuario pronto (status HTTP $HTTP_CODE)."

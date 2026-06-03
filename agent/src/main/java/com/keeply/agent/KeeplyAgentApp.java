@@ -767,6 +767,18 @@ public class KeeplyAgentApp extends Application {
 
         SnapshotSummary[] selectedSnapshot = new SnapshotSummary[1];
 
+        Runnable showSnapshotsList = () -> {
+            fileBrowser.setVisible(false);
+            fileBrowser.setManaged(false);
+            snapshotsPane.setVisible(true);
+            snapshotsPane.setManaged(true);
+            backToSnapshots.setVisible(false);
+            backToSnapshots.setManaged(false);
+            currentPathLabel.setText("Snapshots");
+            fileTree.setRoot(null);
+            actionRestore.setDisable(true);
+        };
+
         java.util.function.Consumer<SnapshotSummary> recoverSnapshot = snapshot -> {
             if (snapshot == null) return;
             runAsync(() -> new RestoreEngine(backend).restore(snapshot.id(), null, null, OverwritePolicy.ALWAYS));
@@ -895,7 +907,37 @@ public class KeeplyAgentApp extends Application {
                 btnLoad.setDisable(!"COMPLETED".equals(item.status()));
                 btnLoad.setOnAction(e -> { snapshotList.getSelectionModel().select(item); loadItems.accept(item); });
 
-                HBox actionsRow = new HBox(8, btnRecover, btnLoad);
+                Button btnDelete = new Button("×");
+                btnDelete.setTooltip(new Tooltip("Apagar snapshot"));
+                btnDelete.getStyleClass().add("snapshot-delete-btn");
+                btnDelete.setOnAction(e -> {
+                    e.consume();
+                    Alert confirm = new Alert(Alert.AlertType.CONFIRMATION);
+                    confirm.initOwner(stage);
+                    confirm.setTitle("Apagar snapshot");
+                    confirm.setHeaderText("Apagar este snapshot?");
+                    confirm.setContentText("Esta ação remove o snapshot e os arquivos relacionados do histórico.");
+                    Optional<ButtonType> result = confirm.showAndWait();
+                    if (result.isEmpty() || result.get() != ButtonType.OK) return;
+
+                    runAsync(() -> {
+                        backend.deleteSnapshot(item.id());
+                        ui(() -> {
+                            boolean wasSelected = selectedSnapshot[0] != null
+                                    && selectedSnapshot[0].id().equals(item.id());
+                            snapshotList.getItems().removeIf(snapshot -> snapshot.id().equals(item.id()));
+                            if (wasSelected) {
+                                snapshotList.getSelectionModel().clearSelection();
+                                selectedSnapshot[0] = null;
+                                showSnapshotsList.run();
+                            }
+                        });
+                    });
+                });
+
+                Region actionsSpacer = new Region();
+                HBox.setHgrow(actionsSpacer, Priority.ALWAYS);
+                HBox actionsRow = new HBox(8, btnRecover, btnLoad, actionsSpacer, btnDelete);
                 actionsRow.setAlignment(Pos.CENTER_LEFT);
                 actionsRow.setPadding(new Insets(8, 0, 4, 0));
 
@@ -960,12 +1002,7 @@ public class KeeplyAgentApp extends Application {
         });
 
         backToSnapshots.setOnAction(e -> {
-            fileBrowser.setVisible(false);   fileBrowser.setManaged(false);
-            snapshotsPane.setVisible(true);  snapshotsPane.setManaged(true);
-            backToSnapshots.setVisible(false); backToSnapshots.setManaged(false);
-            currentPathLabel.setText("Snapshots");
-            fileTree.setRoot(null);
-            actionRestore.setDisable(true);
+            showSnapshotsList.run();
         });
 
         return layout;
@@ -1598,7 +1635,7 @@ public class KeeplyAgentApp extends Application {
         Label scheduleLbl = new Label("Agendamento");
         scheduleLbl.getStyleClass().add("settings-row-label");
         Region ssp = new Region(); HBox.setHgrow(ssp, Priority.ALWAYS);
-        Label scheduleSummaryLbl = new Label("Não configurado");
+        Label scheduleSummaryLbl = new Label("Todos os dias às 02:00");
         scheduleSummaryLbl.getStyleClass().add("settings-row-value");
         SVGPath pencilSvg = new SVGPath();
         pencilSvg.setContent("M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z");
@@ -1618,28 +1655,9 @@ public class KeeplyAgentApp extends Application {
         Label schedInfo = new Label("A tarefa agendada será executada na hora local da máquina.");
         schedInfo.getStyleClass().add("card-subtitle");
 
-        HBox modesRow = new HBox(28);
-        modesRow.setAlignment(Pos.CENTER_LEFT);
-        Label modeMonthly = new Label("Mensal");
-        Label modeWeekly = new Label("Semanal");
-        Label modeDaily = new Label("Diário");
-        Label modeHourly = new Label("Toda Hora");
-        modeMonthly.getStyleClass().add("settings-row-value");
-        modeWeekly.getStyleClass().add("settings-row-value");
-        modeHourly.getStyleClass().add("settings-row-value");
-        modeDaily.setStyle("-fx-text-fill: #4F83D1; -fx-font-weight: 700;");
-        modesRow.getChildren().addAll(modeMonthly, modeWeekly, modeDaily, modeHourly);
-
-        RadioButton rbEveryDay = new RadioButton("Executar todos os dias");
-        ToggleGroup scheduleGroup = new ToggleGroup();
-        rbEveryDay.setToggleGroup(scheduleGroup);
-        rbEveryDay.setSelected(true);
-        rbEveryDay.setOnAction(e -> markDirty.run());
-        VBox optionsBox = new VBox(4, rbEveryDay);
-
         HBox startRow = new HBox(10);
         startRow.setAlignment(Pos.CENTER_LEFT);
-        Label startLbl = new Label("Iniciar em:");
+        Label startLbl = new Label("Hora:");
         startLbl.getStyleClass().add("settings-row-label");
         ComboBox<String> startTime = new ComboBox<>();
         for (int h = 0; h < 24; h++) {
@@ -1661,7 +1679,7 @@ public class KeeplyAgentApp extends Application {
         HBox saveRow = new HBox(10);
         saveRow.setAlignment(Pos.CENTER_LEFT);
         saveRow.getChildren().addAll(saveScheduleBtn);
-        scheduleEditArea.getChildren().addAll(schedInfo, modesRow, optionsBox, startRow, saveRow, scheduleStatus);
+        scheduleEditArea.getChildren().addAll(schedInfo, startRow, saveRow, scheduleStatus);
 
         Runnable updateScheduleSummary = () -> {
             scheduleSummaryLbl.setText(buildScheduleSummaryDaily(startTime));
@@ -1833,7 +1851,7 @@ public class KeeplyAgentApp extends Application {
             hideSaveBtns.run();
             pendingSources.set(null);
             runAsync(() -> {
-                loadScheduleDaily(rbEveryDay, startTime, scheduleStatus);
+                loadScheduleDaily(startTime, scheduleStatus);
                 Optional<AgentConfigReader.UiConfig> cfgOpt;
                 try { cfgOpt = configReader.read(); } catch (Exception ex) { cfgOpt = Optional.empty(); }
                 boolean encFinal = cfgOpt.map(AgentConfigReader.UiConfig::encryptionEnabled).orElse(false);
@@ -1881,7 +1899,7 @@ public class KeeplyAgentApp extends Application {
 
         // Combined initial load: schedule + encryption, then release suppression
         runAsync(() -> {
-            loadScheduleDaily(rbEveryDay, startTime, scheduleStatus);
+            loadScheduleDaily(startTime, scheduleStatus);
             Optional<AgentConfigReader.UiConfig> cfgOpt;
             try { cfgOpt = configReader.read(); } catch (Exception ex) { cfgOpt = Optional.empty(); }
             boolean encFinal = cfgOpt.map(AgentConfigReader.UiConfig::encryptionEnabled).orElse(false);
@@ -2182,11 +2200,10 @@ public class KeeplyAgentApp extends Application {
     }
 
 
-    private void loadScheduleDaily(RadioButton everyDay, ComboBox<String> startTime, Label statusLabel) throws Exception {
+    private void loadScheduleDaily(ComboBox<String> startTime, Label statusLabel) throws Exception {
         Optional<AgentConfigReader.UiConfig> loaded = configReader.read();
         if (loaded.isEmpty()) {
             ui(() -> {
-                everyDay.setSelected(true);
                 startTime.setValue("02:00");
                 statusLabel.setText("Primeiro uso: clique em Salvar agendamento para criar " + configReader.path());
             });
@@ -2200,7 +2217,10 @@ public class KeeplyAgentApp extends Application {
         });
         String cron = config.cron();
         if (cron == null || cron.isBlank()) {
-            ui(() -> statusLabel.setText("schedule.cron vazio em " + configReader.path()));
+            ui(() -> {
+                startTime.setValue("02:00");
+                statusLabel.setText("Agendamento diário padrão carregado. Clique em Salvar agendamento para atualizar " + configReader.path());
+            });
             return;
         }
 
@@ -2221,7 +2241,6 @@ public class KeeplyAgentApp extends Application {
                 startTime.setValue("02:00");
             }
 
-            everyDay.setSelected(true);
             statusLabel.setText("Agendamento carregado: " + cron);
         });
     }

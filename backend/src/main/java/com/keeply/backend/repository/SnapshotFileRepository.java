@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.Optional;
+import java.util.List;
 import java.util.UUID;
 
 @Repository
@@ -18,6 +19,8 @@ public interface SnapshotFileRepository extends JpaRepository<SnapshotFile, UUID
     Page<SnapshotFile> findBySnapshotIdAndPathContainingIgnoreCase(UUID snapshotId, String path, Pageable pageable);
     Page<SnapshotFile> findBySnapshotIdAndPathStartingWith(UUID snapshotId, String prefix, Pageable pageable);
     void deleteBySnapshotId(UUID snapshotId);
+    @Query("SELECT f.id FROM SnapshotFile f WHERE f.snapshot.id = :snapshotId")
+    List<UUID> findIdsBySnapshotId(@Param("snapshotId") UUID snapshotId);
     @Query("SELECT COUNT(f) FROM SnapshotFile f WHERE f.snapshot.id = :snapshotId")
     long countBySnapshotIdAgg(@Param("snapshotId") UUID snapshotId);
     @Query("SELECT COALESCE(SUM(f.size), 0) FROM SnapshotFile f WHERE f.snapshot.id = :snapshotId")

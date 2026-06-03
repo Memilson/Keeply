@@ -21,6 +21,8 @@ public class SnapshotService {
     private final ObjectStorageService storage;
     private final SnapshotFileRepository snapshotFiles;
     private final FileChunkRepository fileChunks;
+    private final TransferSessionRepository transferSessions;
+    private final RestoreJobRepository restoreJobs;
     private final ManifestParserService manifestParser;
     private final TransferCredentialBroker transferBroker;
 
@@ -29,6 +31,8 @@ public class SnapshotService {
                            ObjectStorageService storage,
                            SnapshotFileRepository snapshotFiles,
                            FileChunkRepository fileChunks,
+                           TransferSessionRepository transferSessions,
+                           RestoreJobRepository restoreJobs,
                            ManifestParserService manifestParser,
                            TransferCredentialBroker transferBroker) {
         this.snapshots = snapshots;
@@ -36,6 +40,8 @@ public class SnapshotService {
         this.storage = storage;
         this.snapshotFiles = snapshotFiles;
         this.fileChunks = fileChunks;
+        this.transferSessions = transferSessions;
+        this.restoreJobs = restoreJobs;
         this.manifestParser = manifestParser;
         this.transferBroker = transferBroker;
     }
@@ -106,6 +112,23 @@ public class SnapshotService {
                 .stream()
                 .map(this::toResponse)
                 .toList();
+    }
+
+    @Transactional
+    public void delete(UUID userId, UUID snapshotId) {
+        Snapshot snapshot = findOwned(userId, snapshotId);
+        if (snapshot.manifestKey != null && !snapshot.manifestKey.isBlank()) {
+            storage.delete(snapshot.manifestKey);
+        }
+
+        List<UUID> snapshotFileIds = snapshotFiles.findIdsBySnapshotId(snapshotId);
+        if (!snapshotFileIds.isEmpty()) {
+            fileChunks.deleteBySnapshotFileIdIn(snapshotFileIds);
+        }
+        snapshotFiles.deleteBySnapshotId(snapshotId);
+        transferSessions.deleteBySnapshotId(snapshotId);
+        restoreJobs.deleteBySnapshot_Id(snapshotId);
+        snapshots.delete(snapshot);
     }
 
     @Transactional(readOnly = true)

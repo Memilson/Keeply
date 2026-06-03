@@ -63,6 +63,12 @@ public final class HttpExecutor {
         return response;
     }
 
+    HttpResponse<String> delete(String path, String traceId) throws Exception {
+        HttpResponse<String> response = sendWithRefreshRetry(authorized(path, traceId).DELETE().build(), traceId);
+        require2xx(response);
+        return response;
+    }
+
     HttpResponse<String> getAllowingNotFound(String path, String traceId) throws Exception {
         return sendWithRefreshRetry(authorized(path, traceId).GET().build(), traceId);
     }

@@ -20,6 +20,8 @@ type Draft = {
 
 type DeviceWithPlan = Device & { plan: DevicePlan | null; planLoading: boolean };
 
+const DEFAULT_DAILY_CRON = "0 2 * * *";
+
 export default function ProtectionPage() {
   const searchParams = useSearchParams();
   const deviceParam = searchParams.get("device");
@@ -66,7 +68,7 @@ export default function ProtectionPage() {
       sources: device.plan?.sources ?? [],
       cdpEnabled: device.plan?.cdpEnabled ?? false,
       encryptionEnabled: device.plan?.encryptionEnabled ?? false,
-      scheduleCron: device.plan?.scheduleCron ?? null,
+      scheduleCron: toDailyCron(device.plan?.scheduleCron),
       retentionMode: device.plan?.retentionMode ?? "KEEP_ALL",
       retentionDays: device.plan?.retentionDays ?? null,
     };
@@ -81,12 +83,7 @@ export default function ProtectionPage() {
   }
 
   function scheduleLabel(cron: string | null | undefined) {
-    if (!cron || !cron.trim()) return "Não configurado";
-    const p = cron.trim().split(/\s+/);
-    if (p.length !== 5) return "Não configurado";
-    const min = p[0].padStart(2, "0");
-    const hour = p[1].padStart(2, "0");
-    return `Todos os dias às ${hour}:${min}`;
+    return `Todos os dias às ${cronToTime(cron)}`;
   }
 
   function retentionLabel(mode: RetentionMode, days: number | null) {
@@ -108,7 +105,7 @@ export default function ProtectionPage() {
           sources: draft.sources.length ? draft.sources : ["/"],
           cdpEnabled: draft.cdpEnabled,
           encryptionEnabled: draft.encryptionEnabled,
-          scheduleCron: draft.scheduleCron || null,
+          scheduleCron: toDailyCron(draft.scheduleCron),
           retentionMode: draft.retentionMode,
           retentionDays: draft.retentionMode === "KEEP_DAYS" ? draft.retentionDays : null,
         }),
@@ -146,9 +143,9 @@ export default function ProtectionPage() {
         )}
 
         {!selected ? (
-          <div className="kp-card px-6 py-10 text-sm" style={{ color: "#6B6993" }}>Nenhum dispositivo registrado.</div>
+          <div className="px-6 py-10 text-sm" style={{ color: "#6B6993" }}>Nenhum dispositivo registrado.</div>
         ) : (
-          <div className="kp-card overflow-hidden">
+          <div className="overflow-hidden">
             <div className="flex items-center justify-between px-6 py-5" style={{ borderBottom: "1px solid #ECEAF5" }}>
               <div className="flex items-center gap-3">
                 <ShieldIcon />
@@ -220,26 +217,19 @@ export default function ProtectionPage() {
             </LineRow>
 
             <LineRow title="Agendamento" value={scheduleLabel(draft?.scheduleCron)}>
-              <button
-                onClick={() => {
-                  const defaultValue = draft?.scheduleCron
-                    ? scheduleLabel(draft.scheduleCron).replace("Todos os dias às ", "")
-                    : "";
-                  const value = window.prompt("Informe horário (HH:MM). Deixe vazio para remover.", defaultValue);
-                  if (value === null) return;
-                  if (!value.trim()) {
-                    patch({ scheduleCron: null });
-                    return;
-                  }
-                  const m = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(value);
-                  if (!m) return;
-                  patch({ scheduleCron: `${Number(m[2])} ${Number(m[1])} * * *` });
+              <input
+                type="time"
+                required
+                step={60}
+                value={cronToTime(draft?.scheduleCron)}
+                onChange={(e) => {
+                  const nextCron = timeToDailyCron(e.target.value);
+                  if (nextCron) patch({ scheduleCron: nextCron });
                 }}
-                className="text-lg leading-none"
-                style={{ color: "#6D47FF" }}
-              >
-                ✎
-              </button>
+                className="rounded-lg border px-3 py-2 text-sm"
+                style={{ borderColor: "#E4E1F0", color: "#374151" }}
+                aria-label="Hora diária do agendamento"
+              />
             </LineRow>
 
             <LineRow title="Quanto tempo manter" value={retentionLabel(draft?.retentionMode ?? "KEEP_ALL", draft?.retentionDays ?? null)}>
@@ -321,6 +311,31 @@ export default function ProtectionPage() {
       </div>
     </>
   );
+}
+
+function cronToTime(cron: string | null | undefined) {
+  const normalized = toDailyCron(cron);
+  const parts = normalized.split(/\s+/);
+  const minute = Number(parts[0]);
+  const hour = Number(parts[1]);
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
+
+function timeToDailyCron(time: string) {
+  const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(time.trim());
+  if (!match) return null;
+  return `${Number(match[2])} ${Number(match[1])} * * *`;
+}
+
+function toDailyCron(cron: string | null | undefined) {
+  if (!cron || !cron.trim()) return DEFAULT_DAILY_CRON;
+  const parts = cron.trim().split(/\s+/);
+  if (parts.length !== 5) return DEFAULT_DAILY_CRON;
+  const minute = Number(parts[0]);
+  const hour = Number(parts[1]);
+  if (!Number.isInteger(minute) || minute < 0 || minute > 59) return DEFAULT_DAILY_CRON;
+  if (!Number.isInteger(hour) || hour < 0 || hour > 23) return DEFAULT_DAILY_CRON;
+  return `${minute} ${hour} * * *`;
 }
 
 function SectionRow({ title, right, children }: { title: string; right?: string; children?: React.ReactNode }) {
