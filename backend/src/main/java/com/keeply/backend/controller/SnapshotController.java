@@ -4,6 +4,7 @@ package com.keeply.backend.controller;
 import com.keeply.backend.dto.SnapshotDtos;
 import com.keeply.backend.service.FileDownloadService;
 import com.keeply.backend.service.ManifestReaderService;
+import com.keeply.backend.service.RateLimitService;
 import com.keeply.backend.service.SnapshotService;
 import com.keeply.backend.service.TransferCredentialBroker;
 import com.keeply.backend.util.CurrentUser;
@@ -20,12 +21,19 @@ public class SnapshotController {
     private final ManifestReaderService manifestReader;
     private final TransferCredentialBroker transferBroker;
     private final FileDownloadService fileDownload;
+    private final RateLimitService rateLimit;
 
-    public SnapshotController(SnapshotService snapshots, ManifestReaderService manifestReader, TransferCredentialBroker transferBroker, FileDownloadService fileDownload) {
+    public SnapshotController(
+            SnapshotService snapshots,
+            ManifestReaderService manifestReader,
+            TransferCredentialBroker transferBroker,
+            FileDownloadService fileDownload,
+            RateLimitService rateLimit) {
         this.snapshots = snapshots;
         this.manifestReader = manifestReader;
         this.transferBroker = transferBroker;
         this.fileDownload = fileDownload;
+        this.rateLimit = rateLimit;
     }
 
     @PostMapping("/start")
@@ -75,7 +83,9 @@ public class SnapshotController {
             @RequestParam String path,
             jakarta.servlet.http.HttpServletResponse response
     ) throws java.io.IOException {
-        fileDownload.streamFile(CurrentUser.get().userId(), snapshotId, path, response);
+        var principal = CurrentUser.get();
+        rateLimit.checkAndRecordFileDownloadAttempt(principal.userId().toString());
+        fileDownload.streamFile(principal.userId(), snapshotId, path, response);
     }
 
     @PostMapping("/{snapshotId}/archive-selected")
@@ -84,7 +94,9 @@ public class SnapshotController {
             @Valid @RequestBody SnapshotDtos.SelectedArchiveRequest request,
             jakarta.servlet.http.HttpServletResponse response
     ) throws java.io.IOException {
-        fileDownload.streamSelectedArchive(CurrentUser.get().userId(), snapshotId, request.paths(), response);
+        var principal = CurrentUser.get();
+        rateLimit.checkAndRecordArchiveDownloadAttempt(principal.userId().toString());
+        fileDownload.streamSelectedArchive(principal.userId(), snapshotId, request.paths(), response);
     }
 
     @GetMapping("/{snapshotId}/files")

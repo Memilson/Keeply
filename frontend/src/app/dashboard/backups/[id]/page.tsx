@@ -181,12 +181,16 @@ function TreeRow({ node, depth, snapshotId, selectedPaths, onToggle, onExpanded,
               aria-label={`Selecionar ${node.path}`}
             />
             <FileIcon />
-            <span className="flex-1 min-w-0 text-sm truncate" style={{ color: "#374151" }} title={node.path}>{node.name}</span>
-            <span className="text-xs shrink-0" style={{ color: "#9CA3AF" }}>{formatBytes(node.size ?? 0)}</span>
-            <span className="text-xs shrink-0 hidden sm:block" style={{ color: "#9CA3AF" }}>{formatDateTime(node.lastModified)}</span>
+            <span className="flex-1 min-w-0 text-sm truncate pr-3" style={{ color: "#374151" }} title={node.path}>{node.name}</span>
+            <span className="hidden w-[76px] shrink-0 text-right text-xs sm:block" style={{ color: "#9CA3AF" }}>
+              {formatBytes(node.size ?? 0)}
+            </span>
+            <span className="hidden w-[144px] shrink-0 text-right text-xs md:block" style={{ color: "#9CA3AF" }}>
+              {formatDateTime(node.lastModified)}
+            </span>
             <button
               onClick={(e) => { e.stopPropagation(); onDownload(node.path); }}
-              className="shrink-0 rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors hover:bg-[#EDE9FF]"
+              className="w-[88px] shrink-0 rounded-full border px-2.5 py-0.5 text-center text-xs font-medium transition-colors hover:bg-[#EDE9FF]"
               style={{ borderColor: "#E4E1F0", color: "#7B61FF" }}
             >
               Baixar
