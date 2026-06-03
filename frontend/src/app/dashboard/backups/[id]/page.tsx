@@ -6,6 +6,7 @@ import {
   API_BASE,
   api,
   getAccessToken,
+  type PagedResponse,
   type Snapshot,
   type SnapshotFile,
 } from "@/lib/api";
@@ -133,13 +134,14 @@ type TreeRowProps = {
   depth: number;
   snapshotId: string;
   selectedPaths: Set<string>;
+  downloadingFiles: Set<string>;
   onToggle: (path: string) => void;
   onExpanded: (path: string, children: TreeNode[]) => void;
   onDownload: (path: string) => void;
   onSelectionChange: (path: string, checked: boolean) => void;
 };
 
-function TreeRow({ node, depth, snapshotId, selectedPaths, onToggle, onExpanded, onDownload, onSelectionChange }: TreeRowProps) {
+function TreeRow({ node, depth, snapshotId, selectedPaths, downloadingFiles, onToggle, onExpanded, onDownload, onSelectionChange }: TreeRowProps) {
   const isOpen = node.isDir && node.loaded;
   const checked = selectedPaths.has(node.path);
 
@@ -190,10 +192,11 @@ function TreeRow({ node, depth, snapshotId, selectedPaths, onToggle, onExpanded,
             </span>
             <button
               onClick={(e) => { e.stopPropagation(); onDownload(node.path); }}
-              className="w-[88px] shrink-0 rounded-full border px-2.5 py-0.5 text-center text-xs font-medium transition-colors hover:bg-[#EDE9FF]"
+              disabled={downloadingFiles.has(node.path)}
+              className="w-[88px] shrink-0 rounded-full border px-2.5 py-0.5 text-center text-xs font-medium transition-colors hover:bg-[#EDE9FF] disabled:opacity-50 disabled:cursor-not-allowed"
               style={{ borderColor: "#E4E1F0", color: "#7B61FF" }}
             >
-              Baixar
+              {downloadingFiles.has(node.path) ? "Baixando…" : "Baixar"}
             </button>
           </>
         )}
@@ -206,6 +209,7 @@ function TreeRow({ node, depth, snapshotId, selectedPaths, onToggle, onExpanded,
           depth={depth + 1}
           snapshotId={snapshotId}
           selectedPaths={selectedPaths}
+          downloadingFiles={downloadingFiles}
           onToggle={onToggle}
           onExpanded={onExpanded}
           onDownload={onDownload}
@@ -223,6 +227,7 @@ export default function BackupDetailPage({ params }: { params: Promise<{ id: str
   const [treeLoading, setTreeLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
+  const [downloadingFiles, setDownloadingFiles] = useState<Set<string>>(new Set());
   const [downloadMsg, setDownloadMsg] = useState<string | null>(null);
   const [selectionMsg, setSelectionMsg] = useState<string | null>(null);
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
@@ -230,8 +235,8 @@ export default function BackupDetailPage({ params }: { params: Promise<{ id: str
   useEffect(() => {
     (async () => {
       try {
-        const all = await api<Snapshot[]>("/api/snapshots");
-        setSnapshot((all ?? []).find((s) => s.id === id) ?? null);
+        const all = await api<PagedResponse<Snapshot>>("/api/snapshots");
+        setSnapshot((all?.items ?? []).find((s) => s.id === id) ?? null);
       } catch (e) {
         setError(e instanceof Error ? e.message : "Falha ao carregar snapshot.");
       }
@@ -314,6 +319,8 @@ export default function BackupDetailPage({ params }: { params: Promise<{ id: str
   }
 
   async function downloadFile(path: string) {
+    if (downloadingFiles.has(path)) return;
+    setDownloadingFiles((prev) => new Set(prev).add(path));
     try {
       const token = getAccessToken();
       const qs = new URLSearchParams({ path });
@@ -325,6 +332,8 @@ export default function BackupDetailPage({ params }: { params: Promise<{ id: str
       triggerDownload(blob, path.split("/").pop() ?? "arquivo");
     } catch (e) {
       setDownloadMsg(e instanceof Error ? e.message : "Falha no download do arquivo.");
+    } finally {
+      setDownloadingFiles((prev) => { const next = new Set(prev); next.delete(path); return next; });
     }
   }
 
@@ -388,6 +397,7 @@ export default function BackupDetailPage({ params }: { params: Promise<{ id: str
                   depth={0}
                   snapshotId={id}
                   selectedPaths={selectedPaths}
+                  downloadingFiles={downloadingFiles}
                   onToggle={handleToggle}
                   onExpanded={handleExpanded}
                   onDownload={downloadFile}

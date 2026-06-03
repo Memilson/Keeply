@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { api, API_BASE, type Device, type Snapshot, type SnapshotStatus } from "@/lib/api";
+import { api, API_BASE, type Device, type Snapshot, type SnapshotStatus, type PagedResponse } from "@/lib/api";
 import { formatBytes, formatDateTime } from "@/lib/format";
 import { Topbar } from "@/components/Topbar";
 
@@ -20,13 +20,13 @@ export default function DashboardOverview() {
 
     async function load() {
       try {
-        const [deviceList, snapshotList] = await Promise.all([
+        const [deviceList, snapshotPage] = await Promise.all([
           api<Device[]>("/api/devices"),
-          api<Snapshot[]>("/api/snapshots"),
+          api<PagedResponse<Snapshot>>("/api/snapshots"),
         ]);
         if (cancelled) return;
         setDevices(deviceList ?? []);
-        setSnapshots(snapshotList ?? []);
+        setSnapshots(snapshotPage?.items ?? []);
         setAsOf(Date.now());
         setError(null);
       } catch (e) {
