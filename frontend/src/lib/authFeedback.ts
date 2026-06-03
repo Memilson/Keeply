@@ -19,6 +19,7 @@ export function authCountdownLabel(cooldownUntil: number | null) {
 
 export function resolveAuthError(err: unknown): AuthErrorState {
   if (err instanceof ApiError) {
+    const normalizedMessage = (err.message || "").toLowerCase();
     if (err.status === 429) {
       const minutes = parseRetryMinutes(err.message) ?? 15;
       return {
@@ -26,7 +27,12 @@ export function resolveAuthError(err: unknown): AuthErrorState {
         cooldownUntil: Date.now() + minutes * 60_000,
       };
     }
-    if (err.status === 401 || err.status === 403) {
+    if (
+      err.status === 401 ||
+      err.status === 403 ||
+      (err.status === 400 && normalizedMessage.includes("credenciais invalidas")) ||
+      (err.status === 400 && normalizedMessage.includes("credenciais inválidas"))
+    ) {
       return { message: "E-mail ou senha incorretos." };
     }
     if (err.status >= 500) {
