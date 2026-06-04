@@ -214,39 +214,84 @@ public class KeeplyAgentApp extends Application {
     }
 
     private Pane loginView() {
-        VBox box = box();
-        box.getStyleClass().add("screen-root");
-        box.setAlignment(Pos.CENTER);
-        box.setSpacing(20);
-        box.setPadding(new Insets(40));
+        StackPane root = new StackPane();
+        root.setStyle("-fx-background-color: #0D0C1A;");
 
-        Label title = new Label("Bem-vindo ao Keeply");
-        title.getStyleClass().add("page-title");
+        // ── SLIDE 0: Login card ──────────────────────────────────────────────
+        VBox loginCard = new VBox(0);
+        loginCard.setStyle(
+            "-fx-background-color: #100F1E;" +
+            "-fx-background-radius: 16px;" +
+            "-fx-border-color: rgba(123,97,255,0.25);" +
+            "-fx-border-radius: 16px;" +
+            "-fx-effect: dropshadow(gaussian, rgba(0,0,0,0.7), 48, 0.1, 0, 10);"
+        );
+        loginCard.setPrefWidth(420);
+        loginCard.setMaxWidth(420);
 
-        GridPane grid = grid();
-        grid.setAlignment(Pos.CENTER);
-        grid.setHgap(10);
-        grid.setVgap(15);
+        // Logo + subtitle
+        VBox loginHeader = new VBox(8);
+        loginHeader.setAlignment(Pos.CENTER);
+        loginHeader.setPadding(new Insets(32, 32, 22, 32));
+        loginHeader.setStyle("-fx-border-color: rgba(255,255,255,0.07); -fx-border-width: 0 0 1 0;");
 
-        backendUrl.setPromptText("URL do Servidor");
-        email.setPromptText("Seu email");
-        password.setPromptText("Sua senha");
+        SVGPath sparkMark = new SVGPath();
+        sparkMark.setContent("M12 0C13 6.5 14.8 8.2 22 9.5C14.8 10.8 13 12.5 12 19C11 12.5 9.2 10.8 2 9.5C9.2 8.2 11 6.5 12 0Z");
+        sparkMark.setStyle("-fx-fill: #7B61FF;");
+        StackPane markWrap = new StackPane(sparkMark);
+        markWrap.setPrefSize(28, 24); markWrap.setMinSize(28, 24);
+        Label wordmark = new Label("Keeply");
+        wordmark.setStyle("-fx-font-size: 20px; -fx-font-weight: 800; -fx-text-fill: #FFFFFF;");
+        HBox logoRow = new HBox(10);
+        logoRow.setAlignment(Pos.CENTER);
+        logoRow.getChildren().addAll(markWrap, wordmark);
+        Label loginSubtitle = new Label("Entre na sua conta para continuar");
+        loginSubtitle.setStyle("-fx-font-size: 12px; -fx-text-fill: #64748B;");
+        loginHeader.getChildren().addAll(logoRow, loginSubtitle);
+
+        // Form fields
+        VBox loginBody = new VBox(14);
+        loginBody.setPadding(new Insets(26, 30, 30, 30));
+
+        email.setPromptText("seu@email.com");
+        email.getStyleClass().add("config-field");
+        email.setMaxWidth(Double.MAX_VALUE);
+        VBox emailGroup = new VBox(5);
+        Label emailLbl = new Label("E-mail");
+        emailLbl.setStyle("-fx-font-size: 11px; -fx-font-weight: 700; -fx-text-fill: #94A3B8;");
+        emailGroup.getChildren().addAll(emailLbl, email);
+
+        password.setPromptText("••••••••");
+        password.getStyleClass().add("config-field");
+        password.setMaxWidth(Double.MAX_VALUE);
+        VBox passGroup = new VBox(5);
+        Label passLbl = new Label("Senha");
+        passLbl.setStyle("-fx-font-size: 11px; -fx-font-weight: 700; -fx-text-fill: #94A3B8;");
+        passGroup.getChildren().addAll(passLbl, password);
+
         status.setWrapText(true);
-        status.setMaxWidth(420);
-        status.setStyle("-fx-text-fill: #6B6993;");
+        status.setMaxWidth(360);
+        status.setStyle("-fx-text-fill: #64748B; -fx-font-size: 12px;");
 
-        Button loginBtn = new Button("ENTRAR NA CONTA");
+        Button loginBtn = new Button("Entrar");
         loginBtn.setMaxWidth(Double.MAX_VALUE);
-        loginBtn.getStyleClass().addAll("btn-primary", "btn-wide");
+        loginBtn.setStyle(
+            "-fx-background-color: #7B61FF;" +
+            "-fx-text-fill: white;" +
+            "-fx-font-weight: 700;" +
+            "-fx-font-size: 14px;" +
+            "-fx-padding: 12 0;" +
+            "-fx-background-radius: 10px;" +
+            "-fx-cursor: hand;"
+        );
 
         loginBtn.setOnAction(e -> {
             loginBtn.setDisable(true);
-            status.setText("Validando credenciais...");
-            status.setStyle("-fx-text-fill: #6B6993;");
+            status.setText("Verificando...");
+            status.setStyle("-fx-text-fill: #64748B; -fx-font-size: 12px;");
             runAsync(() -> {
                 String userEmail = email.getText().trim();
                 String userPass = password.getText();
-
                 log("event=ui.login status=started email=" + userEmail);
                 try {
                     String hostname = InetAddress.getLocalHost().getHostName();
@@ -260,17 +305,14 @@ public class KeeplyAgentApp extends Application {
                     } else {
                         log("event=daemon.start status=skipped reason=session_not_persisted");
                     }
-
-                    ui(() -> {
-                        applyOnlineState(backend, session);
-                    });
+                    ui(() -> applyOnlineState(backend, session));
                     log("event=ui.login status=completed device_id=" + session.deviceId());
                 } catch (Exception ex) {
                     String userMessage = getErrorMessage(ex);
                     log("Erro no login: " + userMessage);
                     ui(() -> {
                         status.setText(userMessage);
-                        status.setStyle("-fx-text-fill: #B91C1C;");
+                        status.setStyle("-fx-text-fill: #EF4444; -fx-font-size: 12px;");
                         loginBtn.setDisable(false);
                     });
                     throw ex;
@@ -278,26 +320,181 @@ public class KeeplyAgentApp extends Application {
             });
         });
 
-        grid.addRow(0, new Label("E-mail:"), email);
-        grid.addRow(1, new Label("Senha:"), password);
-        grid.add(loginBtn, 1, 2);
-        grid.add(status, 1, 3);
+        Label srvHint = new Label("Servidor: " + (backendUrl.getText() != null && !backendUrl.getText().isBlank()
+                ? backendUrl.getText().trim() : "—"));
+        srvHint.setStyle("-fx-font-size: 10px; -fx-text-fill: #475569;");
 
-        Label serverLabel = new Label(backendUrl.getText() != null && !backendUrl.getText().isBlank()
-                ? backendUrl.getText().trim()
-                : "—");
-        serverLabel.setWrapText(true);
-        serverLabel.setMaxWidth(420);
-        serverLabel.setStyle("-fx-text-fill: #6B6993;");
+        loginBody.getChildren().addAll(emailGroup, passGroup, loginBtn, status, srvHint);
+        loginCard.getChildren().addAll(loginHeader, loginBody);
 
-        VBox serverBox = new VBox(6);
-        Label serverTitle = new Label("Servidor");
-        serverTitle.getStyleClass().add("card-subtitle");
-        serverBox.setAlignment(Pos.CENTER);
-        serverBox.getChildren().addAll(serverTitle, serverLabel);
+        // ── SLIDE 1: Plan selection card ─────────────────────────────────────
+        VBox planCard = new VBox(0);
+        planCard.setStyle(
+            "-fx-background-color: #100F1E;" +
+            "-fx-background-radius: 16px;" +
+            "-fx-border-color: rgba(123,97,255,0.25);" +
+            "-fx-border-radius: 16px;" +
+            "-fx-effect: dropshadow(gaussian, rgba(0,0,0,0.7), 48, 0.1, 0, 10);"
+        );
+        planCard.setPrefWidth(460);
+        planCard.setMaxWidth(460);
 
-        box.getChildren().addAll(title, new Label("Faça login para sincronizar seus backups com a nuvem."), grid, serverBox);
-        return box;
+        VBox planHeader = new VBox(6);
+        planHeader.setAlignment(Pos.CENTER);
+        planHeader.setPadding(new Insets(28, 28, 18, 28));
+        planHeader.setStyle("-fx-border-color: rgba(255,255,255,0.07); -fx-border-width: 0 0 1 0;");
+        Label planTitle = new Label("Configure sua proteção");
+        planTitle.setStyle("-fx-font-size: 17px; -fx-font-weight: 800; -fx-text-fill: #FFFFFF;");
+        Label planSub = new Label("Primeiro acesso — escolha como proteger seus arquivos.");
+        planSub.setStyle("-fx-font-size: 12px; -fx-text-fill: #64748B;");
+        planHeader.getChildren().addAll(planTitle, planSub);
+
+        VBox planBody = new VBox(12);
+        planBody.setPadding(new Insets(20, 24, 28, 24));
+
+        String home = Path.of(System.getProperty("user.home")).toAbsolutePath().normalize().toString();
+        List<String> customSources = new ArrayList<>();
+        String[] selectedPlanType = {"DEFAULT"};
+
+        VBox optDefault = buildDarkPlanCard(
+            "Plano Padrão",
+            "Protege automaticamente sua pasta pessoal",
+            home,
+            "M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z",
+            "#7B61FF", true
+        );
+        VBox optCustom = buildDarkPlanCard(
+            "Personalizado",
+            "Escolha quais pastas deseja proteger",
+            null,
+            "M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z",
+            "#A78BFA", false
+        );
+
+        VBox folderPicker = new VBox(8);
+        folderPicker.setPadding(new Insets(4, 0, 0, 0));
+        folderPicker.setVisible(false);
+        folderPicker.setManaged(false);
+        VBox folderList = new VBox(4);
+        Button addFolderBtn2 = new Button("+ Adicionar pasta");
+        addFolderBtn2.setStyle(
+            "-fx-background-color: transparent;" +
+            "-fx-border-color: rgba(123,97,255,0.3); -fx-border-radius: 8px;" +
+            "-fx-text-fill: #7B61FF; -fx-font-weight: 600; -fx-font-size: 11px;" +
+            "-fx-padding: 6 12; -fx-cursor: hand;"
+        );
+        addFolderBtn2.setOnAction(ae -> {
+            DirectoryChooser dc = new DirectoryChooser();
+            dc.setTitle("Selecionar pasta para proteger");
+            java.io.File sel = dc.showDialog(primaryStage);
+            if (sel != null) {
+                String p = sel.toPath().toString();
+                if (!customSources.contains(p)) {
+                    customSources.add(p);
+                    Label lbl = new Label("▸ " + p);
+                    lbl.setStyle("-fx-font-size: 11px; -fx-text-fill: #94A3B8;");
+                    folderList.getChildren().add(lbl);
+                }
+            }
+        });
+        folderPicker.getChildren().addAll(folderList, addFolderBtn2);
+
+        optDefault.setOnMouseClicked(e -> {
+            selectedPlanType[0] = "DEFAULT";
+            setDarkPlanCardSelected(optDefault, "#7B61FF", true);
+            setDarkPlanCardSelected(optCustom, "#A78BFA", false);
+            folderPicker.setVisible(false); folderPicker.setManaged(false);
+        });
+        optCustom.setOnMouseClicked(e -> {
+            selectedPlanType[0] = "CUSTOM";
+            setDarkPlanCardSelected(optDefault, "#7B61FF", false);
+            setDarkPlanCardSelected(optCustom, "#A78BFA", true);
+            folderPicker.setVisible(true); folderPicker.setManaged(true);
+        });
+
+        Button confirmBtn = new Button("Confirmar e continuar →");
+        confirmBtn.setMaxWidth(Double.MAX_VALUE);
+        confirmBtn.setStyle(
+            "-fx-background-color: #7B61FF;" +
+            "-fx-text-fill: white; -fx-font-weight: 700; -fx-font-size: 13px;" +
+            "-fx-padding: 12 0; -fx-background-radius: 10px; -fx-cursor: hand;"
+        );
+        confirmBtn.setOnAction(ae -> {
+            if (planChosenType != null) {
+                if ("CUSTOM".equals(selectedPlanType[0])) {
+                    if (customSources.isEmpty()) customSources.add(home);
+                    planChosenType.set("CUSTOM");
+                    planChosenSources.set(List.copyOf(customSources));
+                } else {
+                    planChosenType.set("DEFAULT");
+                    planChosenSources.set(List.of(home));
+                }
+                if (planLatch != null) planLatch.countDown();
+            }
+        });
+
+        planBody.getChildren().addAll(optDefault, optCustom, folderPicker, confirmBtn);
+        planCard.getChildren().addAll(planHeader, planBody);
+
+        // ── Carousel host ────────────────────────────────────────────────────
+        StackPane slideHost = new StackPane();
+        slideHost.getChildren().addAll(planCard, loginCard);
+        planCard.setTranslateX(520);
+
+        showPlanSlide = () -> Platform.runLater(() -> {
+            javafx.animation.TranslateTransition outAnim =
+                new javafx.animation.TranslateTransition(javafx.util.Duration.millis(320), loginCard);
+            outAnim.setToX(-520);
+            javafx.animation.TranslateTransition inAnim =
+                new javafx.animation.TranslateTransition(javafx.util.Duration.millis(320), planCard);
+            inAnim.setToX(0);
+            new javafx.animation.ParallelTransition(outAnim, inAnim).play();
+        });
+
+        root.getChildren().add(slideHost);
+        StackPane.setAlignment(slideHost, Pos.CENTER);
+        return root;
+    }
+
+    private VBox buildDarkPlanCard(String title, String desc, String detail,
+                                   String iconPath, String accent, boolean selected) {
+        SVGPath icon = new SVGPath();
+        icon.setContent(iconPath);
+        icon.setStyle("-fx-fill: " + accent + ";");
+        StackPane iconWrap = new StackPane(icon);
+        iconWrap.setStyle("-fx-background-color: rgba(123,97,255,0.12); -fx-background-radius: 10px; -fx-padding: 10;");
+        iconWrap.setPrefSize(40, 40); iconWrap.setMinSize(40, 40);
+
+        VBox textBox = new VBox(3);
+        Label titleLbl = new Label(title);
+        titleLbl.setStyle("-fx-font-size: 14px; -fx-font-weight: 800; -fx-text-fill: #FFFFFF;");
+        Label descLbl = new Label(detail != null ? desc + "\n" + detail : desc);
+        descLbl.setStyle("-fx-font-size: 11px; -fx-text-fill: #64748B;");
+        descLbl.setWrapText(true);
+        textBox.getChildren().addAll(titleLbl, descLbl);
+        HBox.setHgrow(textBox, Priority.ALWAYS);
+
+        HBox row = new HBox(14, iconWrap, textBox);
+        row.setAlignment(Pos.CENTER_LEFT);
+
+        VBox card = new VBox(row);
+        card.setPadding(new Insets(16));
+        card.setStyle(
+            "-fx-background-color: " + (selected ? "rgba(123,97,255,0.1)" : "rgba(255,255,255,0.03)") + ";" +
+            "-fx-background-radius: 12px;" +
+            "-fx-border-color: " + (selected ? accent : "rgba(255,255,255,0.08)") + ";" +
+            "-fx-border-radius: 12px; -fx-cursor: hand;"
+        );
+        return card;
+    }
+
+    private void setDarkPlanCardSelected(VBox card, String accent, boolean selected) {
+        card.setStyle(
+            "-fx-background-color: " + (selected ? "rgba(123,97,255,0.1)" : "rgba(255,255,255,0.03)") + ";" +
+            "-fx-background-radius: 12px;" +
+            "-fx-border-color: " + (selected ? accent : "rgba(255,255,255,0.08)") + ";" +
+            "-fx-border-radius: 12px; -fx-cursor: hand;"
+        );
     }
 
     private BorderPane buildAppShell(Stage stage) {
@@ -392,16 +589,27 @@ public class KeeplyAgentApp extends Application {
         });
     }
 
+    private void setShellChrome(boolean visible) {
+        if (appShell == null) return;
+        Node left = appShell.getLeft();
+        if (left != null) { left.setVisible(visible); left.setManaged(visible); }
+        if (appShell.getCenter() instanceof BorderPane workspace) {
+            Node top = workspace.getTop();
+            if (top != null) { top.setVisible(visible); top.setManaged(visible); }
+        }
+    }
+
     private void applyOnlineState(BackendClient onlineBackend, DeviceSession session) {
         backend = onlineBackend;
         localSession = session;
         authMode = AuthMode.ONLINE;
         deviceId = session.deviceId();
         status.setText("Conectado. Device: " + deviceId);
-        status.setStyle("-fx-text-fill: #047857;");
+        status.setStyle("-fx-text-fill: #10B981; -fx-font-size: 12px;");
         if (mainShellController != null) {
             mainShellController.setProfile(session.email());
         }
+        setShellChrome(true);
         updateAuthenticationNavigation(true);
         showView("Dashboard");
     }
@@ -412,7 +620,7 @@ public class KeeplyAgentApp extends Application {
         authMode = AuthMode.OFFLINE;
         deviceId = session == null ? null : session.deviceId();
         status.setText("Modo offline");
-        status.setStyle("-fx-text-fill: #B45309;");
+        status.setStyle("-fx-text-fill: #F59E0B; -fx-font-size: 12px;");
         if (mainShellController != null) {
             String profileName = session == null || session.email() == null || session.email().isBlank()
                     ? "Offline"
@@ -422,6 +630,7 @@ public class KeeplyAgentApp extends Application {
         if (reason != null && !reason.isBlank()) {
             log("Modo offline: " + reason);
         }
+        setShellChrome(session != null);
         updateAuthenticationNavigation(session != null);
         showView(session != null ? "Dashboard" : "Login");
     }
@@ -432,10 +641,11 @@ public class KeeplyAgentApp extends Application {
         authMode = AuthMode.LOGGED_OUT;
         deviceId = null;
         status.setText(message == null || message.isBlank() ? "Desconectado" : message);
-        status.setStyle("-fx-text-fill: #6B6993;");
+        status.setStyle("-fx-text-fill: #64748B; -fx-font-size: 12px;");
         if (mainShellController != null) {
             mainShellController.setProfile(null);
         }
+        setShellChrome(false);
         updateAuthenticationNavigation(false);
         showView("Login");
     }
@@ -2123,7 +2333,25 @@ public class KeeplyAgentApp extends Application {
     private ProtectionPlan createPlanFromWizard() {
         String home = Path.of(System.getProperty("user.home")).toAbsolutePath().normalize().toString();
 
-        // Mostra wizard na thread de UI e aguarda escolha
+        planLatch = new java.util.concurrent.CountDownLatch(1);
+        planChosenType = new java.util.concurrent.atomic.AtomicReference<>("DEFAULT");
+        planChosenSources = new java.util.concurrent.atomic.AtomicReference<>(List.of(home));
+
+        // Mostra slide inline (sem popup) e aguarda escolha
+        showPlanSlide.run();
+
+        try { planLatch.await(); } catch (InterruptedException ignored) { Thread.currentThread().interrupt(); }
+
+        ProtectionPlan.PlanType planType = "CUSTOM".equals(planChosenType.get())
+                ? ProtectionPlan.PlanType.CUSTOM : ProtectionPlan.PlanType.DEFAULT;
+        ProtectionPlan plan = backend.upsertDevicePlan(deviceId, planType, planChosenSources.get());
+        log("event=plan.created type=" + planChosenType.get() + " sources=" + planChosenSources.get());
+        return plan;
+    }
+
+    @SuppressWarnings("unused")
+    private ProtectionPlan createPlanFromWizardLegacy() {
+        String home = Path.of(System.getProperty("user.home")).toAbsolutePath().normalize().toString();
         java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
         java.util.concurrent.atomic.AtomicReference<String> chosenType = new java.util.concurrent.atomic.AtomicReference<>("DEFAULT");
         java.util.concurrent.atomic.AtomicReference<List<String>> chosenSources = new java.util.concurrent.atomic.AtomicReference<>(List.of(home));
@@ -2264,11 +2492,11 @@ public class KeeplyAgentApp extends Application {
 
         try { latch.await(); } catch (InterruptedException ignored) { Thread.currentThread().interrupt(); }
 
-        ProtectionPlan.PlanType planType = "CUSTOM".equals(chosenType.get())
+        ProtectionPlan.PlanType planType2 = "CUSTOM".equals(chosenType.get())
                 ? ProtectionPlan.PlanType.CUSTOM : ProtectionPlan.PlanType.DEFAULT;
-        ProtectionPlan plan = backend.upsertDevicePlan(deviceId, planType, chosenSources.get());
+        ProtectionPlan plan2 = backend.upsertDevicePlan(deviceId, planType2, chosenSources.get());
         log("event=plan.created type=" + chosenType.get() + " sources=" + chosenSources.get());
-        return plan;
+        return plan2;
     }
 
     private VBox buildPlanOptionCard(String title, String description, String accentColor, ToggleGroup tg, String userData) {
