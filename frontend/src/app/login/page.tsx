@@ -63,7 +63,7 @@ export default function LoginPage() {
       footer={
         <>
           Não tem conta?{" "}
-          <Link href="/register" className="font-medium text-keeply-700 hover:text-keeply-800">
+          <Link href="/register" className="font-semibold text-[#A78BFA] transition hover:text-white">
             Criar agora
           </Link>
         </>
@@ -91,17 +91,19 @@ export default function LoginPage() {
           placeholder="••••••••"
         />
         {error && (
-          <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
+          <p className="rounded-lg border border-[#EF4444]/20 bg-[#EF4444]/10 px-3 py-2 text-sm text-[#EF4444]">
+            {error}
+          </p>
         )}
         {cooldownLabel && (
-          <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          <p className="rounded-lg border border-[#F59E0B]/20 bg-[#F59E0B]/10 px-3 py-2 text-sm text-[#F59E0B]">
             Novo login liberado em {cooldownLabel}.
           </p>
         )}
         <button
           type="submit"
           disabled={loading || blocked}
-          className="kp-btn-primary w-full rounded-xl px-4 py-2.5 text-sm font-semibold"
+          className="mt-1 w-full cursor-pointer rounded-lg bg-[#7B61FF] px-4 py-2.5 text-sm font-bold text-white transition hover:bg-[#6046F0] disabled:cursor-not-allowed disabled:opacity-50"
         >
           {loading ? "Entrando…" : blocked ? `Aguarde ${cooldownLabel}` : "Entrar"}
         </button>

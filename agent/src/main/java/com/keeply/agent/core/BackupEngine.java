@@ -345,10 +345,13 @@ public class BackupEngine {
                     log.warn("event=backup.transfer_session status=cancel_failed message={}", cancelError.getMessage());
                 }
                 if (e instanceof BackupSnapshotException backupError) {
+                    reportSnapshotFailure(deviceId, backupError);
                     throw backupError;
                 }
-                throw new BackupSnapshotException(snapshotId, transferStorage.sessionId(), sourcePath,
+                BackupSnapshotException backupError = new BackupSnapshotException(snapshotId, transferStorage.sessionId(), sourcePath,
                         "Backup falhou antes da conclusao do snapshot: " + safeMessage(e), e);
+                reportSnapshotFailure(deviceId, backupError);
+                throw backupError;
             }
         } finally {
             backingUp = false;
@@ -439,7 +442,7 @@ public class BackupEngine {
         FileProcessingFailure firstFailure = fileFailures.peek();
         String firstFailureDetail = firstFailure == null
                 ? "sem detalhes do primeiro arquivo"
-                : firstFailure.path() + " (" + firstFailure.reason() + ")";
+                : firstFailure.path() + " (" + firstFailure.reason() + ": " + safeMessage(firstFailure.cause()) + ")";
         String message = "Snapshot incompleto: "
                 + fileFailures.size() + " erro(s) real(is) impediram a leitura/processamento dos arquivos. "
                 + "Primeira falha: " + firstFailureDetail;
@@ -483,6 +486,16 @@ public class BackupEngine {
 
     private static String safeMessage(Throwable throwable) {
         return throwable.getMessage() == null ? throwable.getClass().getSimpleName() : throwable.getMessage();
+    }
+
+    private void reportSnapshotFailure(UUID deviceId, BackupSnapshotException error) {
+        try {
+            backend.failSnapshot(error.snapshotId(), error.userMessage());
+        } catch (Exception failError) {
+            log.warn("event=backup.snapshot status=fail_report_failed snapshot_id={} message={}",
+                    error.snapshotId(), failError.getMessage());
+        }
+        db.setLastFailedSnapshot(deviceId, error.sourcePath(), error.snapshotId().toString(), error.userMessage());
     }
 
     private static void validateSourceRoot(Path sourceRoot) {

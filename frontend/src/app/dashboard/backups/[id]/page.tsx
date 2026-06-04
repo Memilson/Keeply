@@ -5,7 +5,8 @@ import { use, useCallback, useEffect, useState } from "react";
 import {
   API_BASE,
   api,
-  getAccessToken,
+  authHeaders,
+  handleAuthResponse,
   type Snapshot,
   type SnapshotNode,
 } from "@/lib/api";
@@ -70,7 +71,7 @@ function markLoaded(nodes: TreeNode[], path: string, children: TreeNode[]): Tree
 
 function FileIcon() {
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#64748B" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
       <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
       <polyline points="14 2 14 8 20 8" />
     </svg>
@@ -79,7 +80,7 @@ function FileIcon() {
 
 function FolderIcon({ open }: { open: boolean }) {
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill={open ? "#EDE9FF" : "#F3F4F6"} stroke="#7B61FF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill={open ? "rgba(123,97,255,0.3)" : "rgba(123,97,255,0.1)"} stroke="#7B61FF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
       <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
     </svg>
   );
@@ -92,7 +93,7 @@ function ChevronIcon({ open }: { open: boolean }) {
       height="10"
       viewBox="0 0 24 24"
       fill="none"
-      stroke="#9CA3AF"
+      stroke="#64748B"
       strokeWidth="2.5"
       strokeLinecap="round"
       strokeLinejoin="round"
@@ -121,10 +122,7 @@ function TreeRow({ node, depth, snapshotId, selectedPaths, downloadingFiles, onT
 
   async function handleExpand() {
     if (node.loading) return;
-    if (node.loaded) {
-      onToggle(node.path);
-      return;
-    }
+    if (node.loaded) { onToggle(node.path); return; }
     onToggle(node.path);
     const children = await fetchChildren(snapshotId, node.path);
     onExpanded(node.path, children);
@@ -133,17 +131,26 @@ function TreeRow({ node, depth, snapshotId, selectedPaths, downloadingFiles, onT
   return (
     <div>
       <div
-        className="flex items-center gap-2 px-4 py-1.5 hover:bg-[#F5F3FB] cursor-pointer select-none"
-        style={{ paddingLeft: `${16 + depth * 20}px` }}
+        className="flex items-center gap-2 px-4 py-1.5 cursor-pointer select-none transition-colors duration-150"
+        style={{
+          paddingLeft: `${16 + depth * 20}px`,
+          background: "transparent",
+        }}
+        onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.03)"; }}
+        onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
         onClick={node.isDir ? handleExpand : undefined}
       >
         {node.isDir ? (
           <>
             <span className="w-3 flex items-center justify-center">
-              {node.loading ? <span className="h-2 w-2 rounded-full border border-[#7B61FF] border-t-transparent animate-spin inline-block" /> : <ChevronIcon open={isOpen} />}
+              {node.loading ? (
+                <span className="h-2 w-2 rounded-full border border-[#7B61FF] border-t-transparent animate-spin inline-block" />
+              ) : (
+                <ChevronIcon open={isOpen} />
+              )}
             </span>
             <FolderIcon open={isOpen} />
-            <span className="text-sm font-medium" style={{ color: "#18163A" }}>{node.name}</span>
+            <span className="text-sm font-medium text-white">{node.name}</span>
           </>
         ) : (
           <>
@@ -153,22 +160,23 @@ function TreeRow({ node, depth, snapshotId, selectedPaths, downloadingFiles, onT
               checked={checked}
               onChange={(e) => onSelectionChange(node.path, e.target.checked)}
               onClick={(e) => e.stopPropagation()}
-              className="h-4 w-4 shrink-0 accent-keeply-700"
+              className="h-4 w-4 shrink-0"
+              style={{ accentColor: "#7B61FF" }}
               aria-label={`Selecionar ${node.path}`}
             />
             <FileIcon />
-            <span className="flex-1 min-w-0 text-sm truncate pr-3" style={{ color: "#374151" }} title={node.path}>{node.name}</span>
-            <span className="hidden w-[76px] shrink-0 text-right text-xs sm:block" style={{ color: "#9CA3AF" }}>
+            <span className="flex-1 min-w-0 text-sm truncate pr-3 text-slate-400" title={node.path}>{node.name}</span>
+            <span className="hidden w-[76px] shrink-0 text-right text-xs text-slate-600 sm:block tabular-nums">
               {formatBytes(node.size ?? 0)}
             </span>
-            <span className="hidden w-[144px] shrink-0 text-right text-xs md:block" style={{ color: "#9CA3AF" }}>
+            <span className="hidden w-[144px] shrink-0 text-right text-xs text-slate-600 md:block">
               {formatDateTime(node.lastModified)}
             </span>
             <button
               onClick={(e) => { e.stopPropagation(); onDownload(node.path); }}
               disabled={downloadingFiles.has(node.path)}
-              className="w-[88px] shrink-0 rounded-full border px-2.5 py-0.5 text-center text-xs font-medium transition-colors hover:bg-[#EDE9FF] disabled:opacity-50 disabled:cursor-not-allowed"
-              style={{ borderColor: "#E4E1F0", color: "#7B61FF" }}
+              className="w-[88px] shrink-0 rounded-full border px-2.5 py-0.5 text-center text-xs font-semibold transition-colors duration-200 hover:bg-[#7B61FF]/20 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+              style={{ borderColor: "rgba(123,97,255,0.3)", color: "#A78BFA" }}
             >
               {downloadingFiles.has(node.path) ? "Baixando…" : "Baixar"}
             </button>
@@ -218,7 +226,6 @@ export default function BackupDetailPage({ params }: { params: Promise<{ id: str
 
   useEffect(() => {
     if (!snapshot || snapshot.status !== "COMPLETED") return;
-
     let cancelled = false;
     const loadTree = async () => {
       setTreeLoading(true);
@@ -231,11 +238,8 @@ export default function BackupDetailPage({ params }: { params: Promise<{ id: str
         if (!cancelled) setTreeLoading(false);
       }
     };
-
     void loadTree();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [id, snapshot]);
 
   const handleToggle = useCallback((path: string) => {
@@ -270,18 +274,13 @@ export default function BackupDetailPage({ params }: { params: Promise<{ id: str
     setDownloadMsg(null);
     setSelectionMsg(null);
     try {
-      const token = getAccessToken();
       const res = await fetch(`${API_BASE}/api/snapshots/${id}/archive-selected`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
+        headers: authHeaders("application/json"),
         body: JSON.stringify({ paths: Array.from(selectedPaths) }),
       });
-      if (!res.ok) {
-        throw new Error(await readErrorMessage(res));
-      }
+      if (handleAuthResponse(res)) return;
+      if (!res.ok) throw new Error(await readErrorMessage(res));
       const blob = await res.blob();
       triggerDownload(blob, `keeply-selected-${id}.zip`);
     } catch (e) {
@@ -295,11 +294,11 @@ export default function BackupDetailPage({ params }: { params: Promise<{ id: str
     if (downloadingFiles.has(path)) return;
     setDownloadingFiles((prev) => new Set(prev).add(path));
     try {
-      const token = getAccessToken();
       const qs = new URLSearchParams({ path });
       const res = await fetch(`${API_BASE}/api/snapshots/${id}/files/download?${qs}`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        headers: authHeaders(),
       });
+      if (handleAuthResponse(res)) return;
       if (!res.ok) throw new Error(await readErrorMessage(res));
       const blob = await res.blob();
       triggerDownload(blob, path.split("/").pop() ?? "arquivo");
@@ -327,26 +326,59 @@ export default function BackupDetailPage({ params }: { params: Promise<{ id: str
 
   return (
     <>
-      <Topbar />
-      <div className="space-y-6 px-0 pb-8 pt-6">
-        <Link href="/dashboard/backups" className="inline-flex items-center gap-2 text-sm text-keeply-700 hover:text-keeply-800">
-          <i className="bi bi-arrow-left" aria-hidden="true" />
-          <span>Backups</span>
+      <Topbar title="Detalhe do backup" />
+      <div className="space-y-5 px-6 pb-8 pt-5">
+        <Link
+          href="/dashboard/backups"
+          className="inline-flex items-center gap-2 text-sm font-semibold text-[#A78BFA] hover:text-[#7B61FF] transition-colors duration-200 cursor-pointer"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+            <polyline points="15 18 9 12 15 6" />
+          </svg>
+          Backups
         </Link>
 
-        {downloadMsg && <p className="rounded-xl bg-keeply-100 px-4 py-3 text-sm text-keeply-800">{downloadMsg}</p>}
-        {selectionMsg && <p className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800">{selectionMsg}</p>}
-        {error && <p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
+        {downloadMsg && (
+          <div
+            className="rounded-xl border px-4 py-3 text-sm text-[#A78BFA]"
+            style={{ background: "rgba(123,97,255,0.1)", borderColor: "rgba(123,97,255,0.2)" }}
+          >
+            {downloadMsg}
+          </div>
+        )}
+        {selectionMsg && (
+          <div
+            className="rounded-xl border px-4 py-3 text-sm text-[#F59E0B]"
+            style={{ background: "rgba(245,158,11,0.1)", borderColor: "rgba(245,158,11,0.2)" }}
+          >
+            {selectionMsg}
+          </div>
+        )}
+        {error && (
+          <div
+            className="rounded-xl border px-4 py-3 text-sm text-[#EF4444]"
+            style={{ background: "rgba(239,68,68,0.08)", borderColor: "rgba(239,68,68,0.2)" }}
+          >
+            {error}
+          </div>
+        )}
 
-        <section className="overflow-hidden">
-          <div className="flex flex-col gap-4 border-b border-keeply-100 px-6 py-4 lg:flex-row lg:items-center lg:justify-between">
+        <div
+          className="rounded-xl border bg-[#100F1E] overflow-hidden"
+          style={{ borderColor: "rgba(255,255,255,0.08)" }}
+        >
+          <div
+            className="flex flex-col gap-4 px-5 py-4 lg:flex-row lg:items-center lg:justify-between"
+            style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}
+          >
             <div className="flex flex-wrap items-center gap-3">
-              <h2 className="text-base font-semibold text-keeply-ink">Arquivos</h2>
-              <span className="text-sm text-keeply-ink/60">{snapshot?.sourcePath ?? "—"}</span>
+              <h2 className="text-sm font-bold text-white">Arquivos</h2>
+              <span className="text-sm text-slate-500">{snapshot?.sourcePath ?? "—"}</span>
               <button
                 onClick={downloadSelected}
                 disabled={!canDownloadSelected}
-                className="kp-btn-primary rounded-full px-5 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded-full px-4 py-1.5 text-xs font-semibold text-white transition-colors duration-200 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
+                style={{ background: canDownloadSelected ? "#7B61FF" : "rgba(123,97,255,0.3)" }}
               >
                 {downloading ? "Preparando…" : `Baixar selecionados (${selectedCount}/${MAX_SELECTED_FILES})`}
               </button>
@@ -362,15 +394,15 @@ export default function BackupDetailPage({ params }: { params: Promise<{ id: str
           </div>
 
           {loading ? (
-            <p className="px-6 py-8 text-sm text-keeply-ink/50">Carregando arquivos…</p>
+            <p className="px-5 py-8 text-sm text-slate-500">Carregando arquivos…</p>
           ) : snapshot?.status !== "COMPLETED" ? (
-            <p className="px-6 py-12 text-center text-sm text-keeply-ink/60">
+            <p className="px-5 py-12 text-center text-sm text-slate-500">
               Arquivos disponíveis apenas para backups concluídos.
             </p>
           ) : roots.length === 0 ? (
-            <p className="px-6 py-12 text-center text-sm text-keeply-ink/60">Nenhum arquivo encontrado.</p>
+            <p className="px-5 py-12 text-center text-sm text-slate-500">Nenhum arquivo encontrado.</p>
           ) : (
-            <div className="overflow-y-auto pb-1 pt-4" style={{ maxHeight: "calc(100vh - 190px)" }}>
+            <div className="overflow-y-auto pb-1 pt-3" style={{ maxHeight: "calc(100vh - 240px)" }}>
               {roots.map((node) => (
                 <TreeRow
                   key={node.path}
@@ -387,7 +419,7 @@ export default function BackupDetailPage({ params }: { params: Promise<{ id: str
               ))}
             </div>
           )}
-        </section>
+        </div>
       </div>
     </>
   );
@@ -395,9 +427,12 @@ export default function BackupDetailPage({ params }: { params: Promise<{ id: str
 
 function InfoChip({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-full border px-3 py-1.5 text-xs" style={{ borderColor: "#E4E1F0", background: "#FAFAFE" }}>
-      <span style={{ color: "#6B6993" }}>{label}: </span>
-      <span className="font-semibold" style={{ color: "#18163A" }}>{value}</span>
+    <div
+      className="rounded-full border px-3 py-1 text-xs"
+      style={{ borderColor: "rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.04)" }}
+    >
+      <span className="text-slate-500">{label}: </span>
+      <span className="font-semibold text-slate-300">{value}</span>
     </div>
   );
 }

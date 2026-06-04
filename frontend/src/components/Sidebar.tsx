@@ -2,141 +2,246 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useMemo, useSyncExternalStore } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
 import { KeeplyMark } from "./KeeplyLogo";
 
-type Item = { href: string; label: string; icon: React.ReactNode; activePrefix?: string };
+type Item = { href: string; label: string; icon: React.ReactNode };
 
-const ICONS = {
+const ICONS: Record<string, React.ReactNode> = {
   grid: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" />
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="3" width="7" height="7" rx="2" />
+      <rect x="14" y="3" width="7" height="7" rx="2" />
+      <rect x="3" y="14" width="7" height="7" rx="2" />
+      <rect x="14" y="14" width="7" height="7" rx="2" />
     </svg>
   ),
   server: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="3" y="4" width="18" height="7" rx="1.5" /><rect x="3" y="13" width="18" height="7" rx="1.5" /><circle cx="7" cy="7.5" r="0.7" fill="currentColor" /><circle cx="7" cy="16.5" r="0.7" fill="currentColor" />
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="4" width="18" height="7" rx="2" />
+      <rect x="3" y="13" width="18" height="7" rx="2" />
+      <circle cx="7.5" cy="7.5" r="0.8" fill="currentColor" />
+      <circle cx="7.5" cy="16.5" r="0.8" fill="currentColor" />
     </svg>
   ),
   archive: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="3" y="4" width="18" height="4" rx="1" /><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8" /><path d="M10 12h4" />
-    </svg>
-  ),
-  agent: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M8 8h8v8H8z" /><path d="M4 10h4M4 14h4M16 10h4M16 14h4M10 4v4M14 4v4M10 16v4M14 16v4" />
-    </svg>
-  ),
-  shield: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M12 3 4 6v6c0 5 3.5 8.5 8 9 4.5-.5 8-4 8-9V6l-8-3Z" /><path d="m9 12 2 2 4-4" />
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="4" width="18" height="4" rx="1.5" />
+      <path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8" />
+      <path d="M10 12h4" />
     </svg>
   ),
   chart: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M4 19h16" /><path d="M7 19V11" /><path d="M12 19V6" /><path d="M17 19v-5" />
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
     </svg>
   ),
-  cog: (
+  shield: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 3 4 6v6c0 5 3.5 8.5 8 9 4.5-.5 8-4 8-9V6l-8-3Z" />
+      <path d="m9 12 2 2 4-4" />
+    </svg>
+  ),
+  collapse: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z" />
+      <path d="M11 19l-7-7 7-7" /><path d="M18 19l-7-7 7-7" />
+    </svg>
+  ),
+  expand: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M13 5l7 7-7 7" /><path d="M6 5l7 7-7 7" />
     </svg>
   ),
 };
 
-const ITEMS: Item[] = [
+const NAV_ITEMS: Item[] = [
   { href: "/dashboard", label: "Visão geral", icon: ICONS.grid },
   { href: "/dashboard/machines", label: "Máquinas", icon: ICONS.server },
+  { href: "/dashboard/backups", label: "Backups", icon: ICONS.archive },
   { href: "/dashboard/activities", label: "Atividades", icon: ICONS.chart },
+  { href: "/dashboard/protection", label: "Proteção", icon: ICONS.shield },
 ];
 
-function getStoredUserSnapshot() {
+function getStored() {
   if (typeof window === "undefined") return "";
   return localStorage.getItem("keeply.user") ?? "";
 }
-
-function subscribeToStoredUser(callback: () => void) {
-  window.addEventListener("storage", callback);
-  return () => window.removeEventListener("storage", callback);
+function subscribe(cb: () => void) {
+  window.addEventListener("storage", cb);
+  return () => window.removeEventListener("storage", cb);
 }
-
-function parseStoredUser(raw: string) {
+function parseUser(raw: string) {
   try {
-    if (!raw) return { initials: "KP", userName: "Conta" };
-    const user = JSON.parse(raw) as { name?: string; email?: string };
-    const source = user.name ?? user.email ?? "Keeply";
-    const parts = source.split(/[\s@]+/).filter(Boolean);
-    const initials = `${parts[0]?.[0] ?? "K"}${parts[1]?.[0] ?? ""}`.toUpperCase();
-    return { initials, userName: user.name ?? user.email ?? "Conta" };
+    if (!raw) return { initials: "KP", name: "Conta", role: "Administrador" };
+    const u = JSON.parse(raw) as { name?: string; email?: string; role?: string };
+    const src = u.name ?? u.email ?? "Keeply";
+    const parts = src.split(/[\s@]+/).filter(Boolean);
+    return {
+      initials: `${parts[0]?.[0] ?? "K"}${parts[1]?.[0] ?? ""}`.toUpperCase(),
+      name: u.name ?? u.email ?? "Conta",
+      role: u.role ?? "Administrador",
+    };
   } catch {
-    return { initials: "KP", userName: "Conta" };
+    return { initials: "KP", name: "Conta", role: "Administrador" };
   }
 }
 
 export function Sidebar() {
   const pathname = usePathname();
-  const rawUser = useSyncExternalStore(subscribeToStoredUser, getStoredUserSnapshot, () => "");
-  const { initials, userName } = useMemo(() => parseStoredUser(rawUser), [rawUser]);
+  const [collapsed, setCollapsed] = useState(false);
+  const raw = useSyncExternalStore(subscribe, getStored, () => "");
+  const user = useMemo(() => parseUser(raw), [raw]);
+
+  const W = collapsed ? 52 : 196;
 
   return (
-    <aside className="hidden h-screen w-[276px] shrink-0 flex-col overflow-hidden p-3 lg:flex" style={{ background: "#F8F7FD", borderRight: "1px solid #E9E6F4" }}>
+    <aside
+      className="hidden h-screen shrink-0 flex-col overflow-hidden lg:flex"
+      style={{
+        width: W,
+        minWidth: W,
+        background: "#07061A",
+        borderRight: "1px solid rgba(255,255,255,0.06)",
+        transition: "width 220ms cubic-bezier(0.4,0,0.2,1), min-width 220ms cubic-bezier(0.4,0,0.2,1)",
+      }}
+      aria-label="Sidebar"
+    >
       {/* Logo */}
-      <div className="flex items-center gap-3 rounded-2xl px-4 py-4">
-        <KeeplyMark size={30} />
-        <div className="min-w-0">
-          <span className="block text-[17px] font-semibold tracking-tight" style={{ color: "#18163A" }}>Keeply</span>
+      <div
+        className="flex items-center gap-2.5 px-3.5"
+        style={{ height: 58, borderBottom: "1px solid rgba(255,255,255,0.05)" }}
+      >
+        <div className="shrink-0 flex items-center justify-center">
+          <KeeplyMark size={24} />
         </div>
+        {!collapsed && (
+          <span
+            className="truncate text-[14px] font-bold tracking-tight"
+            style={{ color: "#E0DEFF" }}
+          >
+            Keeply
+          </span>
+        )}
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 space-y-1 px-1 py-5">
-        {ITEMS.map((it) => {
-          const activeBase = it.activePrefix ?? it.href.split("#")[0];
-          const active = pathname === activeBase || (activeBase !== "/dashboard" && pathname.startsWith(activeBase));
+      <nav className="flex-1 px-2 pt-3 pb-1 space-y-px">
+        {NAV_ITEMS.map((item) => {
+          const isExact = item.href === "/dashboard";
+          const active = isExact
+            ? pathname === item.href
+            : pathname.startsWith(item.href);
+
           return (
             <Link
-              key={it.href}
-              href={it.href}
-              style={active ? { background: "#EDE9FF", color: "#6046F0", boxShadow: "0 6px 18px rgba(123, 97, 255, 0.12)" } : { color: "#6B6993" }}
-              className={`flex items-center gap-3 rounded-xl px-3.5 py-3 text-sm font-medium transition-all duration-150 ${
-                active ? "" : "hover:bg-white hover:text-[#18163A]"
-              }`}
+              key={item.href}
+              href={item.href}
+              title={collapsed ? item.label : undefined}
+              aria-current={active ? "page" : undefined}
+              className="relative flex items-center gap-2.5 rounded-lg px-2.5 py-2.5 text-[13px] font-medium outline-none transition-colors duration-150"
+              style={{
+                color: active ? "#C4B5FD" : "#4B5563",
+                background: active
+                  ? "linear-gradient(90deg, rgba(123,97,255,0.14), rgba(123,97,255,0.06))"
+                  : "transparent",
+              }}
+              onMouseEnter={(e) => {
+                if (!active) {
+                  (e.currentTarget as HTMLElement).style.color = "#94A3B8";
+                  (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.04)";
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!active) {
+                  (e.currentTarget as HTMLElement).style.color = "#4B5563";
+                  (e.currentTarget as HTMLElement).style.background = "transparent";
+                }
+              }}
+              onFocus={(e) => {
+                (e.currentTarget as HTMLElement).style.outline = "2px solid rgba(123,97,255,0.5)";
+              }}
+              onBlur={(e) => {
+                (e.currentTarget as HTMLElement).style.outline = "none";
+              }}
             >
-              <span className="grid h-5 w-5 shrink-0 place-items-center">{it.icon}</span>
-              <span>{it.label}</span>
+              {/* Active left bar */}
+              {active && (
+                <span
+                  className="absolute left-0 top-1.5 bottom-1.5 rounded-r-full"
+                  style={{
+                    width: "2.5px",
+                    background: "#7B61FF",
+                    boxShadow: "0 0 8px #7B61FF, 0 0 16px rgba(123,97,255,0.4)",
+                  }}
+                />
+              )}
+
+              <span
+                className="flex h-[18px] w-[18px] shrink-0 items-center justify-center"
+                aria-hidden="true"
+              >
+                {item.icon}
+              </span>
+
+              {!collapsed && (
+                <span className="truncate leading-none">{item.label}</span>
+              )}
             </Link>
           );
         })}
       </nav>
 
-      {/* Version */}
-      <button className="mt-3 flex items-center gap-2 rounded-xl px-3 py-2.5 text-left text-xs font-medium transition-colors hover:bg-white" style={{ color: "#8A87A8" }}>
-        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-          <path d="m15 18-6-6 6-6" />
-        </svg>
-        Recolher menu
-      </button>
-
-      <div className="mt-2 flex items-center gap-3 rounded-xl px-3 py-3">
-        <span
-          className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-xs font-semibold text-white"
-          style={{ background: "#7B61FF" }}
+      {/* Bottom area */}
+      <div
+        className="px-2 pb-2 pt-2 space-y-1"
+        style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}
+      >
+        {/* Collapse btn */}
+        <button
+          type="button"
+          onClick={() => setCollapsed((v) => !v)}
+          className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-[12px] font-medium transition-colors duration-150 cursor-pointer"
+          style={{ color: "#374151" }}
+          onMouseEnter={(e) => {
+            (e.currentTarget as HTMLElement).style.color = "#6B7280";
+            (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.04)";
+          }}
+          onMouseLeave={(e) => {
+            (e.currentTarget as HTMLElement).style.color = "#374151";
+            (e.currentTarget as HTMLElement).style.background = "transparent";
+          }}
+          aria-label={collapsed ? "Expandir menu" : "Recolher menu"}
         >
-          {initials}
-        </span>
-        <div className="min-w-0">
-          <p className="truncate text-sm font-semibold" style={{ color: "#18163A" }}>
-            {userName.split("@")[0]}
-          </p>
-          <p className="truncate text-[11px]" style={{ color: "#8A87A8" }}>
-            Administrador
-          </p>
-        </div>
-      </div>
+          <span className="flex h-[18px] w-[18px] shrink-0 items-center justify-center" aria-hidden="true">
+            {collapsed ? ICONS.expand : ICONS.collapse}
+          </span>
+          {!collapsed && <span>Recolher</span>}
+        </button>
 
-      <div className="px-3 pb-1 pt-2 text-[10px]" style={{ color: "#A9A6C0" }}>
-        Keeply v1.0
+        {/* User */}
+        <div className="flex items-center gap-2.5 rounded-lg px-2.5 py-2">
+          <span
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white"
+            style={{
+              minWidth: 28,
+              background: "linear-gradient(135deg,#7B61FF,#5B3FE0)",
+              boxShadow: "0 2px 8px rgba(123,97,255,0.35)",
+            }}
+            aria-hidden="true"
+          >
+            {user.initials}
+          </span>
+          {!collapsed && (
+            <div className="min-w-0">
+              <p className="truncate text-[12px] font-semibold leading-tight" style={{ color: "#D1D5DB" }}>
+                {user.name.split("@")[0]}
+              </p>
+              <p className="truncate text-[10px] leading-tight mt-0.5" style={{ color: "#374151" }}>
+                {user.role}
+              </p>
+            </div>
+          )}
+        </div>
       </div>
     </aside>
   );
