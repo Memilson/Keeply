@@ -20,7 +20,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
 
   return (
     <div
-      className="flex h-screen flex-1 overflow-hidden"
+      className="fixed inset-0 flex overflow-hidden"
       style={{ background: "#0D0C1A" }}
     >
       <Sidebar />

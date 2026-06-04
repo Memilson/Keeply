@@ -156,6 +156,7 @@ public class KeeplyAgentApp extends Application {
         appViews.put("Atividade", activityView);
         appViews.put("Logs", activityView);
         appShell = buildAppShell(stage);
+        setShellChrome(false); // oculta sidebar+header até o login ser confirmado
 
         // Tenta auto-login de forma assíncrona, mas só abre o dashboard após validar a sessão no backend.
         status.setText("Verificando credenciais locais...");
@@ -181,6 +182,7 @@ public class KeeplyAgentApp extends Application {
                         alert.setTitle("Erro Crítico de Segurança");
                         alert.setHeaderText("Falha no Fallback de Criptografia");
                         alert.setContentText(e.getMessage());
+                        applyDarkDialog(alert);
                         alert.showAndWait();
                         applyLoggedOutState("Erro de sessão");
                     });
@@ -215,80 +217,116 @@ public class KeeplyAgentApp extends Application {
 
     private Pane loginView() {
         StackPane root = new StackPane();
-        root.setStyle("-fx-background-color: #0D0C1A;");
+        root.setStyle("-fx-background-color: #08071A;");
 
-        // ── SLIDE 0: Login card ──────────────────────────────────────────────
+        // ── Glow blob background (purple ambient, no border) ─────────────────
+        javafx.scene.shape.Ellipse glow = new javafx.scene.shape.Ellipse(320, 220);
+        glow.setStyle("-fx-fill: #7B61FF;");
+        glow.setOpacity(0.07);
+        glow.setEffect(new javafx.scene.effect.GaussianBlur(110));
+        StackPane.setAlignment(glow, Pos.CENTER);
+
+        // ── SLIDE 0: Login — frameless form ──────────────────────────────────
         VBox loginCard = new VBox(0);
-        loginCard.setStyle(
-            "-fx-background-color: #100F1E;" +
-            "-fx-background-radius: 16px;" +
-            "-fx-border-color: rgba(123,97,255,0.25);" +
-            "-fx-border-radius: 16px;" +
-            "-fx-effect: dropshadow(gaussian, rgba(0,0,0,0.7), 48, 0.1, 0, 10);"
-        );
-        loginCard.setPrefWidth(420);
-        loginCard.setMaxWidth(420);
+        loginCard.setStyle("-fx-background-color: transparent;");
+        loginCard.setPrefWidth(380);
+        loginCard.setMaxWidth(380);
 
-        // Logo + subtitle
-        VBox loginHeader = new VBox(8);
+        // Logo
+        VBox loginHeader = new VBox(10);
         loginHeader.setAlignment(Pos.CENTER);
-        loginHeader.setPadding(new Insets(32, 32, 22, 32));
-        loginHeader.setStyle("-fx-border-color: rgba(255,255,255,0.07); -fx-border-width: 0 0 1 0;");
+        loginHeader.setPadding(new Insets(0, 0, 36, 0));
 
         SVGPath sparkMark = new SVGPath();
         sparkMark.setContent("M12 0C13 6.5 14.8 8.2 22 9.5C14.8 10.8 13 12.5 12 19C11 12.5 9.2 10.8 2 9.5C9.2 8.2 11 6.5 12 0Z");
         sparkMark.setStyle("-fx-fill: #7B61FF;");
+        sparkMark.setScaleX(1.4); sparkMark.setScaleY(1.4);
         StackPane markWrap = new StackPane(sparkMark);
-        markWrap.setPrefSize(28, 24); markWrap.setMinSize(28, 24);
+        markWrap.setPrefSize(34, 28); markWrap.setMinSize(34, 28);
         Label wordmark = new Label("Keeply");
-        wordmark.setStyle("-fx-font-size: 20px; -fx-font-weight: 800; -fx-text-fill: #FFFFFF;");
-        HBox logoRow = new HBox(10);
+        wordmark.setStyle("-fx-font-size: 24px; -fx-font-weight: 800; -fx-text-fill: #FFFFFF;");
+        HBox logoRow = new HBox(12);
         logoRow.setAlignment(Pos.CENTER);
         logoRow.getChildren().addAll(markWrap, wordmark);
+
         Label loginSubtitle = new Label("Entre na sua conta para continuar");
-        loginSubtitle.setStyle("-fx-font-size: 12px; -fx-text-fill: #64748B;");
+        loginSubtitle.setStyle("-fx-font-size: 13px; -fx-text-fill: #475569;");
         loginHeader.getChildren().addAll(logoRow, loginSubtitle);
 
-        // Form fields
-        VBox loginBody = new VBox(14);
-        loginBody.setPadding(new Insets(26, 30, 30, 30));
+        // Fields
+        VBox loginBody = new VBox(16);
+        loginBody.setStyle("-fx-background-color: transparent;");
 
         email.setPromptText("seu@email.com");
-        email.getStyleClass().add("config-field");
+        email.setStyle(
+            "-fx-background-color: rgba(255,255,255,0.05);" +
+            "-fx-border-color: rgba(255,255,255,0.1); -fx-border-radius: 10px;" +
+            "-fx-background-radius: 10px; -fx-padding: 11 14;" +
+            "-fx-text-fill: #FFFFFF; -fx-prompt-text-fill: #475569;" +
+            "-fx-font-size: 13px;"
+        );
         email.setMaxWidth(Double.MAX_VALUE);
-        VBox emailGroup = new VBox(5);
+        email.focusedProperty().addListener((o, ov, focused) -> email.setStyle(
+            "-fx-background-color: rgba(255,255,255,0.05);" +
+            "-fx-border-color: " + (focused ? "#7B61FF" : "rgba(255,255,255,0.1)") + "; -fx-border-radius: 10px;" +
+            "-fx-background-radius: 10px; -fx-padding: 11 14;" +
+            "-fx-text-fill: #FFFFFF; -fx-prompt-text-fill: #475569; -fx-font-size: 13px;"
+        ));
+        VBox emailGroup = new VBox(6);
         Label emailLbl = new Label("E-mail");
-        emailLbl.setStyle("-fx-font-size: 11px; -fx-font-weight: 700; -fx-text-fill: #94A3B8;");
+        emailLbl.setStyle("-fx-font-size: 11px; -fx-font-weight: 700; -fx-text-fill: #64748B; -fx-padding: 0 2;");
         emailGroup.getChildren().addAll(emailLbl, email);
 
         password.setPromptText("••••••••");
-        password.getStyleClass().add("config-field");
+        password.setStyle(
+            "-fx-background-color: rgba(255,255,255,0.05);" +
+            "-fx-border-color: rgba(255,255,255,0.1); -fx-border-radius: 10px;" +
+            "-fx-background-radius: 10px; -fx-padding: 11 14;" +
+            "-fx-text-fill: #FFFFFF; -fx-prompt-text-fill: #475569; -fx-font-size: 13px;"
+        );
         password.setMaxWidth(Double.MAX_VALUE);
-        VBox passGroup = new VBox(5);
+        password.focusedProperty().addListener((o, ov, focused) -> password.setStyle(
+            "-fx-background-color: rgba(255,255,255,0.05);" +
+            "-fx-border-color: " + (focused ? "#7B61FF" : "rgba(255,255,255,0.1)") + "; -fx-border-radius: 10px;" +
+            "-fx-background-radius: 10px; -fx-padding: 11 14;" +
+            "-fx-text-fill: #FFFFFF; -fx-prompt-text-fill: #475569; -fx-font-size: 13px;"
+        ));
+        VBox passGroup = new VBox(6);
         Label passLbl = new Label("Senha");
-        passLbl.setStyle("-fx-font-size: 11px; -fx-font-weight: 700; -fx-text-fill: #94A3B8;");
+        passLbl.setStyle("-fx-font-size: 11px; -fx-font-weight: 700; -fx-text-fill: #64748B; -fx-padding: 0 2;");
         passGroup.getChildren().addAll(passLbl, password);
 
         status.setWrapText(true);
-        status.setMaxWidth(360);
-        status.setStyle("-fx-text-fill: #64748B; -fx-font-size: 12px;");
+        status.setMaxWidth(380);
+        status.setStyle("-fx-text-fill: #475569; -fx-font-size: 12px;");
 
         Button loginBtn = new Button("Entrar");
         loginBtn.setMaxWidth(Double.MAX_VALUE);
         loginBtn.setStyle(
-            "-fx-background-color: #7B61FF;" +
-            "-fx-text-fill: white;" +
-            "-fx-font-weight: 700;" +
-            "-fx-font-size: 14px;" +
-            "-fx-padding: 12 0;" +
-            "-fx-background-radius: 10px;" +
-            "-fx-cursor: hand;"
+            "-fx-background-color: #7B61FF; -fx-text-fill: white;" +
+            "-fx-font-weight: 700; -fx-font-size: 14px;" +
+            "-fx-padding: 13 0; -fx-background-radius: 10px; -fx-cursor: hand;"
         );
+        loginBtn.setOnMouseEntered(e -> loginBtn.setStyle(
+            "-fx-background-color: #6046F0; -fx-text-fill: white;" +
+            "-fx-font-weight: 700; -fx-font-size: 14px;" +
+            "-fx-padding: 13 0; -fx-background-radius: 10px; -fx-cursor: hand;"
+        ));
+        loginBtn.setOnMouseExited(e -> { if (!loginBtn.isDisabled()) loginBtn.setStyle(
+            "-fx-background-color: #7B61FF; -fx-text-fill: white;" +
+            "-fx-font-weight: 700; -fx-font-size: 14px;" +
+            "-fx-padding: 13 0; -fx-background-radius: 10px; -fx-cursor: hand;"
+        );});
 
         loginBtn.setOnAction(e -> {
             loginBtn.setDisable(true);
+            loginBtn.setStyle(
+                "-fx-background-color: #4B3AB5; -fx-text-fill: rgba(255,255,255,0.6);" +
+                "-fx-font-weight: 700; -fx-font-size: 14px;" +
+                "-fx-padding: 13 0; -fx-background-radius: 10px;"
+            );
             status.setText("Verificando...");
-            status.setStyle("-fx-text-fill: #64748B; -fx-font-size: 12px;");
+            status.setStyle("-fx-text-fill: #475569; -fx-font-size: 12px;");
             runAsync(() -> {
                 String userEmail = email.getText().trim();
                 String userPass = password.getText();
@@ -314,6 +352,11 @@ public class KeeplyAgentApp extends Application {
                         status.setText(userMessage);
                         status.setStyle("-fx-text-fill: #EF4444; -fx-font-size: 12px;");
                         loginBtn.setDisable(false);
+                        loginBtn.setStyle(
+                            "-fx-background-color: #7B61FF; -fx-text-fill: white;" +
+                            "-fx-font-weight: 700; -fx-font-size: 14px;" +
+                            "-fx-padding: 13 0; -fx-background-radius: 10px; -fx-cursor: hand;"
+                        );
                     });
                     throw ex;
                 }
@@ -322,35 +365,28 @@ public class KeeplyAgentApp extends Application {
 
         Label srvHint = new Label("Servidor: " + (backendUrl.getText() != null && !backendUrl.getText().isBlank()
                 ? backendUrl.getText().trim() : "—"));
-        srvHint.setStyle("-fx-font-size: 10px; -fx-text-fill: #475569;");
+        srvHint.setStyle("-fx-font-size: 10px; -fx-text-fill: #334155; -fx-alignment: center;");
 
         loginBody.getChildren().addAll(emailGroup, passGroup, loginBtn, status, srvHint);
         loginCard.getChildren().addAll(loginHeader, loginBody);
 
-        // ── SLIDE 1: Plan selection card ─────────────────────────────────────
+        // ── SLIDE 1: Plan selection — frameless ──────────────────────────────
         VBox planCard = new VBox(0);
-        planCard.setStyle(
-            "-fx-background-color: #100F1E;" +
-            "-fx-background-radius: 16px;" +
-            "-fx-border-color: rgba(123,97,255,0.25);" +
-            "-fx-border-radius: 16px;" +
-            "-fx-effect: dropshadow(gaussian, rgba(0,0,0,0.7), 48, 0.1, 0, 10);"
-        );
-        planCard.setPrefWidth(460);
-        planCard.setMaxWidth(460);
+        planCard.setStyle("-fx-background-color: transparent;");
+        planCard.setPrefWidth(480);
+        planCard.setMaxWidth(480);
 
-        VBox planHeader = new VBox(6);
+        VBox planHeader = new VBox(8);
         planHeader.setAlignment(Pos.CENTER);
-        planHeader.setPadding(new Insets(28, 28, 18, 28));
-        planHeader.setStyle("-fx-border-color: rgba(255,255,255,0.07); -fx-border-width: 0 0 1 0;");
+        planHeader.setPadding(new Insets(0, 0, 32, 0));
         Label planTitle = new Label("Configure sua proteção");
-        planTitle.setStyle("-fx-font-size: 17px; -fx-font-weight: 800; -fx-text-fill: #FFFFFF;");
+        planTitle.setStyle("-fx-font-size: 22px; -fx-font-weight: 800; -fx-text-fill: #FFFFFF;");
         Label planSub = new Label("Primeiro acesso — escolha como proteger seus arquivos.");
-        planSub.setStyle("-fx-font-size: 12px; -fx-text-fill: #64748B;");
+        planSub.setStyle("-fx-font-size: 13px; -fx-text-fill: #475569;");
         planHeader.getChildren().addAll(planTitle, planSub);
 
-        VBox planBody = new VBox(12);
-        planBody.setPadding(new Insets(20, 24, 28, 24));
+        VBox planBody = new VBox(16);
+        planBody.setStyle("-fx-background-color: transparent;");
 
         String home = Path.of(System.getProperty("user.home")).toAbsolutePath().normalize().toString();
         List<String> customSources = new ArrayList<>();
@@ -358,30 +394,32 @@ public class KeeplyAgentApp extends Application {
 
         VBox optDefault = buildDarkPlanCard(
             "Plano Padrão",
-            "Protege automaticamente sua pasta pessoal",
-            home,
+            "Pasta pessoal protegida automaticamente",
+            null,
             "M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z",
             "#7B61FF", true
         );
         VBox optCustom = buildDarkPlanCard(
             "Personalizado",
-            "Escolha quais pastas deseja proteger",
+            "Escolha as pastas que deseja proteger",
             null,
             "M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z",
             "#A78BFA", false
         );
+        HBox.setHgrow(optDefault, Priority.ALWAYS);
+        HBox.setHgrow(optCustom, Priority.ALWAYS);
+        HBox planOptions = new HBox(12, optDefault, optCustom);
 
         VBox folderPicker = new VBox(8);
-        folderPicker.setPadding(new Insets(4, 0, 0, 0));
         folderPicker.setVisible(false);
         folderPicker.setManaged(false);
         VBox folderList = new VBox(4);
         Button addFolderBtn2 = new Button("+ Adicionar pasta");
         addFolderBtn2.setStyle(
             "-fx-background-color: transparent;" +
-            "-fx-border-color: rgba(123,97,255,0.3); -fx-border-radius: 8px;" +
-            "-fx-text-fill: #7B61FF; -fx-font-weight: 600; -fx-font-size: 11px;" +
-            "-fx-padding: 6 12; -fx-cursor: hand;"
+            "-fx-border-color: rgba(123,97,255,0.35); -fx-border-radius: 8px;" +
+            "-fx-text-fill: #A78BFA; -fx-font-weight: 600; -fx-font-size: 11px;" +
+            "-fx-padding: 7 14; -fx-cursor: hand;"
         );
         addFolderBtn2.setOnAction(ae -> {
             DirectoryChooser dc = new DirectoryChooser();
@@ -412,13 +450,23 @@ public class KeeplyAgentApp extends Application {
             folderPicker.setVisible(true); folderPicker.setManaged(true);
         });
 
-        Button confirmBtn = new Button("Confirmar e continuar →");
+        Button confirmBtn = new Button("Confirmar e continuar  →");
         confirmBtn.setMaxWidth(Double.MAX_VALUE);
         confirmBtn.setStyle(
-            "-fx-background-color: #7B61FF;" +
-            "-fx-text-fill: white; -fx-font-weight: 700; -fx-font-size: 13px;" +
-            "-fx-padding: 12 0; -fx-background-radius: 10px; -fx-cursor: hand;"
+            "-fx-background-color: #7B61FF; -fx-text-fill: white;" +
+            "-fx-font-weight: 700; -fx-font-size: 14px;" +
+            "-fx-padding: 13 0; -fx-background-radius: 10px; -fx-cursor: hand;"
         );
+        confirmBtn.setOnMouseEntered(e -> confirmBtn.setStyle(
+            "-fx-background-color: #6046F0; -fx-text-fill: white;" +
+            "-fx-font-weight: 700; -fx-font-size: 14px;" +
+            "-fx-padding: 13 0; -fx-background-radius: 10px; -fx-cursor: hand;"
+        ));
+        confirmBtn.setOnMouseExited(e -> confirmBtn.setStyle(
+            "-fx-background-color: #7B61FF; -fx-text-fill: white;" +
+            "-fx-font-weight: 700; -fx-font-size: 14px;" +
+            "-fx-padding: 13 0; -fx-background-radius: 10px; -fx-cursor: hand;"
+        ));
         confirmBtn.setOnAction(ae -> {
             if (planChosenType != null) {
                 if ("CUSTOM".equals(selectedPlanType[0])) {
@@ -433,25 +481,33 @@ public class KeeplyAgentApp extends Application {
             }
         });
 
-        planBody.getChildren().addAll(optDefault, optCustom, folderPicker, confirmBtn);
+        planBody.getChildren().addAll(planOptions, folderPicker, confirmBtn);
         planCard.getChildren().addAll(planHeader, planBody);
 
         // ── Carousel host ────────────────────────────────────────────────────
         StackPane slideHost = new StackPane();
+        slideHost.setMaxWidth(500);
+        slideHost.setPrefWidth(500);
+        javafx.scene.shape.Rectangle clip = new javafx.scene.shape.Rectangle(500, 800);
+        slideHost.heightProperty().addListener((obs, o, n) -> clip.setHeight(n.doubleValue() + 20));
+        slideHost.setClip(clip);
         slideHost.getChildren().addAll(planCard, loginCard);
-        planCard.setTranslateX(520);
+        planCard.setTranslateX(540);
 
         showPlanSlide = () -> Platform.runLater(() -> {
             javafx.animation.TranslateTransition outAnim =
-                new javafx.animation.TranslateTransition(javafx.util.Duration.millis(320), loginCard);
-            outAnim.setToX(-520);
+                new javafx.animation.TranslateTransition(javafx.util.Duration.millis(340), loginCard);
+            outAnim.setToX(-540);
+            outAnim.setInterpolator(javafx.animation.Interpolator.EASE_BOTH);
             javafx.animation.TranslateTransition inAnim =
-                new javafx.animation.TranslateTransition(javafx.util.Duration.millis(320), planCard);
+                new javafx.animation.TranslateTransition(javafx.util.Duration.millis(340), planCard);
             inAnim.setToX(0);
+            inAnim.setInterpolator(javafx.animation.Interpolator.EASE_BOTH);
             new javafx.animation.ParallelTransition(outAnim, inAnim).play();
         });
 
-        root.getChildren().add(slideHost);
+        root.getChildren().addAll(glow, slideHost);
+        StackPane.setAlignment(glow, Pos.CENTER);
         StackPane.setAlignment(slideHost, Pos.CENTER);
         return root;
     }
@@ -462,39 +518,39 @@ public class KeeplyAgentApp extends Application {
         icon.setContent(iconPath);
         icon.setStyle("-fx-fill: " + accent + ";");
         StackPane iconWrap = new StackPane(icon);
-        iconWrap.setStyle("-fx-background-color: rgba(123,97,255,0.12); -fx-background-radius: 10px; -fx-padding: 10;");
-        iconWrap.setPrefSize(40, 40); iconWrap.setMinSize(40, 40);
-
-        VBox textBox = new VBox(3);
-        Label titleLbl = new Label(title);
-        titleLbl.setStyle("-fx-font-size: 14px; -fx-font-weight: 800; -fx-text-fill: #FFFFFF;");
-        Label descLbl = new Label(detail != null ? desc + "\n" + detail : desc);
-        descLbl.setStyle("-fx-font-size: 11px; -fx-text-fill: #64748B;");
-        descLbl.setWrapText(true);
-        textBox.getChildren().addAll(titleLbl, descLbl);
-        HBox.setHgrow(textBox, Priority.ALWAYS);
-
-        HBox row = new HBox(14, iconWrap, textBox);
-        row.setAlignment(Pos.CENTER_LEFT);
-
-        VBox card = new VBox(row);
-        card.setPadding(new Insets(16));
-        card.setStyle(
-            "-fx-background-color: " + (selected ? "rgba(123,97,255,0.1)" : "rgba(255,255,255,0.03)") + ";" +
-            "-fx-background-radius: 12px;" +
-            "-fx-border-color: " + (selected ? accent : "rgba(255,255,255,0.08)") + ";" +
-            "-fx-border-radius: 12px; -fx-cursor: hand;"
+        iconWrap.setStyle(
+            "-fx-background-color: rgba(123,97,255,0.12);" +
+            "-fx-background-radius: 12px; -fx-padding: 12;"
         );
+        iconWrap.setPrefSize(44, 44); iconWrap.setMinSize(44, 44);
+
+        Label titleLbl = new Label(title);
+        titleLbl.setStyle("-fx-font-size: 13px; -fx-font-weight: 800; -fx-text-fill: #FFFFFF;");
+        Label descLbl = new Label(detail != null ? desc + "\n" + detail : desc);
+        descLbl.setStyle("-fx-font-size: 11px; -fx-text-fill: #475569;");
+        descLbl.setWrapText(true);
+        VBox textBox = new VBox(4, titleLbl, descLbl);
+        textBox.setAlignment(Pos.TOP_LEFT);
+
+        VBox card = new VBox(14, iconWrap, textBox);
+        card.setPadding(new Insets(18));
+        card.setStyle(planCardStyle(selected, accent));
+        card.setOnMouseEntered(e -> { if (!card.getStyle().contains("rgba(123,97,255,0.12)")) card.setStyle(planCardStyle(false, accent) + "-fx-opacity: 0.85;"); });
+        card.setOnMouseExited(e -> card.setStyle(planCardStyle(card.getStyle().contains("border-color: " + accent.replace("#","").toLowerCase()), accent)));
         return card;
     }
 
+    private String planCardStyle(boolean selected, String accent) {
+        return
+            "-fx-background-color: " + (selected ? "rgba(123,97,255,0.12)" : "rgba(255,255,255,0.04)") + ";" +
+            "-fx-background-radius: 14px;" +
+            "-fx-border-color: " + (selected ? accent : "rgba(255,255,255,0.07)") + ";" +
+            "-fx-border-radius: 14px;" +
+            "-fx-cursor: hand;";
+    }
+
     private void setDarkPlanCardSelected(VBox card, String accent, boolean selected) {
-        card.setStyle(
-            "-fx-background-color: " + (selected ? "rgba(123,97,255,0.1)" : "rgba(255,255,255,0.03)") + ";" +
-            "-fx-background-radius: 12px;" +
-            "-fx-border-color: " + (selected ? accent : "rgba(255,255,255,0.08)") + ";" +
-            "-fx-border-radius: 12px; -fx-cursor: hand;"
-        );
+        card.setStyle(planCardStyle(selected, accent));
     }
 
     private BorderPane buildAppShell(Stage stage) {
@@ -589,6 +645,18 @@ public class KeeplyAgentApp extends Application {
         });
     }
 
+    private void applyDarkDialog(javafx.scene.control.Dialog<?> dialog) {
+        String css = getClass().getResource("/keeply-theme.css").toExternalForm();
+        dialog.getDialogPane().getStylesheets().add(css);
+        dialog.getDialogPane().setStyle("-fx-background-color: #100F1E;");
+        dialog.setOnShowing(e -> {
+            javafx.scene.Scene s = dialog.getDialogPane().getScene();
+            if (s != null && !s.getStylesheets().contains(css)) {
+                s.getStylesheets().add(css);
+            }
+        });
+    }
+
     private void setShellChrome(boolean visible) {
         if (appShell == null) return;
         Node left = appShell.getLeft();
@@ -663,6 +731,7 @@ public class KeeplyAgentApp extends Application {
         ButtonType offlineButton = new ButtonType("Entrar offline");
         ButtonType loginButton = new ButtonType("Ir para login", ButtonBar.ButtonData.CANCEL_CLOSE);
         alert.getButtonTypes().setAll(offlineButton, loginButton);
+        applyDarkDialog(alert);
         Optional<ButtonType> choice = alert.showAndWait();
         if (choice.isPresent() && choice.get() == offlineButton) {
             applyOfflineState(session, reason);
@@ -681,6 +750,7 @@ public class KeeplyAgentApp extends Application {
                 alert.setTitle("Modo offline");
                 alert.setHeaderText(null);
                 alert.setContentText(message);
+                applyDarkDialog(alert);
                 alert.showAndWait();
             });
             return false;
@@ -1235,6 +1305,7 @@ public class KeeplyAgentApp extends Application {
                     confirm.setTitle("Apagar snapshot");
                     confirm.setHeaderText("Apagar este snapshot?");
                     confirm.setContentText("Esta ação remove o snapshot e os arquivos relacionados do histórico.");
+                    applyDarkDialog(confirm);
                     Optional<ButtonType> result = confirm.showAndWait();
                     if (result.isEmpty() || result.get() != ButtonType.OK) return;
 
@@ -2637,6 +2708,7 @@ public class KeeplyAgentApp extends Application {
                     } else {
                         alert.setContentText(userMessage);
                     }
+                    applyDarkDialog(alert);
                     alert.showAndWait();
                 });
             }

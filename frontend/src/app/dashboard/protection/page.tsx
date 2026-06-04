@@ -155,7 +155,7 @@ export default function ProtectionPage() {
           <div className="px-6 py-10 text-sm text-slate-500">Nenhum dispositivo registrado.</div>
         ) : (
           <div
-            className="rounded-xl border bg-[#100F1E] overflow-hidden max-w-2xl"
+            className="rounded-xl border bg-[#100F1E] overflow-hidden max-w-2xl mx-auto"
             style={{ borderColor: "rgba(255,255,255,0.08)" }}
           >
             {/* Header */}

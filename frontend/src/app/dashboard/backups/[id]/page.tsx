@@ -109,14 +109,12 @@ type TreeRowProps = {
   depth: number;
   snapshotId: string;
   selectedPaths: Set<string>;
-  downloadingFiles: Set<string>;
   onToggle: (path: string) => void;
   onExpanded: (path: string, children: TreeNode[]) => void;
-  onDownload: (path: string) => void;
   onSelectionChange: (path: string, checked: boolean) => void;
 };
 
-function TreeRow({ node, depth, snapshotId, selectedPaths, downloadingFiles, onToggle, onExpanded, onDownload, onSelectionChange }: TreeRowProps) {
+function TreeRow({ node, depth, snapshotId, selectedPaths, onToggle, onExpanded, onSelectionChange }: TreeRowProps) {
   const isOpen = node.isDir && node.loaded;
   const checked = selectedPaths.has(node.path);
 
@@ -172,14 +170,6 @@ function TreeRow({ node, depth, snapshotId, selectedPaths, downloadingFiles, onT
             <span className="hidden w-[144px] shrink-0 text-right text-xs text-slate-600 md:block">
               {formatDateTime(node.lastModified)}
             </span>
-            <button
-              onClick={(e) => { e.stopPropagation(); onDownload(node.path); }}
-              disabled={downloadingFiles.has(node.path)}
-              className="w-[88px] shrink-0 rounded-full border px-2.5 py-0.5 text-center text-xs font-semibold transition-colors duration-200 hover:bg-[#7B61FF]/20 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-              style={{ borderColor: "rgba(123,97,255,0.3)", color: "#A78BFA" }}
-            >
-              {downloadingFiles.has(node.path) ? "Baixando…" : "Baixar"}
-            </button>
           </>
         )}
       </div>
@@ -191,10 +181,8 @@ function TreeRow({ node, depth, snapshotId, selectedPaths, downloadingFiles, onT
           depth={depth + 1}
           snapshotId={snapshotId}
           selectedPaths={selectedPaths}
-          downloadingFiles={downloadingFiles}
           onToggle={onToggle}
           onExpanded={onExpanded}
-          onDownload={onDownload}
           onSelectionChange={onSelectionChange}
         />
       ))}
@@ -209,7 +197,6 @@ export default function BackupDetailPage({ params }: { params: Promise<{ id: str
   const [treeLoading, setTreeLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
-  const [downloadingFiles, setDownloadingFiles] = useState<Set<string>>(new Set());
   const [downloadMsg, setDownloadMsg] = useState<string | null>(null);
   const [selectionMsg, setSelectionMsg] = useState<string | null>(null);
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
@@ -287,25 +274,6 @@ export default function BackupDetailPage({ params }: { params: Promise<{ id: str
       setDownloadMsg(e instanceof Error ? e.message : "Falha no download do ZIP.");
     } finally {
       setDownloading(false);
-    }
-  }
-
-  async function downloadFile(path: string) {
-    if (downloadingFiles.has(path)) return;
-    setDownloadingFiles((prev) => new Set(prev).add(path));
-    try {
-      const qs = new URLSearchParams({ path });
-      const res = await fetch(`${API_BASE}/api/snapshots/${id}/files/download?${qs}`, {
-        headers: authHeaders(),
-      });
-      if (handleAuthResponse(res)) return;
-      if (!res.ok) throw new Error(await readErrorMessage(res));
-      const blob = await res.blob();
-      triggerDownload(blob, path.split("/").pop() ?? "arquivo");
-    } catch (e) {
-      setDownloadMsg(e instanceof Error ? e.message : "Falha no download do arquivo.");
-    } finally {
-      setDownloadingFiles((prev) => { const next = new Set(prev); next.delete(path); return next; });
     }
   }
 
@@ -410,10 +378,8 @@ export default function BackupDetailPage({ params }: { params: Promise<{ id: str
                   depth={0}
                   snapshotId={id}
                   selectedPaths={selectedPaths}
-                  downloadingFiles={downloadingFiles}
                   onToggle={handleToggle}
                   onExpanded={handleExpanded}
-                  onDownload={downloadFile}
                   onSelectionChange={handleSelectionChange}
                 />
               ))}

@@ -121,7 +121,10 @@ class FileDownloadServiceTest {
 
         assertEquals("application/zip", response.getContentType());
         assertTrue(response.getHeader("Content-Disposition").contains("keeply-selected-" + snapshotId + ".zip"));
-        assertZipContents(response.getContentAsByteArray(), contents);
+        assertZipContents(response.getContentAsByteArray(), Map.of(
+                "a.txt", "alpha",
+                "b.txt", "bravo"
+        ));
     }
 
     @Test
@@ -135,7 +138,27 @@ class FileDownloadServiceTest {
         MockHttpServletResponse response = new MockHttpServletResponse();
         fileDownloadService.streamSelectedArchive(userId, snapshotId, List.copyOf(contents.keySet()), response);
 
-        assertZipContents(response.getContentAsByteArray(), contents);
+        Map<String, String> expected = new LinkedHashMap<>();
+        for (int i = 1; i <= 10; i++) {
+            expected.put("file-" + i + ".txt", "content-" + i);
+        }
+        assertZipContents(response.getContentAsByteArray(), expected);
+    }
+
+    @Test
+    void streamSelectedArchive_shouldKeepDuplicateBasenames() throws Exception {
+        Map<String, String> contents = new LinkedHashMap<>();
+        contents.put("docs/report.txt", "first");
+        contents.put("exports/report.txt", "second");
+        stubFiles(contents);
+
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        fileDownloadService.streamSelectedArchive(userId, snapshotId, List.copyOf(contents.keySet()), response);
+
+        assertZipContents(response.getContentAsByteArray(), Map.of(
+                "report.txt", "first",
+                "report (2).txt", "second"
+        ));
     }
 
     private void stubFiles(Map<String, String> contents) {
