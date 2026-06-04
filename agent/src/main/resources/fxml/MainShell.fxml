@@ -14,7 +14,7 @@
             </padding>
             <HBox alignment="CENTER_LEFT" spacing="10" styleClass="shell-brand-box">
                 <StackPane prefWidth="24" prefHeight="24">
-                    <SVGPath content="M12 0l2.7 6.3L21 9l-6.3 2.7L12 18l-2.7-6.3L3 9l6.3-2.7L12 0z" style="-fx-fill: #6D47FF;"/>
+                    <SVGPath content="M12 0l2.7 6.3L21 9l-6.3 2.7L12 18l-2.7-6.3L3 9l6.3-2.7L12 0z" style="-fx-fill: #7B61FF;"/>
                 </StackPane>
                 <Label text="Keeply" styleClass="shell-brand"/>
             </HBox>
@@ -71,7 +71,7 @@
                     <!-- Profile -->
                     <HBox fx:id="profileBox" alignment="CENTER" spacing="8" styleClass="profile-box">
                         <StackPane>
-                            <Circle radius="14" fill="#6D47FF"/>
+                            <Circle radius="14" fill="#7B61FF"/>
                             <Label fx:id="lblProfileInitials" text="" style="-fx-text-fill: white; -fx-font-weight: bold; -fx-font-size: 11px;"/>
                         </StackPane>
                         <Label fx:id="lblProfileName" text="" styleClass="profile-name"/>
