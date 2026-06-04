@@ -19,7 +19,9 @@ import java.io.OutputStream;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
@@ -77,8 +79,9 @@ public class FileDownloadService {
 
         ByteArrayOutputStream buffer = new ByteArrayOutputStream();
         try (ZipOutputStream zip = new ZipOutputStream(buffer)) {
+            Map<String, Integer> usedEntryNames = new HashMap<>();
             for (SnapshotFile file : files) {
-                ZipEntry entry = new ZipEntry(file.path);
+                ZipEntry entry = new ZipEntry(uniqueFlatEntryName(file.path, usedEntryNames));
                 if (file.lastModified != null) {
                     entry.setTime(file.lastModified.toEpochMilli());
                 }
@@ -166,5 +169,29 @@ public class FileDownloadService {
             throw new IllegalArgumentException("A maximum of 10 files can be downloaded per archive");
         }
         return paths;
+    }
+
+    private String uniqueFlatEntryName(String snapshotPath, Map<String, Integer> usedEntryNames) {
+        String basename = basename(snapshotPath);
+        int count = usedEntryNames.merge(basename, 1, Integer::sum);
+        if (count == 1) {
+            return basename;
+        }
+
+        int dot = basename.lastIndexOf('.');
+        if (dot > 0) {
+            return basename.substring(0, dot) + " (" + count + ")" + basename.substring(dot);
+        }
+        return basename + " (" + count + ")";
+    }
+
+    private String basename(String snapshotPath) {
+        String normalized = snapshotPath.replace('\\', '/');
+        int slash = normalized.lastIndexOf('/');
+        String name = slash >= 0 ? normalized.substring(slash + 1) : normalized;
+        if (name.isBlank() || ".".equals(name) || "..".equals(name)) {
+            throw new IllegalArgumentException("Nome de arquivo inválido no snapshot: " + snapshotPath);
+        }
+        return name;
     }
 }

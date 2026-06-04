@@ -1,3 +1,83 @@
+/* ─── DIALOGS & ALERTS (dark) ──────────────────────────────────────────── */
+.dialog-pane,
+.dialog-pane:header,
+.dialog-pane:no-header {
+    -fx-background-color: #100F1E;
+    -fx-border-color: rgba(255,255,255,0.1);
+    -fx-border-radius: 14px;
+    -fx-background-radius: 14px;
+    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.7), 32, 0.1, 0, 6);
+}
+.dialog-pane > * {
+    -fx-background-color: transparent;
+}
+.dialog-pane .header-panel,
+.dialog-pane:header .header-panel {
+    -fx-background-color: #0D0C1A;
+    -fx-background-radius: 14px 14px 0 0;
+    -fx-padding: 16 20 14 20;
+}
+.dialog-pane .header-panel .label,
+.dialog-pane:header .header-panel .label {
+    -fx-text-fill: #FFFFFF;
+    -fx-font-size: 15px;
+    -fx-font-weight: 700;
+}
+.dialog-pane .content,
+.dialog-pane > .content,
+.dialog-pane > .content.label,
+.dialog-pane:header > .content,
+.dialog-pane:no-header > .content {
+    -fx-text-fill: #94A3B8;
+    -fx-font-size: 13px;
+    -fx-padding: 16 22 10 22;
+    -fx-background-color: transparent;
+    -fx-label-padding: 0;
+}
+.dialog-pane .expandable-content {
+    -fx-background-color: #08071A;
+    -fx-padding: 10;
+}
+.dialog-pane .button-bar,
+.dialog-pane:header .button-bar {
+    -fx-background-color: transparent;
+    -fx-padding: 6 16 18 16;
+}
+.dialog-pane .button-bar .container {
+    -fx-background-color: transparent;
+}
+.dialog-pane .button-bar .button {
+    -fx-background-radius: 9px;
+    -fx-border-radius: 9px;
+    -fx-font-weight: 700;
+    -fx-font-size: 12px;
+    -fx-padding: 8 20;
+    -fx-cursor: hand;
+}
+.dialog-pane .button-bar .button:default {
+    -fx-background-color: #7B61FF;
+    -fx-text-fill: white;
+    -fx-border-color: transparent;
+}
+.dialog-pane .button-bar .button:default:hover {
+    -fx-background-color: #6046F0;
+}
+.dialog-pane .button-bar .button:cancel,
+.dialog-pane .button-bar .button:no-default {
+    -fx-background-color: rgba(255,255,255,0.06);
+    -fx-text-fill: #94A3B8;
+    -fx-border-color: rgba(255,255,255,0.1);
+}
+.dialog-pane .button-bar .button:cancel:hover,
+.dialog-pane .button-bar .button:no-default:hover {
+    -fx-background-color: rgba(255,255,255,0.12);
+    -fx-text-fill: #FFFFFF;
+}
+.dialog-pane .graphic-container {
+    -fx-padding: 16 8 0 20;
+    -fx-background-color: transparent;
+}
+
 /* ─── ROOT ─────────────────────────────────────────────────────────────── */
 .root {
     -fx-font-family: "Inter", "Segoe UI", "Noto Sans", sans-serif;
