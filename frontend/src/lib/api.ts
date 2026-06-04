@@ -102,6 +102,7 @@ export type DevicePlan = {
   planType: "DEFAULT" | "CUSTOM";
   sources: string[];
   cdpEnabled: boolean;
+  validationEnabled: boolean;
   encryptionEnabled: boolean;
   scheduleCron: string | null;
   retentionMode: "KEEP_ALL" | "KEEP_DAYS";
@@ -134,6 +135,14 @@ export type SnapshotFile = {
   path: string;
   size: number;
   lastModified?: string;
+};
+
+export type SnapshotNode = {
+  name: string;
+  path: string;
+  directory: boolean;
+  size?: number | null;
+  lastModified?: string | null;
 };
 
 export type RestoreSession = {

@@ -12,6 +12,7 @@ type Draft = {
   planType: PlanType;
   sources: string[];
   cdpEnabled: boolean;
+  validationEnabled: boolean;
   encryptionEnabled: boolean;
   scheduleCron: string | null;
   retentionMode: RetentionMode;
@@ -67,6 +68,7 @@ export default function ProtectionPage() {
       planType: device.plan?.planType ?? "DEFAULT",
       sources: device.plan?.sources ?? [],
       cdpEnabled: device.plan?.cdpEnabled ?? false,
+      validationEnabled: device.plan?.validationEnabled ?? false,
       encryptionEnabled: device.plan?.encryptionEnabled ?? false,
       scheduleCron: toDailyCron(device.plan?.scheduleCron),
       retentionMode: device.plan?.retentionMode ?? "KEEP_ALL",
@@ -104,6 +106,7 @@ export default function ProtectionPage() {
           planType: draft.planType,
           sources: draft.sources.length ? draft.sources : ["/"],
           cdpEnabled: draft.cdpEnabled,
+          validationEnabled: draft.validationEnabled,
           encryptionEnabled: draft.encryptionEnabled,
           scheduleCron: toDailyCron(draft.scheduleCron),
           retentionMode: draft.retentionMode,
@@ -214,6 +217,10 @@ export default function ProtectionPage() {
 
             <LineRow title="Proteção contínua (CDP)">
               <Toggle value={!!draft?.cdpEnabled} onChange={(v) => patch({ cdpEnabled: v })} />
+            </LineRow>
+
+            <LineRow title="Validação pós-backup">
+              <Toggle value={!!draft?.validationEnabled} onChange={(v) => patch({ validationEnabled: v })} />
             </LineRow>
 
             <LineRow title="Agendamento" value={scheduleLabel(draft?.scheduleCron)}>

@@ -33,24 +33,27 @@ public final class DeviceApiClient {
 
     ProtectionPlan upsertPlan(UUID deviceId, ProtectionPlan.PlanType type, List<String> sources,
                               String traceId) throws Exception {
-        return upsertPlan(deviceId, type, sources, false, false, null, traceId);
+        return upsertPlan(deviceId, type, sources, false, false, false, null, traceId);
     }
 
     ProtectionPlan upsertPlan(UUID deviceId, ProtectionPlan.PlanType type, List<String> sources,
-                              boolean cdpEnabled, boolean encryptionEnabled, String scheduleCron,
+                              boolean cdpEnabled, boolean validationEnabled,
+                              boolean encryptionEnabled, String scheduleCron,
                               String traceId) throws Exception {
-        return upsertPlan(deviceId, type, sources, cdpEnabled, encryptionEnabled, scheduleCron,
+        return upsertPlan(deviceId, type, sources, cdpEnabled, validationEnabled, encryptionEnabled, scheduleCron,
                 null, null, null, traceId);
     }
 
     ProtectionPlan upsertPlan(UUID deviceId, ProtectionPlan.PlanType type, List<String> sources,
-                              boolean cdpEnabled, boolean encryptionEnabled, String scheduleCron,
+                              boolean cdpEnabled, boolean validationEnabled,
+                              boolean encryptionEnabled, String scheduleCron,
                               String encryptionPassword, ProtectionPlan.RetentionMode retentionMode,
                               Integer retentionDays, String traceId) throws Exception {
         Map<String, Object> payload = new java.util.LinkedHashMap<>();
         payload.put("planType", type);
         payload.put("sources", sources);
         payload.put("cdpEnabled", cdpEnabled);
+        payload.put("validationEnabled", validationEnabled);
         payload.put("encryptionEnabled", encryptionEnabled);
         if (scheduleCron != null) payload.put("scheduleCron", scheduleCron);
         if (encryptionPassword != null && !encryptionPassword.isBlank()) payload.put("encryptionPassword", encryptionPassword);

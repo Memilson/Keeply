@@ -26,8 +26,13 @@ public class BackupEngine {
     private static final Logger log = LoggerFactory.getLogger(BackupEngine.class);
     static final int DEFAULT_CHUNK_UPLOAD_WORKERS = 4;
     static final int DEFAULT_CHUNK_UPLOAD_QUEUE_SIZE = 16;
-    private static final long AUDIT_POLL_INTERVAL_MILLIS = 5_000L;
-    private static final long DEFAULT_AUDIT_TIMEOUT_SECONDS = 3_600L;
+    private static final int PREPARING_PERCENT = 0;
+    private static final int SCANNING_PERCENT = 1;
+    private static final int PROCESSING_START_PERCENT = 2;
+    private static final int PROCESSING_END_PERCENT = 94;
+    private static final int MANIFEST_PERCENT = 95;
+    private static final int SNAPSHOT_COMPLETION_PERCENT = 97;
+    private static final int COMPLETED_PERCENT = 100;
     private final BackendClient backend;
     private final LocalDatabase db;
     private final BackupProgressListener progressListener;
@@ -52,12 +57,22 @@ public class BackupEngine {
         try {
             long startTotal = System.nanoTime();
             String sourcePath = sourceRoot.toAbsolutePath().normalize().toString();
-            emitProgress(0, "Preparando backup", sourceRoot);
+            emitProgress(PREPARING_PERCENT, "Preparando backup", sourceRoot);
+            validateSourceRoot(sourceRoot);
             autoSyncCache(deviceId, sourceRoot);
-            emitProgress(1, "Processando arquivos", sourceRoot);
-            // expectedFiles é estimado sob demanda para evitar travessia dupla do filesystem;
-            // o progresso é atualizado à medida que os arquivos são processados.
-            long expectedFiles = 0;
+            emitProgress(SCANNING_PERCENT, "Escaneando arquivos", sourceRoot);
+
+            long scanStartedAt = System.nanoTime();
+            FileScanner.ScanStats preScanStats = FileScanner.walk(sourceRoot, file -> {
+            });
+            java.util.Queue<FileProcessingFailure> initialScanFailures =
+                    collectInitialScanFailures(sourceRoot, preScanStats);
+            log.info("event=backup.prescan status=completed files={} ignored_directories={} failed_entries={} traversal_seconds={}",
+                    preScanStats.files(), preScanStats.ignoredDirectories(), preScanStats.unreadableEntries(),
+                    secondsSince(scanStartedAt));
+            if (!initialScanFailures.isEmpty()) {
+                throw initialScanFailure(sourcePath, initialScanFailures);
+            }
 
             StartedSnapshot started = backend.startSnapshot(deviceId, sourcePath);
             UUID snapshotId = started.snapshot().id();
@@ -101,15 +116,21 @@ public class BackupEngine {
                 java.util.concurrent.ConcurrentLinkedQueue<FileProcessingFailure> fileFailures =
                         new java.util.concurrent.ConcurrentLinkedQueue<>();
                 AtomicInteger maxQueueDepth = new AtomicInteger();
+                AtomicInteger processedEntries = new AtomicInteger(0);
+                totalFiles.set(Math.toIntExact(preScanStats.files()));
                 log.info("event=backup.scan status=started");
                 long startProcessing = System.nanoTime();
-                FileScanner.ScanStats scanStats = FileScanner.walk(sourceRoot, file -> {
+                emitProgress(fileProcessingPercent(0, preScanStats.files()),
+                        processingMessage(0, preScanStats.files(), null), sourceRoot);
+                FileScanner.ScanStats processingScanStats = FileScanner.walk(sourceRoot, file -> {
                         String relativePath = sourceRoot.relativize(file).toString().replace('\\', '/');
+                        emitProgress(fileProcessingPercent(processedEntries.get(), preScanStats.files()),
+                                processingMessage(processedEntries.get(), preScanStats.files(), relativePath), sourceRoot);
                         try {
-                            int currentTotal = totalFiles.incrementAndGet();
-                            if (currentTotal % 1000 == 0) {
+                            int currentProcessed = processedEntries.get() + 1;
+                            if (currentProcessed % 1000 == 0) {
                                 log.info("event=backup.progress files_processed={} bytes_processed={}",
-                                        currentTotal, totalOriginalSize.get());
+                                        currentProcessed, totalOriginalSize.get());
                             }
 
                             long size = Files.size(file);
@@ -240,12 +261,12 @@ public class BackupEngine {
                                 fileFailures.add(new FileProcessingFailure(relativePath, "processing_failed", e));
                             }
                         } finally {
-                            int processed = totalFiles.get();
-                            int percent = fileProcessingPercent(processed, expectedFiles);
-                            emitProgress(percent, "Processando arquivos", sourceRoot);
+                            int processed = processedEntries.incrementAndGet();
+                            int percent = fileProcessingPercent(processed, preScanStats.files());
+                            emitProgress(percent, processingMessage(processed, preScanStats.files(), relativePath), sourceRoot);
                         }
                     });
-                for (FileScanner.ScanFailure failure : scanStats.unreadableFailures()) {
+                for (FileScanner.ScanFailure failure : processingScanStats.unreadableFailures()) {
                     String failedPath = relativePath(sourceRoot, failure.path());
                     if (isToleratedRemovedDuringScan(failure.cause())) {
                         log.warn("event=backup.file status=failed reason=changed_during_scan path={}", failedPath);
@@ -256,7 +277,7 @@ public class BackupEngine {
                     fileFailures.add(new FileProcessingFailure(failedPath, "unreadable_entry", failure.cause()));
                 }
                 log.info("event=backup.scan status=completed files={} ignored_directories={} failed_entries={} traversal_seconds={}",
-                        scanStats.files(), scanStats.ignoredDirectories(), scanStats.unreadableEntries(),
+                        processingScanStats.files(), processingScanStats.ignoredDirectories(), processingScanStats.unreadableEntries(),
                         secondsSince(startProcessing));
                 
                 // Finaliza o processamento em background
@@ -291,14 +312,12 @@ public class BackupEngine {
 
                 Path manifestFile = Files.createTempFile("keeply-manifest-" + snapshotId, ".json.zst");
                 try {
-                    emitProgress(95, "Enviando manifesto", sourceRoot);
+                    emitProgress(MANIFEST_PERCENT, "Enviando manifesto", sourceRoot);
                     db.writeManifestZstd(manifestFile, snapshotId.toString(), sourcePath);
                     transferStorage.uploadManifest(manifestFile);
-                    emitProgress(97, "Concluindo snapshot", sourceRoot);
+                    emitProgress(SNAPSHOT_COMPLETION_PERCENT, "Concluindo snapshot", sourceRoot);
                     backend.completeSnapshot(snapshotId, transferStorage.sessionId(), totalFiles.get(), totalOriginalSize.get(), totalCompressedSize);
-                    emitProgress(99, "Aguardando auditoria", sourceRoot);
-                    awaitSnapshotAudit(snapshotId);
-                    emitProgress(100, "Backup concluído", sourceRoot);
+                    emitProgress(COMPLETED_PERCENT, "Backup concluído", sourceRoot);
                 } finally {
                     Files.deleteIfExists(manifestFile);
                 }
@@ -313,7 +332,7 @@ public class BackupEngine {
                 db.clearBackupManifest(); 
 
                 double totalDuration = (System.nanoTime() - startTotal) / 1_000_000_000.0;
-                log.info("event=backup.snapshot status=uploads_completed_pending_audit snapshot_id={} total_duration_seconds={} chunks_sent={}",
+                log.info("event=backup.snapshot status=completed snapshot_id={} total_duration_seconds={} chunks_sent={}",
                         snapshotId,
                         String.format(java.util.Locale.ROOT, "%.2f", totalDuration),
                         sentCount.get());
@@ -336,27 +355,28 @@ public class BackupEngine {
         }
     }
 
-    private long countFiles(Path sourceRoot) {
-        try {
-            return FileScanner.walk(sourceRoot, file -> {
-            }).files();
-        } catch (Exception e) {
-            log.warn("event=backup.precount status=failed source_path={} message={}",
-                    sourceRoot.toAbsolutePath().normalize(), e.getMessage());
-            return 0;
+    private int fileProcessingPercent(int processedFiles, long expectedFiles) {
+        if (expectedFiles <= 0) {
+            return PROCESSING_START_PERCENT;
         }
+        double ratio = Math.min(1.0, processedFiles / (double) expectedFiles);
+        int processingRange = PROCESSING_END_PERCENT - PROCESSING_START_PERCENT;
+        return Math.max(PROCESSING_START_PERCENT,
+                Math.min(PROCESSING_END_PERCENT,
+                        PROCESSING_START_PERCENT + (int) Math.floor(ratio * processingRange)));
     }
 
-    private int fileProcessingPercent(int processedFiles, long expectedFiles) {
-        if (expectedFiles > 0) {
-            double ratio = Math.min(1.0, processedFiles / (double) expectedFiles);
-            return Math.max(1, Math.min(94, 1 + (int) Math.floor(ratio * 93)));
+    private String processingMessage(long processedFiles, long totalFiles, String currentFile) {
+        String message = "Processando arquivos (" + formatProgressCount(processedFiles)
+                + " / " + formatProgressCount(totalFiles) + ")";
+        if (currentFile == null || currentFile.isBlank()) {
+            return message;
         }
-        // Sem total conhecido: cresce de 1% até 85% usando curva logarítmica
-        // para dar sensação de progresso sem travar num valor fixo.
-        if (processedFiles <= 0) return 1;
-        int percent = (int) (1 + 84.0 * (Math.log1p(processedFiles) / Math.log1p(10_000)));
-        return Math.max(1, Math.min(85, percent));
+        return message + " - atual: " + currentFile;
+    }
+
+    private String formatProgressCount(long value) {
+        return String.format(new java.util.Locale("pt", "BR"), "%,d", value).replace(',', '.');
     }
 
     private void emitProgress(int percent, String message, Path sourceRoot) {
@@ -427,6 +447,31 @@ public class BackupEngine {
                 firstFailure == null ? null : firstFailure.cause());
     }
 
+    private java.util.Queue<FileProcessingFailure> collectInitialScanFailures(Path sourceRoot, FileScanner.ScanStats scanStats) {
+        java.util.Queue<FileProcessingFailure> failures = new java.util.ArrayDeque<>();
+        for (FileScanner.ScanFailure failure : scanStats.unreadableFailures()) {
+            String failedPath = relativePath(sourceRoot, failure.path());
+            if (isToleratedRemovedDuringScan(failure.cause())) {
+                log.warn("event=backup.file status=failed reason=changed_during_scan path={}", failedPath);
+                continue;
+            }
+            log.error("event=backup.file status=failed reason=unreadable_entry_during_prescan path={} message={}",
+                    failedPath, failure.cause().getMessage());
+            failures.add(new FileProcessingFailure(failedPath, "unreadable_entry_during_prescan", failure.cause()));
+        }
+        return failures;
+    }
+
+    private IllegalStateException initialScanFailure(String sourcePath, java.util.Queue<FileProcessingFailure> failures) {
+        FileProcessingFailure firstFailure = failures.peek();
+        String firstFailureDetail = firstFailure == null
+                ? "sem detalhes do primeiro arquivo"
+                : firstFailure.path() + " (" + firstFailure.reason() + ")";
+        return new IllegalStateException("Falha ao escanear arquivos antes de iniciar o snapshot em "
+                + sourcePath + ": " + failures.size() + " entrada(s) ilegível(is). Primeira falha: "
+                + firstFailureDetail, firstFailure == null ? null : firstFailure.cause());
+    }
+
     private static String relativePath(Path root, Path path) {
         try {
             return root.toAbsolutePath().normalize().relativize(path.toAbsolutePath().normalize())
@@ -438,6 +483,18 @@ public class BackupEngine {
 
     private static String safeMessage(Throwable throwable) {
         return throwable.getMessage() == null ? throwable.getClass().getSimpleName() : throwable.getMessage();
+    }
+
+    private static void validateSourceRoot(Path sourceRoot) {
+        if (!Files.exists(sourceRoot)) {
+            throw new IllegalStateException("Pasta de origem nao existe: " + sourceRoot.toAbsolutePath().normalize());
+        }
+        if (!Files.isDirectory(sourceRoot)) {
+            throw new IllegalStateException("Origem do backup nao e uma pasta: " + sourceRoot.toAbsolutePath().normalize());
+        }
+        if (!Files.isReadable(sourceRoot)) {
+            throw new IllegalStateException("Pasta de origem nao pode ser lida: " + sourceRoot.toAbsolutePath().normalize());
+        }
     }
 
     private static boolean isToleratedRemovedDuringScan(Throwable throwable) {
@@ -452,28 +509,6 @@ public class BackupEngine {
 
     private static String secondsSince(long start) {
         return String.format(java.util.Locale.ROOT, "%.2f", (System.nanoTime() - start) / 1_000_000_000.0);
-    }
-
-    private void awaitSnapshotAudit(UUID snapshotId) throws InterruptedException {
-        long timeoutSeconds = Long.getLong("keeply.agent.snapshot.audit-timeout-seconds", DEFAULT_AUDIT_TIMEOUT_SECONDS);
-        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(timeoutSeconds);
-        while (true) {
-            SnapshotSummary snapshot = backend.getSnapshot(snapshotId);
-            if ("COMPLETED".equals(snapshot.status())) {
-                log.info("event=backup.snapshot status=audit_completed snapshot_id={}", snapshotId);
-                return;
-            }
-            if ("FAILED".equals(snapshot.status())) {
-                throw new IllegalStateException("Auditoria do snapshot falhou: "
-                        + (snapshot.errorMessage() == null ? snapshotId : snapshot.errorMessage()));
-            }
-            if (System.nanoTime() >= deadline) {
-                throw new IllegalStateException("Auditoria do snapshot excedeu o tempo limite: " + snapshotId);
-            }
-            log.info("event=backup.snapshot status=waiting_audit snapshot_id={} remote_status={}",
-                    snapshotId, snapshot.status());
-            Thread.sleep(AUDIT_POLL_INTERVAL_MILLIS);
-        }
     }
 
     private record PendingChunk(int index, String hash, int originalSize) {

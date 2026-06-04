@@ -102,6 +102,8 @@ public class KeeplyAgentApp extends Application {
     private Runnable restoreRefresh = () -> {};
     private Runnable configRefresh = () -> {};
     private Stage primaryStage;
+    private AuthMode authMode = AuthMode.LOGGED_OUT;
+    private DeviceSession localSession;
 
     @Override
     public void start(Stage stage) {
@@ -151,52 +153,48 @@ public class KeeplyAgentApp extends Application {
         appViews.put("Logs", activityView);
         appShell = buildAppShell(stage);
 
-        // Tenta auto-login de forma assíncrona
+        // Tenta auto-login de forma assíncrona, mas só abre o dashboard após validar a sessão no backend.
         status.setText("Verificando credenciais locais...");
         Thread.startVirtualThread(() -> {
             try {
                 Optional<DeviceSession> saved = deviceAuthStore.load();
-                boolean authenticated = saved.isPresent();
-                if (authenticated) {
-                    DaemonLauncher.ensureRunning(this::log);
+                if (saved.isEmpty()) {
+                    Platform.runLater(() -> applyLoggedOutState("Desconectado"));
+                    return;
                 }
-
-                Platform.runLater(() -> {
-                    if (saved.isPresent()) {
-                        DeviceSession session = saved.get();
-                        backend = new BackendClient(backendUrl.getText().trim(), deviceAuthStore);
-                        backend.setSession(session);
-                        deviceId = session.deviceId();
-                        status.setText("Conectado. Device: " + deviceId);
-                        if (mainShellController != null && session.email() != null) {
-                            mainShellController.setProfile(session.email());
-                        }
-                    } else {
-                        status.setText("Desconectado");
-                    }
-                    updateAuthenticationNavigation(authenticated);
-                    showView(authenticated ? "Dashboard" : "Login");
-                });
+                DeviceSession savedSession = saved.get();
+                BackendClient candidateBackend = new BackendClient(backendUrl.getText().trim(), deviceAuthStore);
+                candidateBackend.setSession(savedSession);
+                DeviceSession refreshed = candidateBackend.refreshSession();
+                DaemonLauncher.ensureRunning(this::log);
+                Platform.runLater(() -> applyOnlineState(candidateBackend, refreshed));
             } catch (IllegalStateException e) {
-                log.error("Erro crítico ao carregar sessão: ", e);
-                Platform.runLater(() -> {
-                    status.setText("Erro de sessão");
-                    Alert alert = new Alert(Alert.AlertType.ERROR);
-                    alert.setTitle("Erro Crítico de Segurança");
-                    alert.setHeaderText("Falha no Fallback de Criptografia");
-                    alert.setContentText(e.getMessage());
-                    alert.showAndWait();
-
-                    updateAuthenticationNavigation(false);
-                    showView("Login");
-                });
+                if (isSessionStorageError(e)) {
+                    log.error("Erro crítico ao carregar sessão: ", e);
+                    Platform.runLater(() -> {
+                        status.setText("Erro de sessão");
+                        Alert alert = new Alert(Alert.AlertType.ERROR);
+                        alert.setTitle("Erro Crítico de Segurança");
+                        alert.setHeaderText("Falha no Fallback de Criptografia");
+                        alert.setContentText(e.getMessage());
+                        alert.showAndWait();
+                        applyLoggedOutState("Erro de sessão");
+                    });
+                } else if (isNetworkError(e)) {
+                    Optional<DeviceSession> saved = deviceAuthStore.load();
+                    Platform.runLater(() -> promptOfflineMode(saved.orElse(null), getErrorMessage(e)));
+                } else {
+                    log.warn("Falha ao validar sessão salva; exigindo login: {}", e.getMessage());
+                    try {
+                        deviceAuthStore.clear();
+                    } catch (Exception clearError) {
+                        log.warn("Falha ao limpar sessão inválida: {}", clearError.getMessage());
+                    }
+                    Platform.runLater(() -> applyLoggedOutState(getErrorMessage(e)));
+                }
             } catch (Exception e) {
                 log.error("Erro desconhecido ao carregar sessão: ", e);
-                Platform.runLater(() -> {
-                    status.setText("Desconectado");
-                    updateAuthenticationNavigation(false);
-                    showView("Login");
-                });
+                Platform.runLater(() -> applyLoggedOutState("Desconectado"));
             }
         });
 
@@ -260,15 +258,9 @@ public class KeeplyAgentApp extends Application {
                     }
 
                     ui(() -> {
-                        status.setText("Conectado. Device: " + deviceId);
-                        status.setStyle("-fx-text-fill: #047857;");
-                        if (mainShellController != null && session.email() != null) {
-                            mainShellController.setProfile(session.email());
-                        }
-                        updateAuthenticationNavigation(true);
-                        showView("Dashboard");
+                        applyOnlineState(backend, session);
                     });
-                    log("event=ui.login status=completed device_id=" + deviceId);
+                    log("event=ui.login status=completed device_id=" + session.deviceId());
                 } catch (Exception ex) {
                     String userMessage = getErrorMessage(ex);
                     log("Erro no login: " + userMessage);
@@ -312,11 +304,11 @@ public class KeeplyAgentApp extends Application {
             this.mainShellController.setNavigationHandler(this::showView);
             this.mainShellController.setOnLogout(() -> {
                 try {
-                    deviceAuthStore.save(null); // Limpa sessão
-                    backend.setSession(null);
-                    deviceId = null;
-                    updateAuthenticationNavigation(false);
-                    showView("Login");
+                    deviceAuthStore.clear();
+                    if (backend != null) {
+                        backend.setSession(null);
+                    }
+                    applyLoggedOutState("Desconectado");
                     log.info("Usuário deslogado via menu de perfil.");
                 } catch (Exception ex) {
                     log.error("Erro ao realizar logout: ", ex);
@@ -396,6 +388,96 @@ public class KeeplyAgentApp extends Application {
         });
     }
 
+    private void applyOnlineState(BackendClient onlineBackend, DeviceSession session) {
+        backend = onlineBackend;
+        localSession = session;
+        authMode = AuthMode.ONLINE;
+        deviceId = session.deviceId();
+        status.setText("Conectado. Device: " + deviceId);
+        status.setStyle("-fx-text-fill: #047857;");
+        if (mainShellController != null) {
+            mainShellController.setProfile(session.email());
+        }
+        updateAuthenticationNavigation(true);
+        showView("Dashboard");
+    }
+
+    private void applyOfflineState(DeviceSession session, String reason) {
+        backend = null;
+        localSession = session;
+        authMode = AuthMode.OFFLINE;
+        deviceId = session == null ? null : session.deviceId();
+        status.setText("Modo offline");
+        status.setStyle("-fx-text-fill: #B45309;");
+        if (mainShellController != null) {
+            String profileName = session == null || session.email() == null || session.email().isBlank()
+                    ? "Offline"
+                    : session.email() + " (offline)";
+            mainShellController.setProfile(profileName);
+        }
+        if (reason != null && !reason.isBlank()) {
+            log("Modo offline: " + reason);
+        }
+        updateAuthenticationNavigation(session != null);
+        showView(session != null ? "Dashboard" : "Login");
+    }
+
+    private void applyLoggedOutState(String message) {
+        backend = null;
+        localSession = null;
+        authMode = AuthMode.LOGGED_OUT;
+        deviceId = null;
+        status.setText(message == null || message.isBlank() ? "Desconectado" : message);
+        status.setStyle("-fx-text-fill: #6B6993;");
+        if (mainShellController != null) {
+            mainShellController.setProfile(null);
+        }
+        updateAuthenticationNavigation(false);
+        showView("Login");
+    }
+
+    private void promptOfflineMode(DeviceSession session, String reason) {
+        if (session == null) {
+            applyLoggedOutState(reason);
+            return;
+        }
+        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+        alert.setTitle("Backend indisponível");
+        alert.setHeaderText("Não foi possível validar a sessão com o backend.");
+        alert.setContentText((reason == null || reason.isBlank() ? "Sem conexão com o servidor." : reason)
+                + "\n\nVocê pode entrar em modo offline ou voltar para a tela de login.");
+        ButtonType offlineButton = new ButtonType("Entrar offline");
+        ButtonType loginButton = new ButtonType("Ir para login", ButtonBar.ButtonData.CANCEL_CLOSE);
+        alert.getButtonTypes().setAll(offlineButton, loginButton);
+        Optional<ButtonType> choice = alert.showAndWait();
+        if (choice.isPresent() && choice.get() == offlineButton) {
+            applyOfflineState(session, reason);
+            return;
+        }
+        applyLoggedOutState(reason);
+    }
+
+    private boolean requireOnlineAccess(String actionName) {
+        if (authMode == AuthMode.OFFLINE) {
+            String message = "Ação indisponível em modo offline: " + actionName
+                    + ". Reconecte ao backend e faça login novamente.";
+            log(message);
+            ui(() -> {
+                Alert alert = new Alert(Alert.AlertType.INFORMATION);
+                alert.setTitle("Modo offline");
+                alert.setHeaderText(null);
+                alert.setContentText(message);
+                alert.showAndWait();
+            });
+            return false;
+        }
+        if (backend == null || deviceId == null) {
+            log("Faça login primeiro para " + actionName + ".");
+            return false;
+        }
+        return true;
+    }
+
     private Pane dashboardView() {
         try {
             javafx.fxml.FXMLLoader loader = new javafx.fxml.FXMLLoader(getClass().getResource("/fxml/Dashboard.fxml"));
@@ -403,8 +485,7 @@ public class KeeplyAgentApp extends Application {
             dashboardController = loader.getController();
             dashboardController.setOnNavigate(this::showView);
             dashboardController.setOnBackupNow(() -> {
-                if (backend == null || deviceId == null) {
-                    log("Faça login primeiro para iniciar o backup manual.");
+                if (!requireOnlineAccess("iniciar o backup manual")) {
                     return;
                 }
                 dashboardController.setBackupInProgress(true);
@@ -646,7 +727,22 @@ public class KeeplyAgentApp extends Application {
     }
 
     private void refreshDashboard() {
-        if (backend == null || deviceId == null || dashboardController == null) {
+        if (dashboardController == null) {
+            return;
+        }
+        if (authMode == AuthMode.OFFLINE) {
+            List<String> localSources = parseSources(backupSourcesConfig.getText());
+            ui(() -> {
+                dashboardController.updateStats("Offline", "—", "Offline");
+                dashboardController.setFolders(localSources);
+                dashboardController.setSnapshotsList(List.of());
+                if (mainShellController != null) {
+                    mainShellController.updateStorageInfo("Offline", 0);
+                }
+            });
+            return;
+        }
+        if (backend == null || deviceId == null) {
             return;
         }
         Thread.startVirtualThread(() -> {
@@ -787,11 +883,13 @@ public class KeeplyAgentApp extends Application {
 
         java.util.function.Consumer<SnapshotSummary> recoverSnapshot = snapshot -> {
             if (snapshot == null) return;
+            if (!requireOnlineAccess("restaurar snapshots")) return;
             runAsync(() -> new RestoreEngine(backend).restore(snapshot.id(), null, null, OverwritePolicy.ALWAYS));
         };
 
         java.util.function.Consumer<SnapshotSummary> loadItems = snapshot -> {
             if (snapshot == null) return;
+            if (!requireOnlineAccess("carregar itens do snapshot")) return;
             if (!"COMPLETED".equals(snapshot.status()))
                 throw new IllegalStateException("Snapshot ainda não concluído (Status: " + snapshot.status() + ")");
             runAsync(() -> {
@@ -927,6 +1025,7 @@ public class KeeplyAgentApp extends Application {
                     if (result.isEmpty() || result.get() != ButtonType.OK) return;
 
                     runAsync(() -> {
+                        if (!requireOnlineAccess("apagar snapshots")) return;
                         backend.deleteSnapshot(item.id());
                         ui(() -> {
                             boolean wasSelected = selectedSnapshot[0] != null
@@ -962,7 +1061,7 @@ public class KeeplyAgentApp extends Application {
 
         // ── Refresh ───────────────────────────────────────────────────────────
         Runnable refreshSnapshots = () -> {
-            if (backend == null) return;
+            if (authMode == AuthMode.OFFLINE || backend == null) return;
             runAsync(() -> {
                 List<SnapshotSummary> snapshots = backend.listSnapshots();
                 ui(() -> snapshotList.getItems().setAll(snapshots));
@@ -986,6 +1085,7 @@ public class KeeplyAgentApp extends Application {
         actionRestore.setOnAction(e -> {
             SnapshotSummary snapshot = selectedSnapshot[0];
             if (snapshot == null || fileTree.getRoot() == null) return;
+            if (!requireOnlineAccess("restaurar arquivos")) return;
             SelectedRestorePaths selections = collectCheckedSelectionsFromTree(fileTree.getRoot());
             if (selections.files().isEmpty() && selections.directories().isEmpty()) return;
             Optional<RestoreDestinationMode> choice = showRestoreDestinationDialog(stage);
@@ -1846,7 +1946,7 @@ public class KeeplyAgentApp extends Application {
                 } catch (Exception ignored) {}
                 boolean cdp = cdpToggle.isSelected();
                 boolean enc = encToggle.isSelected();
-                backend.upsertDevicePlan(deviceId, type, finalSources, cdp, enc, cron);
+                backend.upsertDevicePlan(deviceId, type, finalSources, cdp, false, enc, cron);
                 pendingSources.set(null);
             }
             ui(() -> { updateScheduleSummary.run(); hideSaveBtns.run(); });
@@ -2354,6 +2454,42 @@ public class KeeplyAgentApp extends Application {
         return cause.getMessage();
     }
 
+    private boolean isSessionStorageError(Throwable throwable) {
+        Throwable current = throwable;
+        while (current != null) {
+            String message = current.getMessage();
+            if (message != null && (message.contains("Fallback de Criptografia")
+                    || message.contains("sessão local")
+                    || message.contains("sessao local")
+                    || message.contains("KEEPLY_MASTER_KEY")
+                    || message.contains("bloqueado por outro processo"))) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
+    private boolean isNetworkError(Throwable throwable) {
+        Throwable current = throwable;
+        while (current != null) {
+            String message = current.getMessage();
+            if (message != null && (
+                    message.contains("Não foi possível conectar ao backend Keeply")
+                            || message.contains("Nao foi possível conectar ao backend Keeply")
+                            || message.contains("Não foi possível conectar ao backend")
+                            || message.contains("Nao foi possível conectar ao backend")
+                            || message.contains("Connection refused")
+                            || message.contains("Connect timed out")
+                            || message.contains("timeout")
+                            || message.contains("HTTP connect timed out"))) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
     private String formatException(Throwable throwable) {
         StringBuilder out = new StringBuilder();
         Throwable current = throwable;
@@ -2523,6 +2659,12 @@ public class KeeplyAgentApp extends Application {
         RUNNING,
         COMPLETED,
         FAILED
+    }
+
+    private enum AuthMode {
+        LOGGED_OUT,
+        ONLINE,
+        OFFLINE
     }
 
     public static void main(String[] args) {

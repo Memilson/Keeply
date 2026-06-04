@@ -2,9 +2,15 @@ package com.keeply.backend.service;
 
 import com.keeply.backend.dto.SnapshotDtos;
 import com.keeply.backend.model.Device;
+import com.keeply.backend.model.ProtectionPlan;
+import com.keeply.backend.model.Snapshot;
 import com.keeply.backend.model.SnapshotStatus;
+import com.keeply.backend.model.TransferSession;
+import com.keeply.backend.model.UserAccount;
+import com.keeply.backend.repository.ChunkRepository;
 import com.keeply.backend.repository.DeviceRepository;
 import com.keeply.backend.repository.FileChunkRepository;
+import com.keeply.backend.repository.ProtectionPlanRepository;
 import com.keeply.backend.repository.RestoreJobRepository;
 import com.keeply.backend.repository.SnapshotFileRepository;
 import com.keeply.backend.repository.SnapshotRepository;
@@ -12,10 +18,14 @@ import com.keeply.backend.repository.TransferSessionRepository;
 import com.keeply.backend.security.JwtPrincipal;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -27,6 +37,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+@ExtendWith(MockitoExtension.class)
 class SnapshotServiceTest {
 
     @Mock
@@ -40,11 +51,17 @@ class SnapshotServiceTest {
     @Mock
     private FileChunkRepository fileChunkRepository;
     @Mock
+    private ChunkRepository chunkRepository;
+    @Mock
     private TransferSessionRepository transferSessionRepository;
     @Mock
     private RestoreJobRepository restoreJobRepository;
     @Mock
+    private ProtectionPlanRepository protectionPlanRepository;
+    @Mock
     private ManifestParserService manifestParser;
+    @Mock
+    private SnapshotValidationService snapshotValidation;
     @Mock
     private TransferCredentialBroker transferBroker;
 
@@ -52,42 +69,111 @@ class SnapshotServiceTest {
 
     @BeforeEach
     void setUp() {
-        MockitoAnnotations.openMocks(this);
-        snapshotService = new SnapshotService(snapshotRepository, deviceRepository, storage, snapshotFileRepository,
-                fileChunkRepository, transferSessionRepository, restoreJobRepository, manifestParser, transferBroker);
-    }
-
-    @Test
-    void start_shouldThrowException_whenSnapshotAlreadyInProgress() {
-        // ... (existing test)
+        snapshotService = new SnapshotService(
+                snapshotRepository,
+                deviceRepository,
+                storage,
+                snapshotFileRepository,
+                fileChunkRepository,
+                chunkRepository,
+                transferSessionRepository,
+                restoreJobRepository,
+                protectionPlanRepository,
+                manifestParser,
+                snapshotValidation,
+                transferBroker
+        );
     }
 
     @Test
     void list_shouldOnlyReturnSnapshotsOwnedByTheUser() {
-        UUID userA = UUID.randomUUID();
-        UUID userB = UUID.randomUUID();
-        
-        com.keeply.backend.model.UserAccount ownerB = new com.keeply.backend.model.UserAccount();
-        ownerB.id = userB;
-        
-        com.keeply.backend.model.Device deviceB = new com.keeply.backend.model.Device();
-        deviceB.id = UUID.randomUUID();
-        deviceB.user = ownerB;
+        UUID userId = UUID.randomUUID();
+        Snapshot snapshot = new Snapshot();
+        snapshot.id = UUID.randomUUID();
+        snapshot.device = device(userId, UUID.randomUUID());
 
-        com.keeply.backend.model.Snapshot snapshotB = new com.keeply.backend.model.Snapshot();
-        snapshotB.id = UUID.randomUUID();
-        snapshotB.device = deviceB;
+        when(snapshotRepository.findByDeviceUserIdOrderByCreatedAtDesc(eq(userId), any(PageRequest.class)))
+                .thenReturn(new PageImpl<>(List.of(snapshot), PageRequest.of(0, 10), 1));
 
-        // O SnapshotRepository.findByDeviceUserIdOrderByCreatedAtDesc deve retornar apenas snapshots do usuário B
-        when(snapshotRepository.findByDeviceUserIdOrderByCreatedAtDesc(userA)).thenReturn(List.of());
-        when(snapshotRepository.findByDeviceUserIdOrderByCreatedAtDesc(userB)).thenReturn(List.of(snapshotB));
+        SnapshotDtos.PagedSnapshotResponse response = snapshotService.list(userId, 0, 10);
 
-        List<SnapshotDtos.SnapshotResponse> resultsA = snapshotService.list(userA);
-        List<SnapshotDtos.SnapshotResponse> resultsB = snapshotService.list(userB);
+        assertEquals(1, response.items().size());
+        assertEquals(snapshot.id, response.items().get(0).id());
+    }
 
-        assertEquals(0, resultsA.size());
-        assertEquals(1, resultsB.size());
-        assertEquals(snapshotB.id, resultsB.get(0).id());
+    @Test
+    void complete_shouldFinalizeSynchronouslyWithoutOptionalValidation() throws Exception {
+        UUID userId = UUID.randomUUID();
+        UUID deviceId = UUID.randomUUID();
+        UUID snapshotId = UUID.randomUUID();
+        UUID transferSessionId = UUID.randomUUID();
+        String chunkHash = "a".repeat(64);
+        JwtPrincipal principal = new JwtPrincipal(userId, "user@example.com", deviceId);
+        Snapshot snapshot = snapshot(snapshotId, userId, deviceId, SnapshotStatus.IN_PROGRESS);
+        TransferSession transferSession = new TransferSession();
+        transferSession.id = transferSessionId;
+        ProtectionPlan plan = new ProtectionPlan();
+        plan.validationEnabled = false;
+        ManifestParserService.ChunkReference reference =
+                new ManifestParserService.ChunkReference(chunkHash, 10L, 8L, "ZSTD", 3);
+
+        when(snapshotRepository.findByIdAndDeviceUserId(snapshotId, userId)).thenReturn(Optional.of(snapshot));
+        when(transferBroker.processing(principal, transferSessionId, snapshotId)).thenReturn(transferSession);
+        when(storage.exists("users/%s/manifests/%s.json.zst".formatted(userId, snapshotId))).thenReturn(true);
+        when(protectionPlanRepository.findByDeviceId(deviceId)).thenReturn(Optional.of(plan));
+        when(manifestParser.parseAndPersist("users/%s/manifests/%s.json.zst".formatted(userId, snapshotId), snapshot))
+                .thenReturn(new ManifestParserService.ParsedManifest(1, Map.of(chunkHash, reference)));
+        when(chunkRepository.findByUserIdAndHashIn(userId, List.of(chunkHash))).thenReturn(List.of());
+
+        SnapshotDtos.SnapshotResponse response = snapshotService.complete(
+                principal,
+                snapshotId,
+                new SnapshotDtos.CompleteSnapshotRequest(transferSessionId, 1, 10, 8)
+        );
+
+        assertEquals(SnapshotStatus.COMPLETED, response.status());
+        verify(snapshotValidation, never()).validateUploadedChunks(any(), any());
+        verify(chunkRepository).saveAll(any());
+        verify(transferBroker).completeProcessing(transferSessionId, true, "Snapshot concluído");
+    }
+
+    @Test
+    void complete_shouldFailWhenOptionalValidationFails() throws Exception {
+        UUID userId = UUID.randomUUID();
+        UUID deviceId = UUID.randomUUID();
+        UUID snapshotId = UUID.randomUUID();
+        UUID transferSessionId = UUID.randomUUID();
+        String chunkHash = "b".repeat(64);
+        JwtPrincipal principal = new JwtPrincipal(userId, "user@example.com", deviceId);
+        Snapshot snapshot = snapshot(snapshotId, userId, deviceId, SnapshotStatus.IN_PROGRESS);
+        TransferSession transferSession = new TransferSession();
+        transferSession.id = transferSessionId;
+        ProtectionPlan plan = new ProtectionPlan();
+        plan.validationEnabled = true;
+        ManifestParserService.ChunkReference reference =
+                new ManifestParserService.ChunkReference(chunkHash, 10L, 8L, "ZSTD", 3);
+
+        when(snapshotRepository.findByIdAndDeviceUserId(snapshotId, userId)).thenReturn(Optional.of(snapshot));
+        when(transferBroker.processing(principal, transferSessionId, snapshotId)).thenReturn(transferSession);
+        when(storage.exists("users/%s/manifests/%s.json.zst".formatted(userId, snapshotId))).thenReturn(true);
+        when(protectionPlanRepository.findByDeviceId(deviceId)).thenReturn(Optional.of(plan));
+        when(manifestParser.parseAndPersist("users/%s/manifests/%s.json.zst".formatted(userId, snapshotId), snapshot))
+                .thenReturn(new ManifestParserService.ParsedManifest(1, Map.of(chunkHash, reference)));
+        when(chunkRepository.findByUserIdAndHashIn(userId, List.of(chunkHash))).thenReturn(List.of());
+        when(snapshotFileRepository.findIdsBySnapshotId(snapshotId)).thenReturn(List.of());
+        org.mockito.Mockito.doThrow(new IllegalStateException("Chunk ausente"))
+                .when(snapshotValidation).validateUploadedChunks(userId, Map.of(chunkHash, reference));
+
+        IllegalStateException error = assertThrows(IllegalStateException.class, () -> snapshotService.complete(
+                principal,
+                snapshotId,
+                new SnapshotDtos.CompleteSnapshotRequest(transferSessionId, 1, 10, 8)
+        ));
+
+        assertEquals("Chunk ausente", error.getMessage());
+        assertEquals(SnapshotStatus.FAILED, snapshot.status);
+        verify(snapshotFileRepository).deleteBySnapshotId(snapshotId);
+        verify(transferBroker).completeProcessing(transferSessionId, false, "Chunk ausente");
     }
 
     @Test
@@ -95,15 +181,7 @@ class SnapshotServiceTest {
         UUID userId = UUID.randomUUID();
         UUID snapshotId = UUID.randomUUID();
         UUID fileId = UUID.randomUUID();
-        com.keeply.backend.model.UserAccount owner = new com.keeply.backend.model.UserAccount();
-        owner.id = userId;
-        Device device = new Device();
-        device.id = UUID.randomUUID();
-        device.user = owner;
-        com.keeply.backend.model.Snapshot snapshot = new com.keeply.backend.model.Snapshot();
-        snapshot.id = snapshotId;
-        snapshot.device = device;
-        snapshot.status = SnapshotStatus.COMPLETED;
+        Snapshot snapshot = snapshot(snapshotId, userId, UUID.randomUUID(), SnapshotStatus.COMPLETED);
         snapshot.manifestKey = "users/%s/manifests/%s.json.zst".formatted(userId, snapshotId);
 
         when(snapshotRepository.findByIdAndDeviceUserId(snapshotId, userId)).thenReturn(Optional.of(snapshot));
@@ -129,5 +207,21 @@ class SnapshotServiceTest {
 
         verify(snapshotRepository, never()).delete(any());
         verify(storage, never()).delete(any());
+    }
+
+    private static Device device(UUID userId, UUID deviceId) {
+        Device device = new Device();
+        device.id = deviceId;
+        device.user = new UserAccount();
+        device.user.id = userId;
+        return device;
+    }
+
+    private static Snapshot snapshot(UUID snapshotId, UUID userId, UUID deviceId, SnapshotStatus status) {
+        Snapshot snapshot = new Snapshot();
+        snapshot.id = snapshotId;
+        snapshot.device = device(userId, deviceId);
+        snapshot.status = status;
+        return snapshot;
     }
 }
