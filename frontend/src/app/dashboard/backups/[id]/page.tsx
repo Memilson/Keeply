@@ -370,7 +370,7 @@ export default function BackupDetailPage({ params }: { params: Promise<{ id: str
           ) : roots.length === 0 ? (
             <p className="px-6 py-12 text-center text-sm text-keeply-ink/60">Nenhum arquivo encontrado.</p>
           ) : (
-            <div className="overflow-y-auto py-1" style={{ maxHeight: "520px" }}>
+            <div className="overflow-y-auto pb-1 pt-4" style={{ maxHeight: "calc(100vh - 190px)" }}>
               {roots.map((node) => (
                 <TreeRow
                   key={node.path}

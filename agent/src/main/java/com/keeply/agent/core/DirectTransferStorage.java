@@ -15,11 +15,13 @@ import java.util.UUID;
 
 public class DirectTransferStorage implements TransferObjectClient {
     private final BackendClient backend;
+    private final UUID snapshotId;
     private volatile TransferCredentials credentials;
     private volatile MinioClient minio;
 
-    public DirectTransferStorage(BackendClient backend, TransferCredentials credentials) {
+    public DirectTransferStorage(BackendClient backend, UUID snapshotId, TransferCredentials credentials) {
         this.backend = backend;
+        this.snapshotId = snapshotId;
         update(credentials);
     }
 
@@ -37,7 +39,7 @@ public class DirectTransferStorage implements TransferObjectClient {
 
     @Override
     public void uploadManifest(Path zstdFile) {
-        put("users/" + backend.getSession().userId() + "/manifests/" + sessionId() + ".json.zst",
+        put("users/" + backend.getSession().userId() + "/manifests/" + snapshotId + ".json.zst",
                 zstdFile, "application/zstd");
     }
 

@@ -33,7 +33,7 @@ public class RestoreEngine {
     private final StorageFactory storageFactory;
 
     public RestoreEngine(BackendClient backend) {
-        this(backend, DirectTransferStorage::new);
+        this(backend, (client, snapshotId, credentials) -> new DirectTransferStorage(client, snapshotId, credentials));
     }
 
     RestoreEngine(BackendClient backend, StorageFactory storageFactory) {
@@ -57,7 +57,7 @@ public class RestoreEngine {
             log.info("Iniciando restauracao do snapshot: {}", snapshotId);
             Set<String> selected = selectedPaths == null ? null : new HashSet<>(selectedPaths);
             credentials = backend.startRestoreSession(snapshotId);
-            TransferObjectClient storage = storageFactory.create(backend, credentials);
+            TransferObjectClient storage = storageFactory.create(backend, snapshotId, credentials);
             CompressionService compression = new CompressionService();
             ChunkCodec chunkCodec = null;
             Integer manifestVersion = null;
@@ -278,6 +278,6 @@ public class RestoreEngine {
 
     @FunctionalInterface
     interface StorageFactory {
-        TransferObjectClient create(BackendClient backend, TransferCredentials credentials);
+        TransferObjectClient create(BackendClient backend, UUID snapshotId, TransferCredentials credentials);
     }
 }
