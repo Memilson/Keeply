@@ -9,7 +9,8 @@ public record AgentConfig(
         Device device,
         Backup backup,
         Schedule schedule,
-        Retention retention
+        Retention retention,
+        Validation validation
 ) {
     public record Backend(String url) {
     }
@@ -27,5 +28,8 @@ public record AgentConfig(
     }
 
     public record Retention(String mode, Integer days) {
+    }
+
+    public record Validation(Boolean enabled) {
     }
 }

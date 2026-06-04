@@ -52,7 +52,6 @@ public class TransferCredentialBroker {
     public TransferSessionDtos.Credentials openBackup(JwtPrincipal principal, UUID deviceId, UUID snapshotId) {
         requireDevice(principal, deviceId);
         TransferSession session = newSessionUnsaved(principal.userId(), deviceId, snapshotId, TransferSessionType.BACKUP_UPLOAD);
-        session.stagingPrefix = "users/%s/transfer-sessions/%s/".formatted(principal.userId(), session.id);
         return issue(session);
     }
 
@@ -78,7 +77,7 @@ public class TransferCredentialBroker {
         }
         revokeCurrent(session);
         session.status = TransferSessionStatus.PROCESSING;
-        session.closedReason = "Uploads concluídos; auditoria iniciada";
+        session.closedReason = "Uploads concluídos; conclusão do snapshot iniciada";
         return sessions.save(session);
     }
 
@@ -152,10 +151,11 @@ public class TransferCredentialBroker {
         String bucketArn = "arn:aws:s3:::" + bucket;
         String bucketLocation = "{\"Effect\":\"Allow\",\"Action\":[\"s3:GetBucketLocation\"],\"Resource\":[\"" + bucketArn + "\"]}";
         if (session.type == TransferSessionType.BACKUP_UPLOAD) {
-            String arn = bucketArn + "/" + session.stagingPrefix + "*";
+            String manifest = "%s/users/%s/manifests/%s.json.zst".formatted(bucketArn, session.userId, session.snapshotId);
+            String chunks = "%s/users/%s/chunks/*".formatted(bucketArn, session.userId);
             return "{\"Version\":\"2012-10-17\",\"Statement\":[" + bucketLocation
                     + ",{\"Effect\":\"Allow\",\"Action\":[\"s3:PutObject\",\"s3:AbortMultipartUpload\",\"s3:ListMultipartUploadParts\"],\"Resource\":[\""
-                    + arn + "\"]}]}";
+                    + manifest + "\",\"" + chunks + "\"]}]}";
         }
         String manifest = "%s/users/%s/manifests/%s.json.zst".formatted(bucketArn, session.userId, session.snapshotId);
         String chunks = "%s/users/%s/chunks/*".formatted(bucketArn, session.userId);

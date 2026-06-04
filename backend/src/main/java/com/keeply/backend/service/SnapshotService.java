@@ -9,8 +9,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.Instant;
 import java.util.*;
@@ -23,9 +21,12 @@ public class SnapshotService {
     private final ObjectStorageService storage;
     private final SnapshotFileRepository snapshotFiles;
     private final FileChunkRepository fileChunks;
+    private final ChunkRepository chunks;
     private final TransferSessionRepository transferSessions;
     private final RestoreJobRepository restoreJobs;
+    private final ProtectionPlanRepository protectionPlans;
     private final ManifestParserService manifestParser;
+    private final SnapshotValidationService snapshotValidation;
     private final TransferCredentialBroker transferBroker;
 
     public SnapshotService(SnapshotRepository snapshots,
@@ -33,18 +34,24 @@ public class SnapshotService {
                            ObjectStorageService storage,
                            SnapshotFileRepository snapshotFiles,
                            FileChunkRepository fileChunks,
+                           ChunkRepository chunks,
                            TransferSessionRepository transferSessions,
                            RestoreJobRepository restoreJobs,
+                           ProtectionPlanRepository protectionPlans,
                            ManifestParserService manifestParser,
+                           SnapshotValidationService snapshotValidation,
                            TransferCredentialBroker transferBroker) {
         this.snapshots = snapshots;
         this.devices = devices;
         this.storage = storage;
         this.snapshotFiles = snapshotFiles;
         this.fileChunks = fileChunks;
+        this.chunks = chunks;
         this.transferSessions = transferSessions;
         this.restoreJobs = restoreJobs;
+        this.protectionPlans = protectionPlans;
         this.manifestParser = manifestParser;
+        this.snapshotValidation = snapshotValidation;
         this.transferBroker = transferBroker;
     }
 
@@ -70,7 +77,7 @@ public class SnapshotService {
         );
     }
 
-    @Transactional
+    @Transactional(noRollbackFor = RuntimeException.class)
     public SnapshotDtos.SnapshotResponse complete(JwtPrincipal principal, UUID snapshotId,
                                                    SnapshotDtos.CompleteSnapshotRequest request) {
         log.info("Finalizando uploads do snapshot: {} (User: {})", snapshotId, principal.userId());
@@ -80,35 +87,45 @@ public class SnapshotService {
         }
 
         TransferSession session = transferBroker.processing(principal, request.transferSessionId(), snapshotId);
-        String stagedManifest = session.stagingPrefix + "manifest.json.zst";
-        if (!storage.exists(stagedManifest)) {
-            throw new IllegalStateException("Manifesto staged não encontrado");
+        String manifestKey = "users/%s/manifests/%s.json.zst".formatted(principal.userId(), snapshotId);
+        if (!storage.exists(manifestKey)) {
+            markSnapshotFailed(s, session.id, "Manifesto não encontrado no storage definitivo");
+            throw new IllegalStateException("Manifesto não encontrado no storage definitivo");
         }
 
-        s.totalFiles = request.totalFiles();
-        s.totalOriginalSize = request.totalOriginalSize();
-        s.totalCompressedSize = request.totalCompressedSize();
-        String manifestKey = "users/%s/manifests/%s.json.zst".formatted(principal.userId(), snapshotId);
-        s.manifestKey = manifestKey;
-        s.status = SnapshotStatus.PROCESSING;
-        s.completedAt = Instant.now();
-        snapshots.save(s);
+        try {
+            s.totalFiles = request.totalFiles();
+            s.totalOriginalSize = request.totalOriginalSize();
+            s.totalCompressedSize = request.totalCompressedSize();
+            s.manifestKey = manifestKey;
+            s.errorMessage = null;
+            snapshots.save(s);
 
-        // Dispara a auditoria apenas após o commit da transação corrente para evitar
-        // que o thread async leia a versão antiga do snapshot (@Version) e falhe com
-        // ObjectOptimisticLockingFailureException ao tentar salvar o status final.
-        UUID sid = s.id;
-        UUID sessionId = session.id;
-        String stagingPrefix = session.stagingPrefix;
-        UUID userId = principal.userId();
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                manifestParser.auditAndPromoteAsync(sid, sessionId, stagingPrefix, userId, manifestKey);
+            ProtectionPlan plan = protectionPlans.findByDeviceId(s.device.id).orElse(null);
+            ManifestParserService.ParsedManifest parsedManifest = manifestParser.parseAndPersist(manifestKey, s);
+            Map<String, ManifestParserService.ChunkReference> newChunks = resolveNewChunks(principal.userId(), parsedManifest.references());
+
+            if (plan != null && plan.validationEnabled) {
+                snapshotValidation.validateUploadedChunks(principal.userId(), newChunks);
             }
-        });
+            if (!newChunks.isEmpty()) {
+                chunks.saveAll(newChunks.values().stream()
+                        .map(reference -> snapshotValidation.toChunkEntity(principal.userId(), reference))
+                        .toList());
+            }
 
-        return toResponse(s);
+            s.status = SnapshotStatus.COMPLETED;
+            s.completedAt = Instant.now();
+            snapshots.save(s);
+            transferBroker.completeProcessing(session.id, true, "Snapshot concluído");
+            return toResponse(s);
+        } catch (RuntimeException | java.io.IOException e) {
+            cleanupSnapshotDetails(snapshotId);
+            markSnapshotFailed(s, session.id, e.getMessage());
+            throw e instanceof RuntimeException runtimeException
+                    ? runtimeException
+                    : new IllegalStateException("Falha ao concluir snapshot: " + e.getMessage(), e);
+        }
     }
 
     @Transactional
@@ -165,6 +182,41 @@ public class SnapshotService {
     private Snapshot findOwned(UUID userId, UUID snapshotId) {
         return snapshots.findByIdAndDeviceUserId(snapshotId, userId)
                 .orElseThrow(() -> new IllegalArgumentException("Snapshot não encontrado"));
+    }
+
+    private Map<String, ManifestParserService.ChunkReference> resolveNewChunks(
+            UUID userId, Map<String, ManifestParserService.ChunkReference> references) {
+        Set<String> existing = new HashSet<>();
+        List<String> hashes = new ArrayList<>(references.keySet());
+        for (int from = 0; from < hashes.size(); from += 1000) {
+            List<String> page = hashes.subList(from, Math.min(from + 1000, hashes.size()));
+            chunks.findByUserIdAndHashIn(userId, page).stream()
+                    .map(chunk -> chunk.hash.toLowerCase(Locale.ROOT))
+                    .forEach(existing::add);
+        }
+        Map<String, ManifestParserService.ChunkReference> newChunks = new LinkedHashMap<>();
+        for (Map.Entry<String, ManifestParserService.ChunkReference> entry : references.entrySet()) {
+            if (!existing.contains(entry.getKey())) {
+                newChunks.put(entry.getKey(), entry.getValue());
+            }
+        }
+        return newChunks;
+    }
+
+    private void cleanupSnapshotDetails(UUID snapshotId) {
+        List<UUID> snapshotFileIds = snapshotFiles.findIdsBySnapshotId(snapshotId);
+        if (!snapshotFileIds.isEmpty()) {
+            fileChunks.deleteBySnapshotFileIdIn(snapshotFileIds);
+        }
+        snapshotFiles.deleteBySnapshotId(snapshotId);
+    }
+
+    private void markSnapshotFailed(Snapshot snapshot, UUID sessionId, String reason) {
+        snapshot.status = SnapshotStatus.FAILED;
+        snapshot.errorMessage = reason;
+        snapshot.completedAt = Instant.now();
+        snapshots.save(snapshot);
+        transferBroker.completeProcessing(sessionId, false, reason);
     }
 
     private SnapshotDtos.SnapshotResponse toResponse(Snapshot s) {

@@ -57,6 +57,7 @@ public class ProtectionPlanService {
         plan.planType = request.planType();
         plan.sources = normalizeSources(request.sources());
         plan.cdpEnabled = Boolean.TRUE.equals(request.cdpEnabled());
+        plan.validationEnabled = Boolean.TRUE.equals(request.validationEnabled());
         plan.encryptionEnabled = Boolean.TRUE.equals(request.encryptionEnabled());
         plan.scheduleCron = normalizeSchedule(request.scheduleCron());
         plan.retentionMode = retentionMode;
@@ -134,7 +135,7 @@ public class ProtectionPlanService {
     private DeviceDtos.PlanResponse toResponse(ProtectionPlan plan) {
         return new DeviceDtos.PlanResponse(
                 plan.planType, List.copyOf(plan.sources),
-                plan.cdpEnabled, plan.encryptionEnabled, normalizeSchedule(plan.scheduleCron),
+                plan.cdpEnabled, plan.validationEnabled, plan.encryptionEnabled, normalizeSchedule(plan.scheduleCron),
                 plan.retentionMode, plan.retentionDays,
                 plan.encryptionPasswordHash != null && !plan.encryptionPasswordHash.isBlank(),
                 plan.updatedAt);

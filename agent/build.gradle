@@ -60,3 +60,7 @@ tasks.register('daemonStartScripts', CreateStartScripts) {
     classpath = files(tasks.named('jar').flatMap { it.archiveFile }, configurations.runtimeClasspath)
     outputDir = file("$buildDir/daemon/bin")
 }
+
+tasks.named('test') {
+    systemProperty 'net.bytebuddy.experimental', 'true'
+}

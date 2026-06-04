@@ -60,6 +60,10 @@ public final class AgentConfigWriter {
         schedule.put("cron", plan.scheduleCron());
         root.put("schedule", schedule);
 
+        Map<String, Object> validation = section(root, "validation");
+        validation.put("enabled", plan.validationEnabled());
+        root.put("validation", validation);
+
         Map<String, Object> retention = section(root, "retention");
         retention.put("mode", plan.retentionMode() != null ? plan.retentionMode().name() : ProtectionPlan.RetentionMode.KEEP_ALL.name());
         if (plan.retentionMode() == ProtectionPlan.RetentionMode.KEEP_DAYS && plan.retentionDays() != null) {

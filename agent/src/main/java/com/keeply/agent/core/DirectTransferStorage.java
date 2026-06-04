@@ -30,14 +30,15 @@ public class DirectTransferStorage implements TransferObjectClient {
 
     @Override
     public void uploadChunk(String hash, Path chunkFile, ChunkCodec codec) {
-        String key = credentials.stagingPrefix() + "chunks/" + hash.substring(0, 2) + "/"
+        String key = "users/" + backend.getSession().userId() + "/chunks/" + hash.substring(0, 2) + "/"
                 + hash.substring(2, 4) + "/" + hash + codec.extension();
         put(key, chunkFile, codec.contentType());
     }
 
     @Override
     public void uploadManifest(Path zstdFile) {
-        put(credentials.stagingPrefix() + "manifest.json.zst", zstdFile, "application/zstd");
+        put("users/" + backend.getSession().userId() + "/manifests/" + sessionId() + ".json.zst",
+                zstdFile, "application/zstd");
     }
 
     @Override

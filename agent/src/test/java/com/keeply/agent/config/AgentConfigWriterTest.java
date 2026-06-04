@@ -24,6 +24,7 @@ class AgentConfigWriterTest {
                 List.of("/data/a", "/data/b"),
                 false,
                 true,
+                true,
                 "0 4 * * *",
                 ProtectionPlan.RetentionMode.KEEP_DAYS,
                 15,
@@ -37,6 +38,7 @@ class AgentConfigWriterTest {
         assertEquals("user@example.com", saved.email());
         assertEquals(List.of("/data/a", "/data/b"), saved.sources());
         assertEquals("0 4 * * *", saved.cron());
+        assertTrue(saved.validationEnabled());
         assertEquals("KEEP_DAYS", saved.retentionMode());
         assertEquals(15, saved.retentionDays());
         assertTrue(configPath.toFile().isFile());
