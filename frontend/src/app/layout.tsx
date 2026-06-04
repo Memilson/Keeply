@@ -9,8 +9,8 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Keeply — Seu mundo digital, sempre protegido",
-  description: "Backup inteligente, restauração simples. Tudo seguro, tudo sob controle.",
+  title: "Keeply — Open-source agent-first backup platform",
+  description: "Backup, deduplicação e restore orquestrados por agentes distribuídos. Open-source, self-hosted, auditável.",
 };
 
 export default function RootLayout({

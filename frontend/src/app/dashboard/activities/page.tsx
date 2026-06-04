@@ -51,50 +51,83 @@ export default function ActivitiesPage() {
   return (
     <>
       <Topbar title="Atividades" />
-      <div className="space-y-5 p-7">
-        <div className="overflow-hidden">
-          <div className="flex flex-wrap items-center gap-2 px-5 py-4" style={{ borderBottom: "1px solid #F0EEF8", background: "#FAFAFE" }}>
-            <FilterPill label="Todos" active={filter === "ALL"} onClick={() => setFilter("ALL")} />
-            <FilterPill label="Backup" active={filter === "BACKUP"} onClick={() => setFilter("BACKUP")} />
-            <FilterPill label="Em andamento" active={filter === "RUNNING"} onClick={() => setFilter("RUNNING")} />
-            <FilterPill label="Erros" active={filter === "ERRORS"} onClick={() => setFilter("ERRORS")} />
+      <div className="p-6">
+        <div
+          className="rounded-xl border bg-[#100F1E] overflow-hidden"
+          style={{ borderColor: "rgba(255,255,255,0.08)" }}
+        >
+          {/* Filter pills */}
+          <div
+            className="flex flex-wrap items-center gap-2 px-5 py-4"
+            style={{ borderBottom: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.02)" }}
+          >
+            {(["ALL", "BACKUP", "RUNNING", "ERRORS"] as ActivityFilter[]).map((f) => {
+              const labels: Record<ActivityFilter, string> = {
+                ALL: "Todos",
+                BACKUP: "Backup",
+                RUNNING: "Em andamento",
+                ERRORS: "Erros",
+              };
+              return (
+                <FilterPill
+                  key={f}
+                  label={labels[f]}
+                  active={filter === f}
+                  onClick={() => setFilter(f)}
+                />
+              );
+            })}
           </div>
 
           {loading ? (
-            <p className="px-5 py-8 text-sm" style={{ color: "#6B6993" }}>Carregando…</p>
+            <p className="px-5 py-8 text-sm text-slate-500">Carregando…</p>
           ) : error ? (
-            <p className="px-5 py-8 text-sm" style={{ color: "#DC2626" }}>{error}</p>
+            <p className="px-5 py-8 text-sm text-[#EF4444]">{error}</p>
           ) : filtered.length === 0 ? (
-            <p className="px-5 py-8 text-sm" style={{ color: "#6B6993" }}>Nenhuma atividade para o filtro selecionado.</p>
+            <p className="px-5 py-8 text-sm text-slate-500">
+              Nenhuma atividade para o filtro selecionado.
+            </p>
           ) : (
             <div className="max-h-[70vh] overflow-auto">
               <ul>
                 {filtered.map((s, idx) => {
                   const status = statusView(s.status);
                   const device = deviceById.get(s.deviceId);
-                  const deviceName = device?.name || device?.hostname || "Dispositivo";
+                  const devName = device?.name || device?.hostname || "Dispositivo";
                   return (
-                    <li key={s.id} className="px-5 py-4" style={{ borderTop: idx > 0 ? "1px solid #F5F3FC" : undefined }}>
+                    <li
+                      key={s.id}
+                      className="px-5 py-4"
+                      style={{
+                        borderTop: idx > 0 ? "1px solid rgba(255,255,255,0.04)" : undefined,
+                      }}
+                    >
                       <div className="flex items-start gap-3">
                         <span
-                          className="mt-1 inline-block h-3 w-3 rounded-full"
+                          className="mt-1.5 inline-block h-2.5 w-2.5 shrink-0 rounded-full"
                           style={{ background: status.dot }}
                         />
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-2">
-                            <span className="text-sm font-semibold" style={{ color: "#3B82F6" }}>{status.label}</span>
+                            <span className="text-sm font-semibold" style={{ color: status.textColor }}>
+                              {status.label}
+                            </span>
                             <span
-                              className="rounded-full px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide"
-                              style={{ background: "#EDE9FF", color: "#6046F0" }}
+                              className="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide"
+                              style={{ background: "rgba(123,97,255,0.15)", color: "#A78BFA" }}
                             >
                               Backup
                             </span>
                           </div>
-                          <p className="mt-1 text-sm" style={{ color: "#334155" }}>
-                            device={deviceName} source={s.sourcePath}
+                          <p className="mt-1 text-sm text-slate-400">
+                            <span className="font-medium text-white">{devName}</span>
+                            {" "}&rarr;{" "}
+                            <span className="font-mono text-xs text-slate-500">{s.sourcePath}</span>
                           </p>
-                          <p className="mt-1 text-xs" style={{ color: "#6B6993" }}>
-                            {formatDateTime(s.startedAt)} · snapshot_id={s.id}
+                          <p className="mt-1 text-xs text-slate-600">
+                            {formatDateTime(s.startedAt)}
+                            {" · "}
+                            <span className="font-mono">{s.id}</span>
                           </p>
                         </div>
                       </div>
@@ -114,16 +147,20 @@ function FilterPill({ label, active, onClick }: { label: string; active: boolean
   return (
     <button
       onClick={onClick}
-      className="rounded-xl border px-4 py-1.5 text-sm font-semibold transition-colors"
-      style={active ? { background: "#EDE9FF", borderColor: "#C7BFFB", color: "#4F46E5" } : { background: "#FFFFFF", borderColor: "#E2E8F0", color: "#475569" }}
+      className="rounded-lg border px-4 py-1.5 text-xs font-bold transition-colors duration-200 cursor-pointer"
+      style={
+        active
+          ? { background: "rgba(123,97,255,0.15)", borderColor: "rgba(123,97,255,0.35)", color: "#A78BFA" }
+          : { background: "transparent", borderColor: "rgba(255,255,255,0.1)", color: "#64748B" }
+      }
     >
       {label}
     </button>
   );
 }
 
-function statusView(status: SnapshotStatus): { label: string; dot: string } {
-  if (status === "COMPLETED") return { label: "completado", dot: "#84CC16" };
-  if (status === "FAILED") return { label: "erro", dot: "#EF4444" };
-  return { label: "em andamento", dot: "#84CC16" };
+function statusView(status: SnapshotStatus): { label: string; dot: string; textColor: string } {
+  if (status === "COMPLETED") return { label: "Completado", dot: "#10B981", textColor: "#10B981" };
+  if (status === "FAILED") return { label: "Erro", dot: "#EF4444", textColor: "#EF4444" };
+  return { label: "Em andamento", dot: "#F59E0B", textColor: "#F59E0B" };
 }

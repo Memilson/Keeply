@@ -130,37 +130,58 @@ export default function ProtectionPage() {
     return (
       <>
         <Topbar title="Proteção" subtitle="Plano de proteção do agente" />
-        <div className="p-7 text-sm" style={{ color: "#6B6993" }}>Carregando…</div>
+        <div className="p-6 text-sm text-slate-500">Carregando…</div>
       </>
     );
   }
 
+  const inputCls = "rounded-lg border bg-[#0D0C1A] px-3 py-2 text-sm text-slate-300 focus:outline-none focus:ring-2 focus:ring-[#7B61FF] transition-shadow";
+  const inputStyle = { borderColor: "rgba(255,255,255,0.1)" };
+
   return (
     <>
       <Topbar title="Proteção" subtitle="Plano de proteção do agente" />
-      <div className="p-7">
+      <div className="p-6">
         {error && (
-          <div className="mb-4 rounded-xl px-4 py-3 text-sm" style={{ background: "#FEF2F2", border: "1px solid #FECACA", color: "#DC2626" }}>
+          <div
+            className="mb-4 rounded-xl border px-4 py-3 text-sm text-[#EF4444]"
+            style={{ background: "rgba(239,68,68,0.08)", borderColor: "rgba(239,68,68,0.2)" }}
+          >
             {error}
           </div>
         )}
 
         {!selected ? (
-          <div className="px-6 py-10 text-sm" style={{ color: "#6B6993" }}>Nenhum dispositivo registrado.</div>
+          <div className="px-6 py-10 text-sm text-slate-500">Nenhum dispositivo registrado.</div>
         ) : (
-          <div className="overflow-hidden">
-            <div className="flex items-center justify-between px-6 py-5" style={{ borderBottom: "1px solid #ECEAF5" }}>
+          <div
+            className="rounded-xl border bg-[#100F1E] overflow-hidden max-w-2xl"
+            style={{ borderColor: "rgba(255,255,255,0.08)" }}
+          >
+            {/* Header */}
+            <div
+              className="flex items-center justify-between px-6 py-5"
+              style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}
+            >
               <div className="flex items-center gap-3">
-                <ShieldIcon />
-                <h2 className="text-xl font-semibold" style={{ color: "#111827" }}>Plano de Backup</h2>
+                <span
+                  className="grid h-9 w-9 place-items-center rounded-xl"
+                  style={{ background: "rgba(123,97,255,0.15)" }}
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="#7B61FF" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                    <path d="m9 12 2 2 4-4" />
+                  </svg>
+                </span>
+                <h2 className="text-base font-bold text-white">Plano de Backup</h2>
               </div>
               <div className="flex items-center gap-3">
                 {devices.length > 1 && (
                   <select
                     value={selected.id}
                     onChange={(e) => setSelectedId(e.target.value)}
-                    className="rounded-lg border px-2 py-1 text-sm"
-                    style={{ borderColor: "#E4E1F0", color: "#374151" }}
+                    className={inputCls}
+                    style={inputStyle}
                   >
                     {devices.map((d) => (
                       <option key={d.id} value={d.id}>{d.name || d.hostname}</option>
@@ -171,6 +192,7 @@ export default function ProtectionPage() {
               </div>
             </div>
 
+            {/* Sources */}
             <SectionRow title="O que fazer backup" right={`${draft?.sources.length ?? 0} pasta(s)`}>
               <button
                 onClick={() => {
@@ -179,8 +201,8 @@ export default function ProtectionPage() {
                   patch({ sources: [...draft.sources, p], planType: "CUSTOM" });
                   setNewSource("");
                 }}
-                className="rounded-xl border px-4 py-1.5 text-sm"
-                style={{ borderColor: "#D1D5DB", color: "#6D47FF" }}
+                className="rounded-lg border px-3 py-1.5 text-xs font-semibold text-[#A78BFA] transition-colors duration-200 hover:bg-[#7B61FF]/10 cursor-pointer"
+                style={{ borderColor: "rgba(123,97,255,0.3)" }}
               >
                 + Adicionar
               </button>
@@ -191,22 +213,36 @@ export default function ProtectionPage() {
                 <input
                   value={newSource}
                   onChange={(e) => setNewSource(e.target.value)}
-                  placeholder="/home/angelo/Storage"
-                  className="flex-1 rounded-lg border px-3 py-2 text-sm"
-                  style={{ borderColor: "#E4E1F0" }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      const p = newSource.trim();
+                      if (draft && p && !draft.sources.includes(p)) {
+                        patch({ sources: [...draft.sources, p], planType: "CUSTOM" });
+                        setNewSource("");
+                      }
+                    }
+                  }}
+                  placeholder="/home/user/Storage"
+                  className={`flex-1 ${inputCls}`}
+                  style={inputStyle}
                 />
               </div>
               <div className="space-y-2">
                 {(draft?.sources ?? []).map((src) => (
-                  <div key={src} className="flex items-center justify-between rounded-xl px-4 py-3" style={{ background: "#F3F4F6" }}>
-                    <div className="flex items-center gap-3">
-                      <FolderIcon />
-                      <span className="text-sm" style={{ color: "#334155" }}>{src}</span>
+                  <div
+                    key={src}
+                    className="flex items-center justify-between rounded-lg px-3 py-2.5"
+                    style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)" }}
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="#F59E0B" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 shrink-0">
+                        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                      </svg>
+                      <span className="text-sm font-mono text-slate-300 truncate">{src}</span>
                     </div>
                     <button
                       onClick={() => patch({ sources: (draft?.sources ?? []).filter((s) => s !== src), planType: "CUSTOM" })}
-                      className="text-lg leading-none"
-                      style={{ color: "#DC2626" }}
+                      className="text-slate-500 hover:text-[#EF4444] transition-colors duration-200 cursor-pointer text-lg leading-none ml-2"
                     >
                       ×
                     </button>
@@ -215,15 +251,18 @@ export default function ProtectionPage() {
               </div>
             </div>
 
-            <LineRow title="Proteção contínua (CDP)">
+            {/* CDP */}
+            <LineRow title="Proteção contínua (CDP)" description="Backup incremental em tempo real">
               <Toggle value={!!draft?.cdpEnabled} onChange={(v) => patch({ cdpEnabled: v })} />
             </LineRow>
 
-            <LineRow title="Validação pós-backup">
+            {/* Validation */}
+            <LineRow title="Validação pós-backup" description="Verifica integridade após cada snapshot">
               <Toggle value={!!draft?.validationEnabled} onChange={(v) => patch({ validationEnabled: v })} />
             </LineRow>
 
-            <LineRow title="Agendamento" value={scheduleLabel(draft?.scheduleCron)}>
+            {/* Schedule */}
+            <LineRow title="Agendamento" description={scheduleLabel(draft?.scheduleCron)}>
               <input
                 type="time"
                 required
@@ -233,84 +272,94 @@ export default function ProtectionPage() {
                   const nextCron = timeToDailyCron(e.target.value);
                   if (nextCron) patch({ scheduleCron: nextCron });
                 }}
-                className="rounded-lg border px-3 py-2 text-sm"
-                style={{ borderColor: "#E4E1F0", color: "#374151" }}
+                className={inputCls}
+                style={inputStyle}
                 aria-label="Hora diária do agendamento"
               />
             </LineRow>
 
-            <LineRow title="Quanto tempo manter" value={retentionLabel(draft?.retentionMode ?? "KEEP_ALL", draft?.retentionDays ?? null)}>
-              <select
-                value={draft?.retentionMode ?? "KEEP_ALL"}
-                onChange={(e) => {
-                  const mode = e.target.value as RetentionMode;
-                  patch({
-                    retentionMode: mode,
-                    retentionDays: mode === "KEEP_DAYS" ? draft?.retentionDays ?? 30 : null,
-                  });
-                }}
-                className="rounded-lg border px-2 py-1 text-sm"
-                style={{ borderColor: "#E4E1F0", color: "#374151" }}
-              >
-                <option value="KEEP_ALL">Manter todos</option>
-                <option value="KEEP_DAYS">Manter por dias</option>
-              </select>
-              {(draft?.retentionMode ?? "KEEP_ALL") === "KEEP_DAYS" && (
-                <input
-                  type="number"
-                  min={1}
-                  value={draft?.retentionDays ?? 30}
-                  onChange={(e) => patch({ retentionDays: Number(e.target.value) > 0 ? Number(e.target.value) : null })}
-                  className="w-24 rounded-lg border px-3 py-2 text-sm"
-                  style={{ borderColor: "#E4E1F0" }}
-                />
-              )}
+            {/* Retention */}
+            <LineRow title="Retenção" description={retentionLabel(draft?.retentionMode ?? "KEEP_ALL", draft?.retentionDays ?? null)}>
+              <div className="flex items-center gap-2">
+                <select
+                  value={draft?.retentionMode ?? "KEEP_ALL"}
+                  onChange={(e) => {
+                    const mode = e.target.value as RetentionMode;
+                    patch({ retentionMode: mode, retentionDays: mode === "KEEP_DAYS" ? draft?.retentionDays ?? 30 : null });
+                  }}
+                  className={inputCls}
+                  style={inputStyle}
+                >
+                  <option value="KEEP_ALL">Manter todos</option>
+                  <option value="KEEP_DAYS">Manter por dias</option>
+                </select>
+                {(draft?.retentionMode ?? "KEEP_ALL") === "KEEP_DAYS" && (
+                  <input
+                    type="number"
+                    min={1}
+                    value={draft?.retentionDays ?? 30}
+                    onChange={(e) => patch({ retentionDays: Number(e.target.value) > 0 ? Number(e.target.value) : null })}
+                    className={`w-20 ${inputCls}`}
+                    style={inputStyle}
+                  />
+                )}
+              </div>
             </LineRow>
 
-            <div className="flex items-center justify-between px-6 py-5" style={{ borderTop: "1px solid #ECEAF5" }}>
+            {/* Encryption */}
+            <div
+              className="flex items-center justify-between px-6 py-5"
+              style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}
+            >
               <div>
-                <p className="text-sm font-medium" style={{ color: "#334155" }}>Criptografia</p>
-                <p className="text-xs" style={{ color: "#94A3B8" }}>AES-256 · SHA-256</p>
+                <p className="text-sm font-medium text-white">Criptografia</p>
+                <p className="text-xs text-slate-500 mt-0.5">AES-256 · SHA-256</p>
               </div>
               <Toggle value={!!draft?.encryptionEnabled} onChange={(v) => patch({ encryptionEnabled: v })} />
             </div>
 
-            <div style={{ borderTop: "1px solid #ECEAF5" }} className="px-6 py-5">
-              <p className="mb-3 text-sm font-medium" style={{ color: "#334155" }}>Informações do dispositivo</p>
-              <div className="grid gap-2 text-sm">
+            {/* Device info */}
+            <div
+              className="px-6 py-5"
+              style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}
+            >
+              <p className="mb-3 text-xs font-bold uppercase tracking-widest text-slate-500">
+                Informações do dispositivo
+              </p>
+              <div className="space-y-2 text-sm">
                 <div className="flex gap-3">
-                  <span style={{ color: "#64748B", minWidth: 120 }}>ID do dispositivo</span>
-                  <span style={{ color: "#334155" }}>{selected.id}</span>
+                  <span className="text-slate-600 shrink-0" style={{ minWidth: 120 }}>ID do dispositivo</span>
+                  <span className="text-slate-400 font-mono text-xs break-all">{selected.id}</span>
                 </div>
                 <div className="flex gap-3">
-                  <span style={{ color: "#64748B", minWidth: 120 }}>Servidor</span>
-                  <span style={{ color: "#334155" }}>http://localhost:8080</span>
+                  <span className="text-slate-600 shrink-0" style={{ minWidth: 120 }}>Servidor</span>
+                  <span className="text-slate-400 font-mono text-xs">http://localhost:8080</span>
                 </div>
               </div>
             </div>
 
-            <div className="flex justify-end gap-2 px-6 py-4" style={{ borderTop: "1px solid #ECEAF5", background: "#FAFAFE" }}>
+            {/* Footer */}
+            <div
+              className="flex justify-end gap-2 px-6 py-4"
+              style={{ borderTop: "1px solid rgba(255,255,255,0.06)", background: "rgba(255,255,255,0.02)" }}
+            >
               <button
                 onClick={() => {
                   if (!selected) return;
-                  setDrafts((prev) => {
-                    const next = { ...prev };
-                    delete next[selected.id];
-                    return next;
-                  });
+                  setDrafts((prev) => { const next = { ...prev }; delete next[selected.id]; return next; });
                 }}
-                className="rounded-lg border px-4 py-2 text-sm"
-                style={{ borderColor: "#D1D5DB", color: "#475569" }}
+                className="rounded-lg border px-4 py-2 text-sm text-slate-400 hover:text-slate-300 transition-colors duration-200 cursor-pointer"
+                style={{ borderColor: "rgba(255,255,255,0.1)" }}
               >
                 Cancelar
               </button>
               <button
                 onClick={save}
                 disabled={!isDirty || saving}
-                className="rounded-lg px-4 py-2 text-sm text-white disabled:opacity-60"
-                style={{ background: "#6D47FF" }}
+                className="rounded-lg px-4 py-2 text-sm font-semibold text-white transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                style={{ background: "#7B61FF" }}
               >
-                {saving ? "Salvando..." : "Salvar"}
+                {saving ? "Salvando..." : "Salvar alterações"}
               </button>
             </div>
           </div>
@@ -347,24 +396,30 @@ function toDailyCron(cron: string | null | undefined) {
 
 function SectionRow({ title, right, children }: { title: string; right?: string; children?: React.ReactNode }) {
   return (
-    <div className="flex items-center justify-between px-6 py-5" style={{ borderTop: "1px solid #ECEAF5" }}>
-      <p className="text-sm font-medium" style={{ color: "#334155" }}>{title}</p>
+    <div
+      className="flex items-center justify-between px-6 py-4"
+      style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}
+    >
+      <p className="text-sm font-medium text-white">{title}</p>
       <div className="flex items-center gap-3">
-        {right && <span className="text-sm" style={{ color: "#64748B" }}>{right}</span>}
+        {right && <span className="text-xs text-slate-500">{right}</span>}
         {children}
       </div>
     </div>
   );
 }
 
-function LineRow({ title, value, children }: { title: string; value?: string; children?: React.ReactNode }) {
+function LineRow({ title, description, children }: { title: string; description?: string; children?: React.ReactNode }) {
   return (
-    <div className="flex items-center justify-between px-6 py-5" style={{ borderTop: "1px solid #ECEAF5" }}>
-      <p className="text-sm font-medium" style={{ color: "#334155" }}>{title}</p>
-      <div className="flex items-center gap-3">
-        {value && <span className="text-sm" style={{ color: "#64748B" }}>{value}</span>}
-        {children}
+    <div
+      className="flex items-center justify-between px-6 py-4"
+      style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}
+    >
+      <div>
+        <p className="text-sm font-medium text-white">{title}</p>
+        {description && <p className="text-xs text-slate-500 mt-0.5">{description}</p>}
       </div>
+      <div className="flex items-center gap-3 ml-4 shrink-0">{children}</div>
     </div>
   );
 }
@@ -374,29 +429,14 @@ function Toggle({ value, onChange, disabled = false }: { value: boolean; onChang
     <button
       onClick={() => !disabled && onChange(!value)}
       disabled={disabled}
-      className="relative inline-flex h-8 w-14 items-center rounded-full"
-      style={{ background: value ? "#6D47FF" : "#CBD5E1" }}
+      className="relative inline-flex h-7 w-12 items-center rounded-full transition-colors duration-200 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
+      style={{ background: value ? "#7B61FF" : "rgba(255,255,255,0.12)" }}
+      aria-pressed={value}
     >
       <span
-        className="inline-block h-6 w-6 rounded-full bg-white transition-transform"
-        style={{ transform: value ? "translateX(30px)" : "translateX(2px)" }}
+        className="inline-block h-5 w-5 rounded-full bg-white transition-transform duration-200 shadow"
+        style={{ transform: value ? "translateX(26px)" : "translateX(2px)" }}
       />
     </button>
-  );
-}
-
-function ShieldIcon() {
-  return (
-    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#6D47FF" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-    </svg>
-  );
-}
-
-function FolderIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-    </svg>
   );
 }
