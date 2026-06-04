@@ -76,7 +76,7 @@ public class BackupEngine {
 
             StartedSnapshot started = backend.startSnapshot(deviceId, sourcePath);
             UUID snapshotId = started.snapshot().id();
-            DirectTransferStorage transferStorage = new DirectTransferStorage(backend, started.transfer());
+            DirectTransferStorage transferStorage = new DirectTransferStorage(backend, snapshotId, started.transfer());
 
             try {
                 log.info("event=backup.snapshot status=started snapshot_id={} source_path={}", snapshotId, sourcePath);
@@ -551,7 +551,7 @@ public class BackupEngine {
             if (!latest.id().toString().equals(lastSynced)) {
                 log.info("event=backup.cache_sync status=started action=rebuild_local_index");
                 TransferCredentials credentials = backend.startRestoreSession(latest.id());
-                DirectTransferStorage storage = new DirectTransferStorage(backend, credentials);
+                DirectTransferStorage storage = new DirectTransferStorage(backend, latest.id(), credentials);
                 try (var zstdStream = storage.openManifest(latest.id());
                      var manifestStream = new ZstdInputStream(zstdStream)) {
                     db.reconstructIndex(pathStr, manifestStream);
