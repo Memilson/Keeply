@@ -622,7 +622,7 @@ function LandingFooter() {
           <div className="flex flex-wrap gap-4 text-xs text-[#6B6993]">
             <a href="#" className="transition hover:text-[#7B61FF]">Privacidade</a>
             <a href="#" className="transition hover:text-[#7B61FF]">Termos</a>
-            <a href="mailto:Ti@grupo4us.com" className="transition hover:text-[#7B61FF]">Contato</a>
+            <a href="mailto:angelolealpl14@gmail.com" className="transition hover:text-[#7B61FF]">Contato</a>
           </div>
         </div>
       </div>
@@ -960,7 +960,7 @@ const FOOTER_COLS = [
     title: "Suporte",
     links: [
       { label: "Issues", href: GITHUB_URL + "/issues" },
-      { label: "Contato", href: "mailto:Ti@grupo4us.com" },
+      { label: "Contato", href: "mailto:angelolealpl14@gmail.com" },
     ],
   },
 ];
