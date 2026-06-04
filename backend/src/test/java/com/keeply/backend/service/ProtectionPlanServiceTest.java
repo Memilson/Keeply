@@ -60,6 +60,7 @@ class ProtectionPlanServiceTest {
                 PlanType.CUSTOM,
                 List.of("/tmp/source"),
                 true,
+                true,
                 false,
                 "5 3 * * *",
                 RetentionMode.KEEP_ALL,
@@ -70,6 +71,7 @@ class ProtectionPlanServiceTest {
         DeviceDtos.PlanResponse response = service.upsert(userId, deviceId, request);
 
         assertEquals("5 3 * * *", response.scheduleCron());
+        assertEquals(true, response.validationEnabled());
         assertEquals(RetentionMode.KEEP_ALL, response.retentionMode());
         assertNull(response.retentionDays());
     }
@@ -81,6 +83,7 @@ class ProtectionPlanServiceTest {
         DeviceDtos.PlanRequest request = new DeviceDtos.PlanRequest(
                 PlanType.CUSTOM,
                 List.of("/tmp/source"),
+                false,
                 false,
                 true,
                 null,
@@ -104,12 +107,14 @@ class ProtectionPlanServiceTest {
         stored.sources = List.of("/tmp/source");
         stored.scheduleCron = " ";
         stored.retentionMode = RetentionMode.KEEP_ALL;
+        stored.validationEnabled = true;
 
         when(planRepository.findByDeviceId(deviceId)).thenReturn(Optional.of(stored));
 
         DeviceDtos.PlanResponse response = service.get(userId, deviceId);
 
         assertEquals("0 2 * * *", response.scheduleCron());
+        assertEquals(true, response.validationEnabled());
     }
 
     @Test
@@ -117,6 +122,7 @@ class ProtectionPlanServiceTest {
         DeviceDtos.PlanRequest keepAllWithDays = new DeviceDtos.PlanRequest(
                 PlanType.CUSTOM,
                 List.of("/tmp/source"),
+                false,
                 false,
                 false,
                 null,
@@ -127,6 +133,7 @@ class ProtectionPlanServiceTest {
         DeviceDtos.PlanRequest keepDaysWithoutDays = new DeviceDtos.PlanRequest(
                 PlanType.CUSTOM,
                 List.of("/tmp/source"),
+                false,
                 false,
                 false,
                 null,

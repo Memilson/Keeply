@@ -251,6 +251,7 @@ public final class BackupCycleRunner {
                 planType,
                 configuredSources.stream().map(Path::toString).toList(),
                 false,
+                config.validation() != null && Boolean.TRUE.equals(config.validation().enabled()),
                 false,
                 cron,
                 retentionMode,

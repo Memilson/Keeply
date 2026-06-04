@@ -7,6 +7,7 @@ public record ProtectionPlan(
         PlanType planType,
         List<String> sources,
         boolean cdpEnabled,
+        boolean validationEnabled,
         boolean encryptionEnabled,
         String scheduleCron,
         RetentionMode retentionMode,

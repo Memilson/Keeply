@@ -12,6 +12,9 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -63,5 +66,70 @@ public class ManifestReaderService {
                 items,
                 new SnapshotDtos.PageMetadata(result.getTotalElements(), page, size)
         );
+    }
+
+    @Transactional(readOnly = true)
+    public SnapshotDtos.SnapshotNodeListResponse listNodes(UUID userId, UUID snapshotId, String prefix) {
+        Snapshot snapshot = snapshots.findByIdAndDeviceUserId(snapshotId, userId)
+                .orElseThrow(() -> new IllegalArgumentException("Snapshot não encontrado"));
+
+        if (snapshot.status != SnapshotStatus.COMPLETED) {
+            throw new IllegalStateException("Snapshot ainda não concluído (Status: " + snapshot.status + ")");
+        }
+
+        String normalizedPrefix = prefix == null ? "" : prefix;
+        Sort sort = Sort.by("path").ascending();
+        List<SnapshotFile> files = normalizedPrefix.isBlank()
+                ? snapshotFiles.findBySnapshotId(snapshotId, sort)
+                : snapshotFiles.findBySnapshotIdAndPathStartingWith(snapshotId, normalizedPrefix, sort);
+
+        LinkedHashMap<String, SnapshotDtos.SnapshotNodeItem> nodes = new LinkedHashMap<>();
+        for (SnapshotFile file : files) {
+            if (!file.path.startsWith(normalizedPrefix)) {
+                continue;
+            }
+            String relative = normalizedPrefix.isBlank()
+                    ? file.path
+                    : file.path.substring(Math.min(normalizedPrefix.length(), file.path.length()));
+            if (relative.isBlank()) {
+                continue;
+            }
+
+            int slash = relative.indexOf('/');
+            if (slash < 0) {
+                nodes.putIfAbsent(file.path, new SnapshotDtos.SnapshotNodeItem(
+                        relative,
+                        file.path,
+                        false,
+                        file.size,
+                        file.lastModified
+                ));
+                continue;
+            }
+
+            String folderName = relative.substring(0, slash);
+            String folderPath = normalizedPrefix + folderName + "/";
+            nodes.putIfAbsent(folderPath, new SnapshotDtos.SnapshotNodeItem(
+                    folderName,
+                    folderPath,
+                    true,
+                    null,
+                    null
+            ));
+        }
+
+        List<SnapshotDtos.SnapshotNodeItem> items = new ArrayList<>(nodes.values());
+        items.sort((left, right) -> {
+            if (left.directory() != right.directory()) {
+                return left.directory() ? -1 : 1;
+            }
+            boolean leftHidden = left.name().startsWith(".");
+            boolean rightHidden = right.name().startsWith(".");
+            if (leftHidden != rightHidden) {
+                return leftHidden ? 1 : -1;
+            }
+            return left.name().compareToIgnoreCase(right.name());
+        });
+        return new SnapshotDtos.SnapshotNodeListResponse(items);
     }
 }

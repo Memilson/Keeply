@@ -21,6 +21,7 @@ public final class FileScanner {
             ".git",
             ".idea",
             ".vscode",
+            ".docker",
             "Trash",
             ".local/share/Trash",
             ".codex"
@@ -40,9 +41,12 @@ public final class FileScanner {
         ExcludedPaths excludedPaths = excludedPaths();
         MutableStats stats = new MutableStats();
         try {
-            Files.walkFileTree(normalizedRoot, new SimpleFileVisitor<>() {
+            Files.walkFileTree(normalizedRoot, Set.of(), Integer.MAX_VALUE, new SimpleFileVisitor<>() {
                 @Override
                 public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) {
+                    if (!dir.equals(normalizedRoot) && Files.isSymbolicLink(dir)) {
+                        return FileVisitResult.SKIP_SUBTREE;
+                    }
                     if (!dir.equals(normalizedRoot) && isExcluded(normalizedRoot, dir, excludedPaths)) {
                         stats.ignoredDirectories++;
                         return FileVisitResult.SKIP_SUBTREE;
@@ -56,7 +60,10 @@ public final class FileScanner {
 
                 @Override
                 public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
-                    if (attrs.isRegularFile() && !attrs.isSymbolicLink()) {
+                    if (Files.isSymbolicLink(file)) {
+                        return FileVisitResult.CONTINUE;
+                    }
+                    if (attrs.isRegularFile()) {
                         if (!Files.isReadable(file)) {
                             stats.unreadableFailures.add(ScanFailure.unreadableFile(file));
                             return FileVisitResult.CONTINUE;

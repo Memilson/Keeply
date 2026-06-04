@@ -119,4 +119,12 @@ public class SnapshotController {
         return manifestReader.listFiles(CurrentUser.get().userId(), snapshotId, page, pageSize, search, prefix);
     }
 
+    @GetMapping("/{snapshotId}/nodes")
+    public SnapshotDtos.SnapshotNodeListResponse listNodes(
+            @PathVariable UUID snapshotId,
+            @RequestParam(required = false) String prefix
+    ) {
+        return manifestReader.listNodes(CurrentUser.get().userId(), snapshotId, prefix);
+    }
+
 }

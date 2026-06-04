@@ -30,6 +30,9 @@ public class ProtectionPlan {
     @Column(name = "cdp_enabled", nullable = false)
     public boolean cdpEnabled = false;
 
+    @Column(name = "validation_enabled", nullable = false)
+    public boolean validationEnabled = false;
+
     @Column(name = "encryption_enabled", nullable = false)
     public boolean encryptionEnabled = false;
 

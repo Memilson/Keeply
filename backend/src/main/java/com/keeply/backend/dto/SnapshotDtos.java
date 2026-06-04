@@ -51,6 +51,14 @@ public final class SnapshotDtos {
             Instant lastModified
     ) {}
 
+    public record SnapshotNodeItem(
+            String name,
+            String path,
+            boolean directory,
+            Long size,
+            Instant lastModified
+    ) {}
+
     public record PageMetadata(
             long totalElements,
             int page,
@@ -65,6 +73,10 @@ public final class SnapshotDtos {
     public record SnapshotFileListResponse(
             List<SnapshotFileItem> items,
             PageMetadata pagination
+    ) {}
+
+    public record SnapshotNodeListResponse(
+            List<SnapshotNodeItem> items
     ) {}
 
     public record SelectedArchiveRequest(

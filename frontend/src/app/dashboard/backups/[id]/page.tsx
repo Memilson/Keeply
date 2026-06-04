@@ -6,9 +6,8 @@ import {
   API_BASE,
   api,
   getAccessToken,
-  type PagedResponse,
   type Snapshot,
-  type SnapshotFile,
+  type SnapshotNode,
 } from "@/lib/api";
 import { formatBytes, formatDateTime } from "@/lib/format";
 import { Topbar } from "@/components/Topbar";
@@ -26,53 +25,28 @@ type TreeNode = {
   loading: boolean;
 };
 
-type FileListResponse = {
-  items?: SnapshotFile[];
-  pagination?: { totalElements?: number };
-  total?: number;
+type NodeListResponse = {
+  items?: SnapshotNode[];
 };
 
-function buildImmediateChildren(prefix: string, files: SnapshotFile[]): TreeNode[] {
-  const folderMap = new Map<string, true>();
-  const nodes: TreeNode[] = [];
-
-  for (const f of files) {
-    if (!f.path.startsWith(prefix)) continue;
-    const rel = f.path.slice(prefix.length);
-    if (!rel) continue;
-    const slash = rel.indexOf("/");
-    if (slash < 0) {
-      nodes.push({ name: rel, path: f.path, isDir: false, size: f.size, lastModified: f.lastModified, children: [], loaded: true, loading: false });
-    } else {
-      const folderName = rel.slice(0, slash);
-      const folderPath = prefix + folderName + "/";
-      if (!folderMap.has(folderPath)) {
-        folderMap.set(folderPath, true);
-        nodes.push({ name: folderName, path: folderPath, isDir: true, children: [], loaded: false, loading: false });
-      }
-    }
-  }
-
-  return nodes.sort((a, b) => {
-    if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
-    return a.name.localeCompare(b.name);
-  });
+function toTreeNodes(nodes: SnapshotNode[]): TreeNode[] {
+  return nodes.map((node) => ({
+    name: node.name,
+    path: node.path,
+    isDir: node.directory,
+    size: node.size ?? undefined,
+    lastModified: node.lastModified ?? undefined,
+    children: [],
+    loaded: false,
+    loading: false,
+  }));
 }
 
-async function fetchChildren(snapshotId: string, prefix: string): Promise<SnapshotFile[]> {
-  const all: SnapshotFile[] = [];
-  let page = 0;
-  const size = 500;
-  while (true) {
-    const qs = new URLSearchParams({ page: String(page), size: String(size), prefix });
-    const res = await api<FileListResponse>(`/api/snapshots/${snapshotId}/files?${qs}`);
-    const batch = res.items ?? [];
-    all.push(...batch);
-    const total = res.pagination?.totalElements ?? res.total ?? batch.length;
-    if (all.length >= total || batch.length < size) break;
-    page++;
-  }
-  return all;
+async function fetchChildren(snapshotId: string, prefix: string): Promise<TreeNode[]> {
+  const qs = new URLSearchParams();
+  if (prefix) qs.set("prefix", prefix);
+  const res = await api<NodeListResponse>(`/api/snapshots/${snapshotId}/nodes?${qs}`);
+  return toTreeNodes(res.items ?? []);
 }
 
 function toggleNode(nodes: TreeNode[], path: string): TreeNode[] {
@@ -152,8 +126,8 @@ function TreeRow({ node, depth, snapshotId, selectedPaths, downloadingFiles, onT
       return;
     }
     onToggle(node.path);
-    const files = await fetchChildren(snapshotId, node.path);
-    onExpanded(node.path, buildImmediateChildren(node.path, files));
+    const children = await fetchChildren(snapshotId, node.path);
+    onExpanded(node.path, children);
   }
 
   return (
@@ -235,8 +209,7 @@ export default function BackupDetailPage({ params }: { params: Promise<{ id: str
   useEffect(() => {
     (async () => {
       try {
-        const all = await api<PagedResponse<Snapshot>>("/api/snapshots");
-        setSnapshot((all?.items ?? []).find((s) => s.id === id) ?? null);
+        setSnapshot(await api<Snapshot>(`/api/snapshots/${id}`));
       } catch (e) {
         setError(e instanceof Error ? e.message : "Falha ao carregar snapshot.");
       }
@@ -250,8 +223,8 @@ export default function BackupDetailPage({ params }: { params: Promise<{ id: str
     const loadTree = async () => {
       setTreeLoading(true);
       try {
-        const files = await fetchChildren(id, "");
-        if (!cancelled) setRoots(buildImmediateChildren("", files));
+        const nodes = await fetchChildren(id, "");
+        if (!cancelled) setRoots(nodes);
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : "Falha ao carregar arquivos.");
       } finally {
@@ -378,6 +351,14 @@ export default function BackupDetailPage({ params }: { params: Promise<{ id: str
                 {downloading ? "Preparando…" : `Baixar selecionados (${selectedCount}/${MAX_SELECTED_FILES})`}
               </button>
             </div>
+            {snapshot && (
+              <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+                <InfoChip label="Status" value={snapshot.status} />
+                <InfoChip label="Arquivos" value={String(snapshot.totalFiles ?? 0)} />
+                <InfoChip label="Original" value={formatBytes(snapshot.totalOriginalSize ?? 0)} />
+                <InfoChip label="Armazenado" value={formatBytes(snapshot.totalCompressedSize ?? 0)} />
+              </div>
+            )}
           </div>
 
           {loading ? (
@@ -409,6 +390,15 @@ export default function BackupDetailPage({ params }: { params: Promise<{ id: str
         </section>
       </div>
     </>
+  );
+}
+
+function InfoChip({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-full border px-3 py-1.5 text-xs" style={{ borderColor: "#E4E1F0", background: "#FAFAFE" }}>
+      <span style={{ color: "#6B6993" }}>{label}: </span>
+      <span className="font-semibold" style={{ color: "#18163A" }}>{value}</span>
+    </div>
   );
 }
 
