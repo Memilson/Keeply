@@ -35,7 +35,7 @@ class RestoreEngineTest {
                 }
                 """);
         RestoreEngine restoreEngine = new RestoreEngine(backend,
-                (ignoredBackend, ignoredCredentials) -> new ManifestOnlyStorage(transferSessionId, manifest));
+                (ignoredBackend, ignoredSnapshotId, ignoredCredentials) -> new ManifestOnlyStorage(transferSessionId, manifest));
 
         restoreEngine.restore(snapshotId, tempDir);
 
@@ -57,7 +57,7 @@ class RestoreEngineTest {
                 }
                 """);
         RestoreEngine restoreEngine = new RestoreEngine(backend,
-                (ignoredBackend, ignoredCredentials) -> new ManifestOnlyStorage(transferSessionId, manifest));
+                (ignoredBackend, ignoredSnapshotId, ignoredCredentials) -> new ManifestOnlyStorage(transferSessionId, manifest));
 
         assertThrows(IllegalStateException.class, () -> restoreEngine.restore(snapshotId, tempDir));
 
