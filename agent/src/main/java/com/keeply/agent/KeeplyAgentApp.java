@@ -104,6 +104,10 @@ public class KeeplyAgentApp extends Application {
     private Stage primaryStage;
     private AuthMode authMode = AuthMode.LOGGED_OUT;
     private DeviceSession localSession;
+    private Runnable showPlanSlide = () -> {};
+    private java.util.concurrent.CountDownLatch planLatch;
+    private java.util.concurrent.atomic.AtomicReference<String> planChosenType;
+    private java.util.concurrent.atomic.AtomicReference<List<String>> planChosenSources;
 
     @Override
     public void start(Stage stage) {

@@ -24,7 +24,7 @@
         <VBox styleClass="dash-card" spacing="12" HBox.hgrow="ALWAYS" prefWidth="250">
             <HBox spacing="12" alignment="CENTER_LEFT">
                 <StackPane styleClass="card-icon-wrapper, icon-violet">
-                    <SVGPath content="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm-2 16l-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9l-8 8z" style="-fx-fill: #6D47FF;"/>
+                    <SVGPath content="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm-2 16l-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9l-8 8z" style="-fx-fill: #7B61FF;"/>
                 </StackPane>
                 <VBox>
                     <Label text="Status do Backup" styleClass="card-label"/>
@@ -43,7 +43,7 @@
         <VBox styleClass="dash-card" spacing="12" HBox.hgrow="ALWAYS" prefWidth="250">
             <HBox spacing="12" alignment="CENTER_LEFT">
                 <StackPane styleClass="card-icon-wrapper, icon-indigo">
-                    <SVGPath content="M12 0l10 5-10 5L2 5l10-5zm0 12l-10-5v2l10 5 10-5V7l-10 5zm0 5l-10-5v2l10 5 10-5v-2l-10 5z" style="-fx-fill: #4e39df;"/>
+                    <SVGPath content="M12 0l10 5-10 5L2 5l10-5zm0 12l-10-5v2l10 5 10-5V7l-10 5zm0 5l-10-5v2l10 5 10-5v-2l-10 5z" style="-fx-fill: #7B61FF;"/>
                 </StackPane>
                 <VBox>
                     <Label text="Snapshots" styleClass="card-label"/>
@@ -61,7 +61,7 @@
         <VBox styleClass="dash-card" spacing="12" HBox.hgrow="ALWAYS" prefWidth="250">
             <HBox spacing="12" alignment="CENTER_LEFT">
                 <StackPane styleClass="card-icon-wrapper, icon-indigo">
-                    <SVGPath content="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 14H4V6h16v12z M6 10h2v2H6zm0 4h8v2H6z" style="-fx-fill: #4e39df;"/>
+                    <SVGPath content="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 14H4V6h16v12z M6 10h2v2H6zm0 4h8v2H6z" style="-fx-fill: #7B61FF;"/>
                 </StackPane>
                 <VBox>
                     <Label text="Armazenamento" styleClass="card-label"/>
@@ -81,7 +81,7 @@
         <VBox styleClass="dash-card" spacing="12" HBox.hgrow="ALWAYS" prefWidth="250">
             <HBox spacing="12" alignment="CENTER_LEFT">
                 <StackPane styleClass="card-icon-wrapper, icon-indigo">
-                    <SVGPath content="M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z" style="-fx-fill: #4e39df;"/>
+                    <SVGPath content="M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z" style="-fx-fill: #7B61FF;"/>
                 </StackPane>
                 <VBox>
                     <Label text="Meus arquivos" styleClass="card-label"/>
@@ -115,7 +115,7 @@
             </HBox>
             <HBox fx:id="foldersContainer" spacing="12">
                 <VBox fx:id="btnAddFolder" styleClass="folder-card-dashed" spacing="8" HBox.hgrow="ALWAYS" alignment="CENTER">
-                    <SVGPath content="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" style="-fx-fill: #6D47FF;"/>
+                    <SVGPath content="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" style="-fx-fill: #7B61FF;"/>
                     <Label text="Adicionar pasta" styleClass="link-text-small"/>
                 </VBox>
             </HBox>
