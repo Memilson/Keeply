@@ -1,158 +1,166 @@
-import Link from "next/link";
-import { KeeplyLogo } from "@/components/KeeplyLogo";
-import { LiveDemoBanner } from "@/components/LiveDemoBanner";
+import { PublicNav } from "@/components/PublicNav";
 
-const HEADER_LINKS = [
-  { label: "Documentação", href: "/documentacao" },
-  { label: "Roadmap", href: "/roadmap" },
-  { label: "Download", href: "/download" },
-];
+const GITHUB_URL = "https://github.com/Memilson/Keeply";
 
 const ROADMAP = [
   {
     status: "Disponível",
-    state: "done",
+    state: "done" as const,
     title: "Site",
     text: "Landing, autenticação web e estrutura inicial de apresentação do produto já estão no ar.",
     subtasks: ["Landing publicada", "Login web ativo", "Cadastro web ativo", "Navegação principal criada"],
   },
   {
     status: "Disponível",
-    state: "done",
+    state: "done" as const,
     title: "Agente",
     text: "O agente com fluxo de backup e restauração já faz parte da base atual da plataforma.",
     subtasks: ["Autenticação com backend", "Execução de backup", "Fluxo de restauração", "Modo daemon/headless"],
   },
   {
     status: "Em evolução",
-    state: "progress",
+    state: "progress" as const,
     title: "CDP",
     text: "Continuous Data Protection ainda é uma frente em aberto e faz parte das próximas evoluções importantes.",
     subtasks: ["Definir modelo de captura contínua", "Reduzir janela entre alterações e envio", "Validar impacto operacional"],
   },
   {
     status: "Em evolução",
-    state: "progress",
+    state: "progress" as const,
     title: "Criptografia",
     text: "A camada de encriptação dedicada ainda está no roadmap e não deve ser tratada como entrega concluída agora.",
     subtasks: ["Definir estratégia de encriptação", "Aplicar no pipeline de backup", "Validar restore com dados protegidos"],
   },
   {
     status: "Planejado",
-    state: "todo",
+    state: "todo" as const,
     title: "Mobile",
     text: "A presença mobile ainda está prevista como etapa futura e não entra como suporte atual do produto.",
     subtasks: ["Definir escopo mobile", "Avaliar leitura de status e alertas", "Planejar acesso ao painel em tela pequena"],
   },
   {
-    status: "Em breve",
-    state: "todo",
+    status: "Planejado",
+    state: "todo" as const,
     title: "Download",
     text: "A distribuição pública e organizada de downloads terá uma página própria, mas ainda está em fase de preparação.",
     subtasks: ["Organizar pacotes", "Definir instruções por ambiente", "Publicar acesso centralizado"],
   },
 ];
 
+const done = ROADMAP.filter((i) => i.state === "done");
+const inProgress = ROADMAP.filter((i) => i.state === "progress");
+const todo = ROADMAP.filter((i) => i.state === "todo");
+
+const COLUMNS = [
+  { title: "Disponível", items: done, dot: "bg-[#10B981]", badge: "bg-[#10B981]/15 text-[#10B981]", ring: "border-[#10B981]/40" },
+  { title: "Em evolução", items: inProgress, dot: "bg-[#7B61FF]", badge: "bg-[#7B61FF]/15 text-[#A78BFA]", ring: "border-[#7B61FF]/40" },
+  { title: "Planejado", items: todo, dot: "bg-slate-600", badge: "bg-white/5 text-slate-500", ring: "border-white/10" },
+];
+
 export default function RoadmapPage() {
   return (
-    <main className="min-h-screen bg-[#fbfaff] text-[#090b24]">
-      <header className="border-b border-[#e8e6f4] bg-white/92 backdrop-blur-xl">
-        <div className="mx-auto flex h-[76px] max-w-[1540px] items-center justify-between px-8 lg:px-12">
-          <Link href="/" aria-label="Keeply home">
-            <KeeplyLogo size={34} />
-          </Link>
-          <nav className="hidden items-center gap-8 lg:flex">
-            {HEADER_LINKS.map((link) => (
-              <Link
-                key={link.label}
-                href={link.href}
-                className={`text-[14px] font-semibold transition hover:text-[#5d48ff] ${
-                  link.href === "/roadmap" ? "text-[#5d48ff]" : "text-[#17183d]"
-                }`}
-              >
-                {link.label}
-              </Link>
-            ))}
-          </nav>
-          <div className="flex items-center gap-4">
-            <Link href="/login" className="hidden text-[14px] font-semibold text-[#17183d] transition hover:text-[#5d48ff] sm:inline">
-              Entrar
-            </Link>
-            <Link
-              href="/register"
-              className="rounded-[8px] bg-[#634cff] px-6 py-3 text-[14px] font-bold text-white shadow-[0_10px_24px_rgba(99,76,255,0.28)] transition hover:bg-[#543de8]"
+    <main className="min-h-screen bg-[#0D0C1A]">
+      <PublicNav active="/roadmap" />
+
+      {/* page header */}
+      <div className="border-b border-white/10 px-6 py-8 lg:px-8">
+        <div className="mx-auto max-w-7xl">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <p className="text-[11px] font-bold uppercase tracking-widest text-[#7B61FF]">Roadmap</p>
+              <h1 className="mt-1.5 text-xl font-black text-white">O que já existe e o que ainda está em construção.</h1>
+              <p className="mt-1.5 text-sm text-slate-500">
+                Transparência sobre o estado do projeto. Atualizado conforme o desenvolvimento avança.
+              </p>
+            </div>
+            <a
+              href={`${GITHUB_URL}/issues`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex h-9 cursor-pointer shrink-0 items-center gap-2 rounded-lg border border-white/15 bg-white/5 px-4 text-xs font-semibold text-slate-300 transition hover:bg-white/10 hover:text-white"
             >
-              Começar grátis
-            </Link>
+              <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="8" x2="12" y2="12" />
+                <line x1="12" y1="16" x2="12.01" y2="16" />
+              </svg>
+              Sugerir item
+            </a>
+          </div>
+
+          {/* summary bar */}
+          <div className="mt-6 flex flex-wrap gap-3">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-[#10B981]/30 bg-[#10B981]/10 px-3 py-1 text-xs font-semibold text-[#10B981]">
+              <span className="h-1.5 w-1.5 rounded-full bg-[#10B981]" aria-hidden />
+              {done.length} disponível
+            </span>
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-[#7B61FF]/30 bg-[#7B61FF]/10 px-3 py-1 text-xs font-semibold text-[#A78BFA]">
+              <span className="h-1.5 w-1.5 rounded-full bg-[#7B61FF]" aria-hidden />
+              {inProgress.length} em evolução
+            </span>
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-semibold text-slate-500">
+              <span className="h-1.5 w-1.5 rounded-full bg-slate-600" aria-hidden />
+              {todo.length} planejado
+            </span>
           </div>
         </div>
-      </header>
+      </div>
 
-      <LiveDemoBanner />
-
-      <section className="px-8 py-14">
-        <div className="mx-auto max-w-[1080px]">
-          <div className="mx-auto max-w-[840px] text-center">
-            <p className="text-sm font-bold text-[#604bff]">Roadmap</p>
-            <h1 className="mt-2 text-[34px] font-black leading-tight text-[#090b24]">
-              O que já existe e o que ainda está em construção.
-            </h1>
-          </div>
-
-          <div className="mx-auto mt-8 max-w-[840px] space-y-3">
-            {ROADMAP.map((item) => (
-              <article
-                key={item.title}
-                className="flex gap-3 rounded-[12px] border border-[#e5def7] bg-white p-5 shadow-[0_10px_30px_rgba(86,62,180,0.05)]"
-              >
-                <div
-                  className={`mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 ${
-                    item.state === "done"
-                      ? "border-[#14b86a] bg-[#eafbf3] text-[#14b86a]"
-                      : item.state === "progress"
-                        ? "border-[#7b61ff] bg-[#f3efff] text-[#7b61ff]"
-                        : "border-[#cfc7ea] bg-[#fbfaff] text-[#a29aba]"
-                  }`}
-                >
-                  {item.state === "done" ? (
-                    <svg aria-hidden="true" viewBox="0 0 16 16" className="h-3.5 w-3.5 fill-none stroke-current stroke-[2.4]">
-                      <path d="M3.5 8.2 6.5 11l6-6" />
-                    </svg>
-                  ) : item.state === "progress" ? (
-                    <span className="h-2.5 w-2.5 rounded-full bg-current" />
-                  ) : null}
+      {/* kanban columns */}
+      <div className="px-6 py-8 lg:px-8">
+        <div className="mx-auto max-w-7xl">
+          <div className="grid gap-5 lg:grid-cols-3">
+            {COLUMNS.map((col) => (
+              <div key={col.title}>
+                {/* column header */}
+                <div className="mb-4 flex items-center gap-2.5">
+                  <span className={`h-2 w-2 rounded-full ${col.dot}`} aria-hidden />
+                  <span className="text-xs font-bold uppercase tracking-widest text-slate-400">
+                    {col.title}
+                  </span>
+                  <span className="ml-auto rounded-full bg-white/5 px-2 py-0.5 text-[10px] font-bold text-slate-600">
+                    {col.items.length}
+                  </span>
                 </div>
 
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-3">
-                    <h2 className="text-[19px] font-black text-[#090b24]">{item.title}</h2>
-                    <span
-                      className={`rounded-full px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.06em] ${
-                        item.state === "done"
-                          ? "bg-[#eafbf3] text-[#14945a]"
-                          : item.state === "progress"
-                            ? "bg-[#f3efff] text-[#6a4fff]"
-                            : "bg-[#f4f2fb] text-[#8c84aa]"
-                      }`}
+                {/* cards */}
+                <div className="space-y-3">
+                  {col.items.map((item) => (
+                    <article
+                      key={item.title}
+                      className={`rounded-xl border bg-[#100F1E] p-5 transition-colors hover:bg-[#13122A] ${col.ring}`}
                     >
-                      {item.status}
-                    </span>
-                  </div>
-                  <p className="mt-2 text-[14px] leading-6 text-[#62678f]">{item.text}</p>
-                  <ul className="mt-3 space-y-1.5 text-[14px] leading-6 text-[#4f4c6f]">
-                    {item.subtasks.map((subtask) => (
-                      <li key={subtask} className="flex items-start gap-2">
-                        <span className="mt-[8px] h-1.5 w-1.5 shrink-0 rounded-full bg-[#7b61ff]" />
-                        <span>{subtask}</span>
-                      </li>
-                    ))}
-                  </ul>
+                      <div className="mb-3 flex items-center justify-between gap-2">
+                        <h2 className="text-sm font-black text-white">{item.title}</h2>
+                        <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-widest ${col.badge}`}>
+                          {item.status}
+                        </span>
+                      </div>
+
+                      <p className="text-xs leading-[1.7] text-slate-400">{item.text}</p>
+
+                      <ul className="mt-4 space-y-1.5 border-t border-white/5 pt-4">
+                        {item.subtasks.map((subtask) => (
+                          <li key={subtask} className="flex items-center gap-2 text-[11px] text-slate-500">
+                            {item.state === "done" ? (
+                              <svg className="h-3 w-3 shrink-0 text-[#10B981]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden>
+                                <polyline points="20 6 9 17 4 12" />
+                              </svg>
+                            ) : (
+                              <span className={`h-1 w-1 shrink-0 rounded-full ${col.dot}`} aria-hidden />
+                            )}
+                            {subtask}
+                          </li>
+                        ))}
+                      </ul>
+                    </article>
+                  ))}
                 </div>
-              </article>
+              </div>
             ))}
           </div>
         </div>
-      </section>
+      </div>
     </main>
   );
 }

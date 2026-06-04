@@ -157,6 +157,8 @@ class BackupEngineTest {
             assertEquals(backend.snapshotId, error.snapshotId());
             assertEquals(backend.transferSessionId, error.transferSessionId());
             assertEquals(backend.transferSessionId, backend.cancelledTransferSessionId);
+            assertEquals(backend.snapshotId, backend.failedSnapshotId);
+            assertTrue(backend.failedSnapshotMessage.contains("Backup falhou antes da conclusao do snapshot"));
         }
     }
 
@@ -187,6 +189,8 @@ class BackupEngineTest {
         private final UUID snapshotId = UUID.randomUUID();
         private final UUID transferSessionId = UUID.randomUUID();
         private UUID cancelledTransferSessionId;
+        private UUID failedSnapshotId;
+        private String failedSnapshotMessage;
         private int startSnapshotCalls;
 
         private TrackingBackendClient() {
@@ -227,6 +231,12 @@ class BackupEngineTest {
         @Override
         public void cancelTransferSession(UUID transferSessionId) {
             this.cancelledTransferSessionId = transferSessionId;
+        }
+
+        @Override
+        public void failSnapshot(UUID snapshotId, String errorMessage) {
+            this.failedSnapshotId = snapshotId;
+            this.failedSnapshotMessage = errorMessage;
         }
     }
 

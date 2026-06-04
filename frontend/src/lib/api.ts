@@ -2,6 +2,7 @@ export const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:80
 
 const ACCESS_KEY = "keeply.accessToken";
 const REFRESH_KEY = "keeply.refreshToken";
+const USER_KEY = "keeply.user";
 
 export function setTokens(access: string, refresh?: string) {
   if (typeof window === "undefined") return;
@@ -23,6 +24,19 @@ export function clearTokens() {
   if (typeof window === "undefined") return;
   localStorage.removeItem(ACCESS_KEY);
   localStorage.removeItem(REFRESH_KEY);
+  localStorage.removeItem(USER_KEY);
+}
+
+export function redirectToLogin() {
+  if (typeof window === "undefined") return;
+  if (window.location.pathname !== "/login") {
+    window.location.replace("/login");
+  }
+}
+
+export function clearSessionAndRedirect() {
+  clearTokens();
+  redirectToLogin();
 }
 
 export class ApiError extends Error {
@@ -45,19 +59,40 @@ export async function api<T = unknown>(path: string, options: ApiOptions = {}): 
   };
   if (auth) {
     const tok = getAccessToken();
-    if (tok) finalHeaders["Authorization"] = `Bearer ${tok}`;
+    if (!tok) {
+      clearSessionAndRedirect();
+      throw new ApiError(401, "Sessão expirada. Faça login novamente.", null);
+    }
+    finalHeaders["Authorization"] = `Bearer ${tok}`;
   }
 
   const res = await fetch(`${API_BASE}${path}`, { ...rest, headers: finalHeaders });
 
-  if (res.status === 401 && auth) {
-    clearTokens();
-    if (typeof window !== "undefined") {
-      window.location.href = "/login";
-    }
+  if ((res.status === 401 || res.status === 403) && auth) {
+    clearSessionAndRedirect();
   }
 
   return parseResponse<T>(res);
+}
+
+export function handleAuthResponse(res: Response) {
+  if (res.status === 401 || res.status === 403) {
+    clearSessionAndRedirect();
+    return true;
+  }
+  return false;
+}
+
+export function authHeaders(contentType?: string): Record<string, string> {
+  const token = getAccessToken();
+  if (!token) {
+    clearSessionAndRedirect();
+    throw new ApiError(401, "Sessão expirada. Faça login novamente.", null);
+  }
+  return {
+    ...(contentType ? { "Content-Type": contentType } : {}),
+    Authorization: `Bearer ${token}`,
+  };
 }
 
 async function parseResponse<T>(res: Response): Promise<T> {

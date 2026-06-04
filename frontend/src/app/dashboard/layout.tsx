@@ -9,16 +9,24 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
 
   if (!ready) {
     return (
-      <main className="flex h-screen flex-1 items-center justify-center overflow-hidden" style={{ background: "#F8F7FD" }}>
-        <p className="text-sm" style={{ color: "#6B6993" }}>Carregando…</p>
+      <main
+        className="flex h-screen flex-1 items-center justify-center overflow-hidden"
+        style={{ background: "#0D0C1A" }}
+      >
+        <p className="text-sm text-slate-500">Carregando…</p>
       </main>
     );
   }
 
   return (
-    <div className="flex h-screen flex-1 overflow-hidden" style={{ background: "#F8F7FD" }}>
+    <div
+      className="flex h-screen flex-1 overflow-hidden"
+      style={{ background: "#0D0C1A" }}
+    >
       <Sidebar />
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">{children}</div>
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
+        {children}
+      </div>
     </div>
   );
 }
