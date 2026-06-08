@@ -770,6 +770,7 @@ public class KeeplyAgentApp extends Application {
             Pane root = loader.load();
             dashboardController = loader.getController();
             dashboardController.setOnNavigate(this::showView);
+            dashboardController.setOnAddFolder(this::addFolderFromDashboard);
             dashboardController.setOnBackupNow(() -> {
                 if (!requireOnlineAccess("iniciar o backup manual")) {
                     return;
@@ -827,6 +828,65 @@ public class KeeplyAgentApp extends Application {
             e.printStackTrace();
             return new VBox(new Label("Erro ao carregar Dashboard.fxml"));
         }
+    }
+
+    private void addFolderFromDashboard() {
+        DirectoryChooser chooser = new DirectoryChooser();
+        chooser.setTitle("Selecionar pasta para proteger");
+        java.io.File selected = chooser.showDialog(primaryStage);
+        if (selected == null) {
+            return;
+        }
+        String newPath = selected.toPath().toAbsolutePath().normalize().toString();
+        runAsync(() -> {
+            try {
+                Optional<ProtectionPlan> optPlan = backend != null && deviceId != null
+                        ? backend.getDevicePlan(deviceId)
+                        : Optional.empty();
+                List<String> current = new ArrayList<>(optPlan.map(ProtectionPlan::sources)
+                        .orElse(parseSources(backupSourcesConfig.getText())));
+                if (!current.contains(newPath)) {
+                    current.add(newPath);
+                }
+
+                if (backend != null && deviceId != null) {
+                    ProtectionPlan existing = optPlan.orElse(null);
+                    ProtectionPlan saved = backend.upsertDevicePlan(
+                            deviceId,
+                            ProtectionPlan.PlanType.CUSTOM,
+                            current,
+                            existing != null && existing.cdpEnabled(),
+                            existing != null && existing.validationEnabled(),
+                            existing != null && existing.encryptionEnabled(),
+                            existing == null ? null : existing.scheduleCron(),
+                            existing == null ? null : existing.retentionMode(),
+                            existing == null ? null : existing.retentionDays());
+                    configWriter.savePlan(backendUrl.getText().trim(), email.getText().trim(), saved);
+                } else {
+                    String cron = null;
+                    try {
+                        Optional<AgentConfigReader.UiConfig> cfg = configReader.read();
+                        if (cfg.isPresent()) {
+                            cron = cfg.get().cron();
+                        }
+                    } catch (Exception ignored) {}
+                    configWriter.saveSchedule(
+                            backendUrl.getText() == null ? "" : backendUrl.getText().trim(),
+                            email.getText() == null ? "" : email.getText().trim(),
+                            current,
+                            cron == null || cron.isBlank() ? "0 2 * * *" : cron);
+                }
+
+                ui(() -> {
+                    backupSourcesConfig.setText(String.join("\n", current));
+                    dashboardController.setFolders(current);
+                    refreshDashboard();
+                });
+                log("Pasta adicionada ao plano: " + newPath);
+            } catch (Exception e) {
+                log("Falha ao adicionar pasta pelo dashboard: " + getErrorMessage(e));
+            }
+        });
     }
 
     private Node buildActivityView() {
@@ -1194,7 +1254,15 @@ public class KeeplyAgentApp extends Application {
                 });
                 LazyRestoreTreeItem rootItem = new LazyRestoreTreeItem(
                         new RestoreNode(rootLabelForSnapshot(snapshot.sourcePath()), "", true, 0L, null));
-                ui(() -> { fileTree.setRoot(rootItem); rootItem.setExpanded(true); actionRestore.setDisable(true); });
+                ui(() -> {
+                    fileTree.setRoot(rootItem);
+                    rootItem.setExpanded(true);
+                    bindCheckboxListeners(rootItem, () -> {
+                        SelectedRestorePaths sel = collectCheckedSelectionsFromTree(fileTree.getRoot());
+                        actionRestore.setDisable(sel.files().isEmpty() && sel.directories().isEmpty());
+                    });
+                    actionRestore.setDisable(true);
+                });
                 loadFolderChildren(snapshot, rootItem, browserStatus, () -> {
                     SelectedRestorePaths sel = collectCheckedSelectionsFromTree(fileTree.getRoot());
                     actionRestore.setDisable(sel.files().isEmpty() && sel.directories().isEmpty());
@@ -1221,6 +1289,10 @@ public class KeeplyAgentApp extends Application {
                 @SuppressWarnings("unchecked") CheckBoxTreeItem<RestoreNode> typed = (CheckBoxTreeItem<RestoreNode>) cbItem;
                 bound = typed;
                 check.selectedProperty().bindBidirectional(typed.selectedProperty());
+                check.setOnAction(e -> {
+                    SelectedRestorePaths sel = collectCheckedSelectionsFromTree(fileTree.getRoot());
+                    actionRestore.setDisable(sel.files().isEmpty() && sel.directories().isEmpty());
+                });
                 check.setAllowIndeterminate(false);
                 row.getChildren().set(1, createBootstrapFileIcon(item.isDirectory));
                 text.setText(item.label);
@@ -1376,7 +1448,10 @@ public class KeeplyAgentApp extends Application {
             if (snapshot == null || fileTree.getRoot() == null) return;
             if (!requireOnlineAccess("restaurar arquivos")) return;
             SelectedRestorePaths selections = collectCheckedSelectionsFromTree(fileTree.getRoot());
-            if (selections.files().isEmpty() && selections.directories().isEmpty()) return;
+            if (selections.files().isEmpty() && selections.directories().isEmpty()) {
+                browserStatus.setText("Selecione ao menos um arquivo ou pasta para recuperar.");
+                return;
+            }
             Optional<RestoreDestinationMode> choice = showRestoreDestinationDialog(stage);
             if (choice.isEmpty()) return;
             Path destination = null;
@@ -1404,100 +1479,21 @@ public class KeeplyAgentApp extends Application {
     }
 
     private Optional<RestoreDestinationMode> showRestoreDestinationDialog(Stage owner) {
-        javafx.stage.Stage dialog = new javafx.stage.Stage();
+        ChoiceDialog<RestoreDestinationMode> dialog = new ChoiceDialog<>(
+                RestoreDestinationMode.CUSTOM,
+                RestoreDestinationMode.CUSTOM,
+                RestoreDestinationMode.ORIGINAL);
         dialog.initOwner(owner);
-        dialog.initModality(javafx.stage.Modality.WINDOW_MODAL);
-        dialog.initStyle(StageStyle.UNDECORATED);
-        dialog.setResizable(false);
-
-        RestoreDestinationMode[] result = {null};
-
-        // ── Card ──────────────────────────────────────────────────────────────
-        VBox card = new VBox(0);
-        card.setStyle(
-            "-fx-background-color: #ffffff;" +
-            "-fx-background-radius: 12px;" +
-            "-fx-border-color: #E2E8F0;" +
-            "-fx-border-radius: 12px;" +
-            "-fx-effect: dropshadow(gaussian, rgba(15,23,42,0.14), 24, 0.1, 0, 4);"
-        );
-        card.setPrefWidth(360);
-
-        // Header
-        HBox dHeader = new HBox(10);
-        dHeader.setAlignment(Pos.CENTER_LEFT);
-        dHeader.setPadding(new Insets(18, 20, 14, 20));
-        dHeader.setStyle("-fx-border-color: #F1F5F9; -fx-border-width: 0 0 1 0;");
-
-        SVGPath restoreIco = new SVGPath();
-        restoreIco.setContent("M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9z");
-        restoreIco.setStyle("-fx-fill: #6D47FF;");
-        StackPane icoBox = new StackPane(restoreIco);
-        icoBox.setPrefSize(20, 20); icoBox.setMinSize(20, 20); icoBox.setMaxSize(20, 20);
-
-        Label dlgTitle = new Label("Recuperar arquivos");
-        dlgTitle.setStyle("-fx-font-size: 15px; -fx-font-weight: 700; -fx-text-fill: #0F172A;");
-
-        Region dlgSpacer = new Region(); HBox.setHgrow(dlgSpacer, Priority.ALWAYS);
-
-        Button dlgClose = new Button("×");
-        dlgClose.setStyle(
-            "-fx-background-color: transparent; -fx-text-fill: #94A3B8;" +
-            "-fx-font-size: 18px; -fx-padding: 0 4; -fx-cursor: hand;"
-        );
-        dlgClose.setOnAction(e -> dialog.close());
-
-        dHeader.getChildren().addAll(icoBox, dlgTitle, dlgSpacer, dlgClose);
-
-        // Body
-        VBox body = new VBox(14);
-        body.setPadding(new Insets(18, 20, 20, 20));
-
-        Label destLbl = new Label("Destino da recuperação");
-        destLbl.setStyle("-fx-font-size: 12px; -fx-font-weight: 600; -fx-text-fill: #374151;");
-
-        ComboBox<String> destBox = new ComboBox<>();
-        destBox.getItems().setAll("Caminho original", "Caminho personalizado");
-        destBox.getSelectionModel().selectFirst();
-        destBox.setMaxWidth(Double.MAX_VALUE);
-        destBox.setStyle(
-            "-fx-background-color: #F8FAFC;" +
-            "-fx-border-color: #E2E8F0; -fx-border-radius: 8px; -fx-background-radius: 8px;" +
-            "-fx-padding: 6 10; -fx-font-size: 13px; -fx-font-weight: 500;"
-        );
-
-        // Footer buttons
-        Region btnSpacer = new Region(); HBox.setHgrow(btnSpacer, Priority.ALWAYS);
-        Button cancelDlg = new Button("Cancelar");
-        cancelDlg.getStyleClass().add("btn-outline-primary");
-        cancelDlg.setOnAction(e -> { result[0] = null; dialog.close(); });
-
-        Button okDlg = new Button("Recuperar");
-        okDlg.getStyleClass().add("btn-primary");
-        okDlg.setOnAction(e -> {
-            result[0] = "Caminho personalizado".equals(destBox.getValue())
-                    ? RestoreDestinationMode.CUSTOM : RestoreDestinationMode.ORIGINAL;
-            dialog.close();
-        });
-
-        HBox footer = new HBox(8, btnSpacer, cancelDlg, okDlg);
-        footer.setAlignment(Pos.CENTER_RIGHT);
-        footer.setPadding(new Insets(4, 0, 0, 0));
-
-        body.getChildren().addAll(destLbl, destBox, footer);
-        card.getChildren().addAll(dHeader, body);
-
-        // Wrap with outer padding for shadow visibility
-        StackPane root = new StackPane(card);
-        root.setPadding(new Insets(8));
-        root.setStyle("-fx-background-color: transparent;");
-
-        javafx.scene.Scene scene = new javafx.scene.Scene(root);
-        scene.setFill(javafx.scene.paint.Color.TRANSPARENT);
-        scene.getStylesheets().add(getClass().getResource("/keeply-theme.css").toExternalForm());
-        dialog.setScene(scene);
-        dialog.showAndWait();
-        return Optional.ofNullable(result[0]);
+        dialog.setTitle("Recuperar arquivos");
+        dialog.setHeaderText("Destino da recuperação");
+        dialog.setContentText("Restaurar em:");
+        dialog.getDialogPane().getButtonTypes().setAll(ButtonType.CANCEL, ButtonType.OK);
+        Button ok = (Button) dialog.getDialogPane().lookupButton(ButtonType.OK);
+        if (ok != null) {
+            ok.setText("Continuar");
+        }
+        applyDarkDialog(dialog);
+        return dialog.showAndWait();
     }
 
     private SelectedRestorePaths collectCheckedSelectionsFromTree(TreeItem<RestoreNode> root) {
@@ -1848,8 +1844,19 @@ public class KeeplyAgentApp extends Application {
     }
 
     private enum RestoreDestinationMode {
-        ORIGINAL,
-        CUSTOM
+        ORIGINAL("Caminho original"),
+        CUSTOM("Caminho personalizado");
+
+        private final String label;
+
+        RestoreDestinationMode(String label) {
+            this.label = label;
+        }
+
+        @Override
+        public String toString() {
+            return label;
+        }
     }
 
     private Path parseDestinationPath(String destinationText) {

@@ -36,7 +36,6 @@
                 <Label fx:id="lblNextBackup" text="Próximo: Automático" styleClass="card-subtitle"/>
             </VBox>
             <Region VBox.vgrow="ALWAYS"/>
-            <Button text="Fazer backup agora" styleClass="btn-outline-primary" maxWidth="Infinity"/>
         </VBox>
 
         <!-- Card 2: Snapshots -->
@@ -54,7 +53,6 @@
                 <Label text="versões salvas" styleClass="card-subtitle"/>
             </VBox>
             <Region VBox.vgrow="ALWAYS"/>
-            <Button text="Ver histórico →" styleClass="btn-text-primary" alignment="CENTER_LEFT"/>
         </VBox>
 
         <!-- Card 3: Armazenamento -->
@@ -71,7 +69,6 @@
                 </VBox>
             </HBox>
             <Region VBox.vgrow="ALWAYS"/>
-            <Button text="Ver detalhes →" styleClass="btn-text-primary" alignment="CENTER_LEFT"/>
         </VBox>
 
         <!-- Card 4: Restauração rápida -->
@@ -89,7 +86,6 @@
                 <Label text="Acesse seus arquivos e snapshots para recuperação." styleClass="card-subtitle" wrapText="true"/>
             </VBox>
             <Region VBox.vgrow="ALWAYS"/>
-            <Button fx:id="btnRestaurar" text="Explorar arquivos →" styleClass="btn-text-primary" alignment="CENTER_LEFT"/>
         </VBox>
     </HBox>
 
