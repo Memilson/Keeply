@@ -61,6 +61,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.Optional;
+import java.util.Collections;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -80,6 +81,7 @@ public class KeeplyAgentApp extends Application {
     private final TextArea logs = new TextArea();
     private final ObservableList<ActivityEvent> allActivityEvents = FXCollections.observableArrayList();
     private final FilteredList<ActivityEvent> filteredActivityEvents = new FilteredList<>(allActivityEvents, event -> true);
+    private final Set<UUID> manualDashboardSnapshotIds = Collections.synchronizedSet(new HashSet<>());
     private ListView<ActivityEvent> activityListView;
     private VBox activityBackupProgressCard;
     private Label activityBackupProgressTitle;
@@ -795,6 +797,7 @@ public class KeeplyAgentApp extends Application {
                                         progress.percent(), progress.message(), progress.sourceRoot(), BackupProgressState.RUNNING);
                                 UUID snapshotId = new BackupEngine(backend, db, progressListener).backup(deviceId, source);
                                 if (snapshotId != null) {
+                                    manualDashboardSnapshotIds.add(snapshotId);
                                     log("event=ui.backup.manual status=completed source=" + sourcePath + " snapshot_id=" + snapshotId);
                                 } else {
                                     log("event=ui.backup.manual status=skipped source=" + sourcePath + " reason=already_running");
@@ -1043,6 +1046,7 @@ public class KeeplyAgentApp extends Application {
                 ui(() -> {
                     dashboardController.updateStats(lastDate, String.valueOf(snapshots.size()), storageDisplay);
                     dashboardController.setFolders(currentSources);
+                    dashboardController.setManualSnapshotIds(manualDashboardSnapshotIds);
                     dashboardController.setSnapshotsList(snapshots);
                     if (mainShellController != null) {
                         mainShellController.updateStorageInfo(storageDisplay, storagePercent);
