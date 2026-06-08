@@ -28,9 +28,6 @@ public class MainShellController {
     @FXML private Label lblProfileName;
 
     @FXML private Label lblStorageUsed;
-    @FXML private ProgressBar pbStorage;
-    @FXML private Label lblStoragePercent;
-
     private Consumer<String> onNavigate;
     private Runnable onLogout;
     private double windowDragOffsetX;
@@ -144,8 +141,6 @@ public class MainShellController {
 
     public void updateStorageInfo(String usedGb, double percent) {
         if (lblStorageUsed != null) lblStorageUsed.setText(usedGb);
-        if (pbStorage != null) pbStorage.setProgress(percent);
-        if (lblStoragePercent != null) lblStoragePercent.setText(String.format("%.0f%% usado", percent * 100));
     }
 
     public void setContent(Node node) {

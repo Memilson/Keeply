@@ -17,6 +17,8 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.Locale;
+import java.util.Set;
+import java.util.UUID;
 import java.util.function.Consumer;
 
 public class DashboardController {
@@ -39,6 +41,7 @@ public class DashboardController {
 
     private Consumer<String> onNavigate;
     private Runnable onBackupNow;
+    private Set<UUID> manualSnapshotIds = Set.of();
     private boolean backupInProgress = false;
 
     @FXML
@@ -82,7 +85,7 @@ public class DashboardController {
                 HBox dateRow = new HBox(6);
                 dateRow.setAlignment(Pos.CENTER_LEFT);
                 Label dateLabel = new Label(formatRelativeDate(item.startedAt()));
-                dateLabel.setStyle("-fx-font-size: 11px; -fx-font-weight: 700; -fx-text-fill: #0F172A;");
+                dateLabel.setStyle("-fx-font-size: 11px; -fx-font-weight: 700; -fx-text-fill: #E2E8F0;");
                 dateRow.getChildren().add(dateLabel);
                 if (getIndex() == 0 && "COMPLETED".equals(item.status())) {
                     Label badge = new Label("Mais recente");
@@ -93,19 +96,19 @@ public class DashboardController {
                 Region spacer = new Region();
                 HBox.setHgrow(spacer, javafx.scene.layout.Priority.ALWAYS);
 
-                String typeText = item.sourcePath() != null ? "Automático" : "Manual";
+                String typeText = manualSnapshotIds.contains(item.id()) ? "Manual" : "Backup";
                 Label typeLabel = new Label(typeText);
-                typeLabel.setStyle("-fx-text-fill: #94A3B8; -fx-font-size: 10px;");
+                typeLabel.setStyle("-fx-text-fill: #CBD5E1; -fx-font-size: 10px;");
 
                 Label sizeLabel = new Label(formatSize(item.totalOriginalSize()));
-                sizeLabel.setStyle("-fx-text-fill: #475569; -fx-font-size: 11px; -fx-font-weight: 600;");
+                sizeLabel.setStyle("-fx-text-fill: #94A3B8; -fx-font-size: 11px; -fx-font-weight: 600;");
 
                 row.getChildren().addAll(dot, dateRow, spacer, typeLabel, sizeLabel);
 
                 if ("COMPLETED".equals(item.status())) {
                     SVGPath downloadIcon = new SVGPath();
                     downloadIcon.setContent("M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z");
-                    downloadIcon.setStyle("-fx-fill: #CBD5E1;");
+                    downloadIcon.setStyle("-fx-fill: #E2E8F0;");
                     StackPane dlBox = new StackPane(downloadIcon);
                     dlBox.setScaleX(0.72);
                     dlBox.setScaleY(0.72);
@@ -195,6 +198,11 @@ public class DashboardController {
     
     public void setSnapshotsList(java.util.List<com.keeply.agent.model.SnapshotSummary> snapshots) {
         listSnapshots.getItems().setAll(snapshots);
+    }
+
+    public void setManualSnapshotIds(Set<UUID> manualSnapshotIds) {
+        this.manualSnapshotIds = manualSnapshotIds == null ? Set.of() : Set.copyOf(manualSnapshotIds);
+        listSnapshots.refresh();
     }
 
     public void setBackupInProgress(boolean inProgress) {

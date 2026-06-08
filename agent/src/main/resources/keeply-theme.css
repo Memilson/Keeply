@@ -680,13 +680,18 @@
     -fx-background-color: transparent;
     -fx-control-inner-background: transparent;
     -fx-border-width: 0;
+    -fx-padding: 0;
 }
 
 .recent-snapshots-list .list-cell {
     -fx-padding: 10 0;
-    -fx-border-color: rgba(255,255,255,0.06);
+    -fx-border-color: rgba(255,255,255,0.10);
     -fx-border-width: 0 0 1 0;
     -fx-background-color: transparent;
+}
+
+.recent-snapshots-list .list-cell:filled:hover {
+    -fx-background-color: rgba(255,255,255,0.04);
 }
 
 /* ─── BANNER ───────────────────────────────────────────────────────────── */
