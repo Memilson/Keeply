@@ -48,17 +48,7 @@
             <!-- Storage Card -->
             <VBox styleClass="storage-card" spacing="10">
                 <Label text="Armazenamento" styleClass="storage-title"/>
-                <HBox alignment="BASELINE_LEFT" spacing="4">
-                    <Label fx:id="lblStorageUsed" text="—" styleClass="storage-used"/>
-                    <Label text="de 1 TB" styleClass="storage-total"/>
-                </HBox>
-                <ProgressBar fx:id="pbStorage" progress="0" prefWidth="200" styleClass="storage-progress"/>
-                <Label fx:id="lblStoragePercent" text="" styleClass="storage-percent"/>
-                <Button text="Gerenciar plano" styleClass="btn-manage-plan" maxWidth="Infinity">
-                    <graphic>
-                        <SVGPath content="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z" styleClass="btn-icon-purple"/>
-                    </graphic>
-                </Button>
+                <Label fx:id="lblStorageUsed" text="—" styleClass="storage-used"/>
             </VBox>
         </VBox>
     </left>
