@@ -41,6 +41,7 @@ public class DashboardController {
 
     private Consumer<String> onNavigate;
     private Runnable onBackupNow;
+    private Runnable onAddFolder;
     private Set<UUID> manualSnapshotIds = Set.of();
     private boolean backupInProgress = false;
 
@@ -63,6 +64,12 @@ public class DashboardController {
         if (btnVerAtividade != null) {
             btnVerAtividade.setOnAction(e -> {
                 if (onNavigate != null) onNavigate.accept("Atividade");
+            });
+        }
+
+        if (btnAddFolder != null) {
+            btnAddFolder.setOnMouseClicked(e -> {
+                if (onAddFolder != null) onAddFolder.run();
             });
         }
 
@@ -155,6 +162,10 @@ public class DashboardController {
     
     public void setOnBackupNow(Runnable onBackupNow) {
         this.onBackupNow = onBackupNow;
+    }
+
+    public void setOnAddFolder(Runnable onAddFolder) {
+        this.onAddFolder = onAddFolder;
     }
 
     public void updateStats(String lastBackup, String count, String storage) {
