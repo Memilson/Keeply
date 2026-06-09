@@ -5,6 +5,7 @@ import com.keeply.agent.model.TransferCredentials;
 import io.minio.GetObjectArgs;
 import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
+import io.minio.StatObjectArgs;
 import io.minio.credentials.StaticProvider;
 
 import java.io.InputStream;
@@ -54,6 +55,17 @@ public class DirectTransferStorage implements TransferObjectClient {
                 + hash.substring(2, 4) + "/" + hash + codec.extension());
     }
 
+    @Override
+    public StoredObjectInfo statManifest(UUID snapshotId) {
+        return stat("users/" + backend.getSession().userId() + "/manifests/" + snapshotId + ".json.zst");
+    }
+
+    @Override
+    public StoredObjectInfo statChunk(String hash, ChunkCodec codec) {
+        return stat("users/" + backend.getSession().userId() + "/chunks/" + hash.substring(0, 2) + "/"
+                + hash.substring(2, 4) + "/" + hash + codec.extension());
+    }
+
     private void put(String key, Path source, String contentType) {
         try {
             ensureRenewed();
@@ -78,6 +90,20 @@ public class DirectTransferStorage implements TransferObjectClient {
             throw new IllegalStateException("Falha no download direto MinIO: " + key, e);
         }
     }
+
+    private StoredObjectInfo stat(String key) {
+        try {
+            ensureRenewed();
+            long size = minio.statObject(StatObjectArgs.builder()
+                    .bucket(credentials.bucket())
+                    .object(key)
+                    .build()).size();
+            return new StoredObjectInfo(true, size);
+        } catch (Exception e) {
+            throw new IllegalStateException("Falha ao ler metadados direto MinIO: " + key, e);
+        }
+    }
+
     private synchronized void ensureRenewed() {
         if (!Instant.now().isBefore(credentials.renewAfter())) {
             update(backend.renewTransferSession(credentials.transferSessionId()));

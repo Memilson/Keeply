@@ -80,6 +80,6 @@ public final class SnapshotDtos {
     ) {}
 
     public record SelectedArchiveRequest(
-            @NotNull @Size(min = 1, max = 10) List<@NotBlank @Size(max = 4096) String> paths
+            @NotNull @Size(min = 1) List<@Size(max = 4096) String> paths
     ) {}
 }

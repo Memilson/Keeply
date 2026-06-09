@@ -4,7 +4,9 @@ import com.keeply.agent.api.BackendClient;
 import com.keeply.agent.api.LogUtils;
 import com.keeply.agent.auth.DeviceAuthStore;
 import com.keeply.agent.config.AgentConfig;
+import com.keeply.agent.config.AgentConfigReader;
 import com.keeply.agent.config.AgentConfigWriter;
+import com.keeply.agent.config.ProtectionPlanSyncService;
 import com.keeply.agent.model.ProtectionPlan;
 import com.keeply.agent.core.BackupEngine;
 import com.keeply.agent.core.BackupSnapshotException;
@@ -32,6 +34,7 @@ public final class BackupCycleRunner {
     private final BackendClient backend;
     private final AgentConfig config;
     private final AgentConfigWriter configWriter;
+    private final AgentConfigReader configReader;
     private final LocalDatabase db;
     private final SourceBackupExecutor sourceBackupExecutor;
     private final DeviceAuthStore authStore;
@@ -39,18 +42,25 @@ public final class BackupCycleRunner {
 
     public BackupCycleRunner(AgentConfig config, Path configPath, LocalDatabase db, DeviceAuthStore authStore) {
         this(config, new BackendClient(config.backend().url(), authStore), new AgentConfigWriter(configPath),
-                db, authStore, null);
+                new AgentConfigReader(configPath), db, authStore, null);
     }
 
     BackupCycleRunner(AgentConfig config, DeviceAuthStore authStore, SourceBackupExecutor sourceBackupExecutor) {
-        this(config, new BackendClient(config.backend().url(), authStore), null, null, authStore, sourceBackupExecutor);
+        this(config, new BackendClient(config.backend().url(), authStore), null, null, null, authStore, sourceBackupExecutor);
     }
 
     BackupCycleRunner(AgentConfig config, BackendClient backend, AgentConfigWriter configWriter,
                       LocalDatabase db, DeviceAuthStore authStore, SourceBackupExecutor sourceBackupExecutor) {
+        this(config, backend, configWriter, null, db, authStore, sourceBackupExecutor);
+    }
+
+    BackupCycleRunner(AgentConfig config, BackendClient backend, AgentConfigWriter configWriter,
+                      AgentConfigReader configReader, LocalDatabase db, DeviceAuthStore authStore,
+                      SourceBackupExecutor sourceBackupExecutor) {
         this.config = config;
         this.backend = backend;
         this.configWriter = configWriter;
+        this.configReader = configReader;
         this.db = db;
         this.authStore = authStore;
         this.sourceBackupExecutor = sourceBackupExecutor != null
@@ -206,28 +216,35 @@ public final class BackupCycleRunner {
     }
 
     private Optional<ProtectionPlan> resolvePlan(UUID currentDeviceId) {
+        ProtectionPlanSyncService syncService = syncService();
+        if (syncService == null) {
+            Optional<ProtectionPlan> localPlan = localCachedPlan();
+            localPlan.ifPresentOrElse(
+                    ignored -> log.info("event=backup.plan status=loaded source=agent_yaml"),
+                    () -> log.warn("event=backup.plan status=missing source=agent_yaml"));
+            return localPlan;
+        }
         try {
-            Optional<ProtectionPlan> remotePlan = backend.getDevicePlan(currentDeviceId);
-            if (remotePlan.isPresent()) {
-                persistLocalPlan(remotePlan.get());
-                return remotePlan;
+            ProtectionPlanSyncService.ReconciledPlan reconciled = syncService.reconcile(
+                    currentDeviceId,
+                    config.backend().url(),
+                    config.auth() != null ? config.auth().email() : null);
+            if (reconciled.plan() != null) {
+                log.info("event=backup.plan status=loaded source={} sync_pending={}",
+                        reconciled.source().name().toLowerCase(), reconciled.syncPending());
+                return Optional.of(reconciled.plan());
             }
-            log.warn("event=backup.plan status=missing source=backend");
+            log.warn("event=backup.plan status=missing source=none");
+            return Optional.empty();
         } catch (RuntimeException e) {
             if (isNetworkError(e)) {
                 log.warn("event=backup.plan status=fallback_to_local reason=network_error message={}", e.getMessage());
-            } else {
-                throw e;
+                return localCachedPlan();
             }
+            throw e;
+        } catch (Exception e) {
+            throw new IllegalStateException("Falha ao reconciliar plano do backup", e);
         }
-
-        Optional<ProtectionPlan> localPlan = localCachedPlan();
-        if (localPlan.isPresent()) {
-            log.info("event=backup.plan status=loaded source=agent_yaml");
-        } else {
-            log.warn("event=backup.plan status=missing source=agent_yaml");
-        }
-        return localPlan;
     }
 
     private Optional<ProtectionPlan> localCachedPlan() {
@@ -250,24 +267,19 @@ public final class BackupCycleRunner {
         return Optional.of(new ProtectionPlan(
                 planType,
                 configuredSources.stream().map(Path::toString).toList(),
-                false,
+                config.cdp() != null && Boolean.TRUE.equals(config.cdp().enabled()),
                 config.validation() != null && Boolean.TRUE.equals(config.validation().enabled()),
-                false,
+                config.encryption() != null && Boolean.TRUE.equals(config.encryption().enabled()),
                 cron,
                 retentionMode,
                 retentionDays,
-                null));
+                config.planSync() != null ? config.planSync().lastRemoteUpdatedAt() : null));
     }
 
-    private void persistLocalPlan(ProtectionPlan plan) {
-        if (configWriter == null) {
-            return;
+    private ProtectionPlanSyncService syncService() {
+        if (configWriter == null || configReader == null) {
+            return null;
         }
-        try {
-            String email = config.auth() != null ? config.auth().email() : null;
-            configWriter.savePlan(config.backend().url(), email, plan);
-        } catch (Exception e) {
-            log.warn("event=backup.plan_cache status=write_failed message={}", e.getMessage());
-        }
+        return new ProtectionPlanSyncService(backend, configReader, configWriter);
     }
 }
