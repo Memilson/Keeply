@@ -31,7 +31,10 @@ class BackupCycleRunnerTest {
                 new AgentConfig.Backup(List.of(Path.of("/cache/one"), Path.of("/cache/two"))),
                 new AgentConfig.Schedule("0 3 * * *", false),
                 new AgentConfig.Retention("KEEP_DAYS", 10),
-                new AgentConfig.Validation(true)
+                new AgentConfig.Validation(true),
+                new AgentConfig.Cdp(false),
+                new AgentConfig.Encryption(false, null),
+                new AgentConfig.PlanSync(null, null)
         );
         List<Path> executedSources = new ArrayList<>();
         BackupCycleRunner runner = new BackupCycleRunner(
@@ -67,7 +70,10 @@ class BackupCycleRunnerTest {
                 new AgentConfig.Backup(List.of()),
                 new AgentConfig.Schedule(null, false),
                 new AgentConfig.Retention("KEEP_ALL", null),
-                new AgentConfig.Validation(false)
+                new AgentConfig.Validation(false),
+                new AgentConfig.Cdp(false),
+                new AgentConfig.Encryption(false, null),
+                new AgentConfig.PlanSync(null, null)
         );
         List<Path> executedSources = new ArrayList<>();
         BackupCycleRunner runner = new BackupCycleRunner(

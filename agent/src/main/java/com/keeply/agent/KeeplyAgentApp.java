@@ -5,6 +5,7 @@ import com.keeply.agent.auth.DeviceAuthStore;
 import com.keeply.agent.auth.DeviceIdentity;
 import com.keeply.agent.config.AgentConfigReader;
 import com.keeply.agent.config.AgentConfigWriter;
+import com.keeply.agent.config.ProtectionPlanSyncService;
 import com.keeply.agent.core.BackupEngine;
 import com.keeply.agent.core.BackupProgressListener;
 import com.keeply.agent.core.LocalDatabase;
@@ -14,6 +15,7 @@ import com.keeply.agent.daemon.AgentPaths;
 import com.keeply.agent.daemon.DaemonLauncher;
 import com.keeply.agent.daemon.DaemonLogStreamer;
 import com.keeply.agent.model.DeviceSession;
+import com.keeply.agent.model.LocalPlanState;
 import com.keeply.agent.model.ProtectionPlan;
 import com.keeply.agent.model.SnapshotSummary;
 import javafx.application.Application;
@@ -781,8 +783,9 @@ public class KeeplyAgentApp extends Application {
                     boolean failed = false;
                     try {
                         log("Iniciando backup manual pelo Dashboard...");
-                        var optPlan = backend.getDevicePlan(deviceId);
-                        List<String> sources = optPlan.isPresent() ? optPlan.get().sources() : parseSources(backupSourcesConfig.getText());
+                        List<String> sources = loadEffectivePlan()
+                                .map(ProtectionPlan::sources)
+                                .orElse(parseSources(backupSourcesConfig.getText()));
                         if (sources == null || sources.isEmpty()) {
                             log("Nenhuma pasta configurada para backup.");
                             ui(() -> {
@@ -840,9 +843,7 @@ public class KeeplyAgentApp extends Application {
         String newPath = selected.toPath().toAbsolutePath().normalize().toString();
         runAsync(() -> {
             try {
-                Optional<ProtectionPlan> optPlan = backend != null && deviceId != null
-                        ? backend.getDevicePlan(deviceId)
-                        : Optional.empty();
+                Optional<ProtectionPlan> optPlan = loadEffectivePlan();
                 List<String> current = new ArrayList<>(optPlan.map(ProtectionPlan::sources)
                         .orElse(parseSources(backupSourcesConfig.getText())));
                 if (!current.contains(newPath)) {
@@ -850,18 +851,9 @@ public class KeeplyAgentApp extends Application {
                 }
 
                 if (backend != null && deviceId != null) {
-                    ProtectionPlan existing = optPlan.orElse(null);
-                    ProtectionPlan saved = backend.upsertDevicePlan(
-                            deviceId,
-                            ProtectionPlan.PlanType.CUSTOM,
-                            current,
-                            existing != null && existing.cdpEnabled(),
-                            existing != null && existing.validationEnabled(),
-                            existing != null && existing.encryptionEnabled(),
-                            existing == null ? null : existing.scheduleCron(),
-                            existing == null ? null : existing.retentionMode(),
-                            existing == null ? null : existing.retentionDays());
-                    configWriter.savePlan(backendUrl.getText().trim(), email.getText().trim(), saved);
+                    ProtectionPlan existing = optPlan.orElseGet(() -> defaultPlan(current));
+                    ProtectionPlan updatedPlan = copyPlan(existing, current, null, null, null, null, null);
+                    savePlanAndSync(updatedPlan);
                 } else {
                     String cron = null;
                     try {
@@ -1096,8 +1088,9 @@ public class KeeplyAgentApp extends Application {
             try {
                 var snapshots = backend.listSnapshots();
                 String lastDate = snapshots.isEmpty() ? "Nunca" : snapshots.getFirst().startedAt().toString().substring(0, 10);
-                var optPlan = backend.getDevicePlan(deviceId);
-                List<String> currentSources = optPlan.isPresent() ? optPlan.get().sources() : parseSources(backupSourcesConfig.getText());
+                List<String> currentSources = loadEffectivePlan()
+                        .map(ProtectionPlan::sources)
+                        .orElse(parseSources(backupSourcesConfig.getText()));
                 long usedBytes = backend.getStorageUsedBytes();
                 String storageDisplay = formatStorageSize(usedBytes);
                 double capacityBytes = 1024.0 * 1024 * 1024 * 1024;
@@ -2029,6 +2022,17 @@ public class KeeplyAgentApp extends Application {
         cdpRow.getChildren().addAll(cdpLbl, cdpSp, cdpToggle);
         panel.getChildren().addAll(cdpRow, makeDivider());
 
+        HBox validationRow = new HBox(10);
+        validationRow.setAlignment(Pos.CENTER_LEFT);
+        validationRow.getStyleClass().add("settings-row");
+        Label validationLbl = new Label("Validação pós-backup");
+        validationLbl.getStyleClass().add("settings-row-label");
+        Region validationSp = new Region(); HBox.setHgrow(validationSp, Priority.ALWAYS);
+        ToggleButton validationToggle = makeToggleSwitch();
+        validationToggle.setOnAction(e -> markDirty.run());
+        validationRow.getChildren().addAll(validationLbl, validationSp, validationToggle);
+        panel.getChildren().addAll(validationRow, makeDivider());
+
         // ── Agendamento ──────────────────────────────────────────────────────
         // Summary row with edit button
         HBox scheduleSummaryRow = new HBox(10);
@@ -2221,31 +2225,32 @@ public class KeeplyAgentApp extends Application {
 
         // ── Save all wiring ──────────────────────────────────────────────────
         saveAllBtn.setOnAction(e -> runAsync(() -> {
-            saveScheduleDaily(startTime, scheduleStatus);
-            if (backend != null && deviceId != null) {
-                // Compute what to save
-                List<String> toSave = pendingSources.get();
-                if (toSave == null) {
-                    var optPlan = backend.getDevicePlan(deviceId);
-                    toSave = optPlan.map(ProtectionPlan::sources).orElse(parseSources(backupSourcesConfig.getText()));
-                }
-                List<String> finalSources = toSave.isEmpty()
-                        ? List.of(java.nio.file.Path.of(System.getProperty("user.home")).toAbsolutePath().normalize().toString())
-                        : toSave;
-                ProtectionPlan.PlanType type = toSave.size() == 1 && toSave.equals(finalSources) && pendingSources.get() == null
-                        ? ProtectionPlan.PlanType.DEFAULT : ProtectionPlan.PlanType.CUSTOM;
-                // Read current schedule cron from YAML (just saved above)
-                String cron = null;
-                try {
-                    var cfg = configReader.read();
-                    if (cfg.isPresent()) cron = cfg.get().cron();
-                } catch (Exception ignored) {}
-                boolean cdp = cdpToggle.isSelected();
-                boolean enc = encToggle.isSelected();
-                backend.upsertDevicePlan(deviceId, type, finalSources, cdp, false, enc, cron);
-                pendingSources.set(null);
+            List<String> toSave = pendingSources.get();
+            Optional<ProtectionPlan> currentPlan = loadEffectivePlan();
+            if (toSave == null) {
+                toSave = currentPlan.map(ProtectionPlan::sources).orElse(parseSources(backupSourcesConfig.getText()));
             }
-            ui(() -> { updateScheduleSummary.run(); hideSaveBtns.run(); });
+            List<String> finalSources = toSave.isEmpty()
+                    ? List.of(java.nio.file.Path.of(System.getProperty("user.home")).toAbsolutePath().normalize().toString())
+                    : toSave;
+            ProtectionPlan basePlan = currentPlan.orElseGet(() -> defaultPlan(finalSources));
+            ProtectionPlan updatedPlan = copyPlan(
+                    basePlan,
+                    finalSources,
+                    cdpToggle.isSelected(),
+                    validationToggle.isSelected(),
+                    encToggle.isSelected(),
+                    cronFromSelection(startTime),
+                    basePlan.retentionMode(),
+                    basePlan.retentionDays());
+            ProtectionPlan saved = savePlanAndSync(updatedPlan);
+            pendingSources.set(null);
+            ui(() -> {
+                applyPlanToConfigView(saved, backupSourcesConfig, cdpToggle, validationToggle, encToggle,
+                        startTime, retentionVal, foldersCountLbl, renderPendingSources);
+                updateScheduleSummary.run();
+                hideSaveBtns.run();
+            });
         }));
 
         cancelBtn.setOnAction(e -> {
@@ -2254,18 +2259,10 @@ public class KeeplyAgentApp extends Application {
             pendingSources.set(null);
             runAsync(() -> {
                 loadScheduleDaily(startTime, scheduleStatus);
-                Optional<AgentConfigReader.UiConfig> cfgOpt;
-                try { cfgOpt = configReader.read(); } catch (Exception ex) { cfgOpt = Optional.empty(); }
-                boolean encFinal = cfgOpt.map(AgentConfigReader.UiConfig::encryptionEnabled).orElse(false);
-                // Reload sources from backend on cancel
-                List<String> originalSources = (backend != null && deviceId != null)
-                        ? backend.getDevicePlan(deviceId).map(ProtectionPlan::sources).orElse(parseSources(backupSourcesConfig.getText()))
-                        : parseSources(backupSourcesConfig.getText());
+                ProtectionPlan plan = loadEffectivePlan().orElseGet(() -> defaultPlan(parseSources(backupSourcesConfig.getText())));
                 ui(() -> {
-                    backupSourcesConfig.setText(String.join("\n", originalSources));
-                    renderPendingSources.accept(originalSources);
-                    foldersCountLbl.setText(originalSources.isEmpty() ? "—" : originalSources.size() + " pasta(s)");
-                    encToggle.setSelected(encFinal);
+                    applyPlanToConfigView(plan, backupSourcesConfig, cdpToggle, validationToggle, encToggle,
+                            startTime, retentionVal, foldersCountLbl, renderPendingSources);
                     updateScheduleSummary.run();
                     suppressing[0] = false;
                 });
@@ -2275,22 +2272,19 @@ public class KeeplyAgentApp extends Application {
         // ── Refresh ──────────────────────────────────────────────────────────
         Runnable refresh = () -> {
             if (backend == null || deviceId == null) {
-                List<String> local = parseSources(backupSourcesConfig.getText());
+                ProtectionPlan localPlan = loadEffectivePlan().orElseGet(() -> defaultPlan(parseSources(backupSourcesConfig.getText())));
                 ui(() -> {
-                    renderPendingSources.accept(local);
-                    foldersCountLbl.setText(local.isEmpty() ? "—" : local.size() + " pasta(s)");
+                    applyPlanToConfigView(localPlan, backupSourcesConfig, cdpToggle, validationToggle, encToggle,
+                            startTime, retentionVal, foldersCountLbl, renderPendingSources);
                 });
                 return;
             }
             runAsync(() -> {
-                var optPlan = backend.getDevicePlan(deviceId);
-                List<String> sources = optPlan.isPresent()
-                        ? optPlan.get().sources() : parseSources(backupSourcesConfig.getText());
+                ProtectionPlan plan = loadEffectivePlan().orElseGet(() -> defaultPlan(parseSources(backupSourcesConfig.getText())));
                 ui(() -> {
                     pendingSources.set(null); // fresh load clears pending
-                    backupSourcesConfig.setText(String.join("\n", sources));
-                    renderPendingSources.accept(sources);
-                    foldersCountLbl.setText(sources.isEmpty() ? "—" : sources.size() + " pasta(s)");
+                    applyPlanToConfigView(plan, backupSourcesConfig, cdpToggle, validationToggle, encToggle,
+                            startTime, retentionVal, foldersCountLbl, renderPendingSources);
                     devIdVal.setText(deviceId != null ? deviceId.toString() : "—");
                     srvVal.setText(backendUrl.getText() != null && !backendUrl.getText().isBlank()
                             ? backendUrl.getText() : "—");
@@ -2376,19 +2370,7 @@ public class KeeplyAgentApp extends Application {
 
 
     private void saveScheduleDaily(ComboBox<String> startTime, Label statusLabel) throws Exception {
-        String selectedTime = startTime.getValue();
-        if (selectedTime == null || selectedTime.isBlank()) {
-            throw new IllegalStateException("Selecione um horário.");
-        }
-
-        LocalTime parsedTime;
-        try {
-            parsedTime = LocalTime.parse(selectedTime.trim(), DateTimeFormatter.ofPattern("HH:mm"));
-        } catch (DateTimeParseException e) {
-            throw new IllegalStateException("Hora inválida. Use HH:mm, ex: 02:00");
-        }
-
-        String cron = "%d %d * * *".formatted(parsedTime.getMinute(), parsedTime.getHour());
+        String cron = cronFromSelection(startTime);
         String backendValue = backendUrl.getText() != null ? backendUrl.getText().trim() : "";
         String emailValue = email.getText() != null ? email.getText().trim() : "";
         List<String> sources = parseSources(backupSourcesConfig.getText());
@@ -2399,17 +2381,134 @@ public class KeeplyAgentApp extends Application {
     }
 
     private void synchronizePlanAfterLogin() {
-        Optional<ProtectionPlan> maybePlan = backend.getDevicePlan(deviceId);
-        ProtectionPlan plan = maybePlan.orElseGet(this::createPlanFromWizard);
-
         try {
-            configWriter.savePlan(backendUrl.getText().trim(), email.getText().trim(), plan);
+            Optional<ProtectionPlan> maybePlan = loadEffectivePlan();
+            ProtectionPlan plan = maybePlan.orElseGet(this::createPlanFromWizard);
+            ProtectionPlan saved = savePlanAndSync(plan);
             ui(() -> backupSourcesConfig.setText(String.join("\n", plan.sources())));
+            configRefresh.run();
             log("Plano sincronizado e agent.yaml configurado com sucesso.");
         } catch (Exception e) {
             log("Erro ao salvar configuração após login: " + e.getMessage());
             e.printStackTrace();
         }
+    }
+
+    private Optional<ProtectionPlan> loadEffectivePlan() {
+        try {
+            if (backend != null && deviceId != null) {
+                ProtectionPlanSyncService.ReconciledPlan reconciled = planSyncService()
+                        .reconcile(deviceId, backendUrl.getText().trim(), email.getText().trim());
+                return Optional.ofNullable(reconciled.plan());
+            }
+            return configReader.readLocalPlanState().map(LocalPlanState::plan);
+        } catch (Exception e) {
+            log("Falha ao carregar plano efetivo: " + getErrorMessage(e));
+            return Optional.empty();
+        }
+    }
+
+    private ProtectionPlan savePlanAndSync(ProtectionPlan plan) throws Exception {
+        String backendValue = backendUrl.getText() != null ? backendUrl.getText().trim() : "";
+        String emailValue = email.getText() != null ? email.getText().trim() : "";
+        if (backend != null && deviceId != null) {
+            planSyncService().saveLocalPlan(backendValue, emailValue, plan);
+            ProtectionPlanSyncService.ReconciledPlan reconciled = planSyncService()
+                    .reconcile(deviceId, backendValue, emailValue);
+            DaemonLauncher.ensureRunning(this::log, true);
+            return reconciled.plan() != null ? reconciled.plan() : plan;
+        }
+        LocalPlanState localState = new LocalPlanState(plan, java.time.Instant.now(), plan.updatedAt(), null);
+        configWriter.saveLocalPlanState(backendValue, emailValue, localState);
+        DaemonLauncher.ensureRunning(this::log, true);
+        return plan;
+    }
+
+    private ProtectionPlanSyncService planSyncService() {
+        return new ProtectionPlanSyncService(backend, configReader, configWriter);
+    }
+
+    private ProtectionPlan defaultPlan(List<String> sources) {
+        List<String> safeSources = sources == null ? List.of() : List.copyOf(sources);
+        return new ProtectionPlan(
+                safeSources.size() == 1 ? ProtectionPlan.PlanType.DEFAULT : ProtectionPlan.PlanType.CUSTOM,
+                safeSources,
+                false,
+                false,
+                false,
+                "0 2 * * *",
+                ProtectionPlan.RetentionMode.KEEP_ALL,
+                null,
+                null);
+    }
+
+    private ProtectionPlan copyPlan(ProtectionPlan basePlan, List<String> sources, Boolean cdpEnabled,
+                                    Boolean validationEnabled, Boolean encryptionEnabled,
+                                    String scheduleCron, ProtectionPlan.RetentionMode retentionMode,
+                                    Integer retentionDays) {
+        List<String> finalSources = sources != null ? List.copyOf(sources) : basePlan.sources();
+        return new ProtectionPlan(
+                finalSources.size() == 1 ? ProtectionPlan.PlanType.DEFAULT : ProtectionPlan.PlanType.CUSTOM,
+                finalSources,
+                cdpEnabled != null ? cdpEnabled : basePlan.cdpEnabled(),
+                validationEnabled != null ? validationEnabled : basePlan.validationEnabled(),
+                encryptionEnabled != null ? encryptionEnabled : basePlan.encryptionEnabled(),
+                scheduleCron != null ? scheduleCron : basePlan.scheduleCron(),
+                retentionMode != null ? retentionMode : basePlan.retentionMode(),
+                retentionMode == ProtectionPlan.RetentionMode.KEEP_DAYS ? retentionDays : null,
+                basePlan.updatedAt());
+    }
+
+    private ProtectionPlan copyPlan(ProtectionPlan basePlan, List<String> sources, Boolean cdpEnabled,
+                                    Boolean validationEnabled, Boolean encryptionEnabled,
+                                    String scheduleCron, ProtectionPlan.RetentionMode retentionMode) {
+        return copyPlan(basePlan, sources, cdpEnabled, validationEnabled, encryptionEnabled,
+                scheduleCron, retentionMode, basePlan.retentionDays());
+    }
+
+    private String cronFromSelection(ComboBox<String> startTime) {
+        String selectedTime = startTime.getValue();
+        if (selectedTime == null || selectedTime.isBlank()) {
+            throw new IllegalStateException("Selecione um horário.");
+        }
+        LocalTime parsedTime;
+        try {
+            parsedTime = LocalTime.parse(selectedTime.trim(), DateTimeFormatter.ofPattern("HH:mm"));
+        } catch (DateTimeParseException e) {
+            throw new IllegalStateException("Hora inválida. Use HH:mm, ex: 02:00");
+        }
+        return "%d %d * * *".formatted(parsedTime.getMinute(), parsedTime.getHour());
+    }
+
+    private void applyPlanToConfigView(ProtectionPlan plan,
+                                       TextArea backupSourcesConfig,
+                                       ToggleButton cdpToggle,
+                                       ToggleButton validationToggle,
+                                       ToggleButton encToggle,
+                                       ComboBox<String> startTime,
+                                       Label retentionVal,
+                                       Label foldersCountLbl,
+                                       java.util.function.Consumer<List<String>> renderPendingSources) {
+        List<String> sources = plan.sources() == null ? List.of() : plan.sources();
+        backupSourcesConfig.setText(String.join("\n", sources));
+        renderPendingSources.accept(sources);
+        foldersCountLbl.setText(sources.isEmpty() ? "—" : sources.size() + " pasta(s)");
+        cdpToggle.setSelected(plan.cdpEnabled());
+        validationToggle.setSelected(plan.validationEnabled());
+        encToggle.setSelected(plan.encryptionEnabled());
+        if (plan.scheduleCron() != null && !plan.scheduleCron().isBlank()) {
+            String[] parts = plan.scheduleCron().trim().split("\\s+");
+            if (parts.length == 5) {
+                try {
+                    startTime.setValue("%02d:%02d".formatted(Integer.parseInt(parts[1]), Integer.parseInt(parts[0])));
+                } catch (NumberFormatException ignored) {
+                    startTime.setValue("02:00");
+                }
+            }
+        }
+        retentionVal.setText(plan.retentionMode() == ProtectionPlan.RetentionMode.KEEP_DAYS && plan.retentionDays() != null
+                ? "Manter snapshots por " + plan.retentionDays() + " dia(s)"
+                : "Manter todos os snapshots");
     }
 
     private ProtectionPlan createPlanFromWizard() {

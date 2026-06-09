@@ -13,7 +13,8 @@ export function useAuthGuard() {
     if (!token) {
       router.replace("/login");
     } else {
-      setReady(true);
+      const timer = window.setTimeout(() => setReady(true), 0);
+      return () => window.clearTimeout(timer);
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 

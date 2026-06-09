@@ -74,20 +74,6 @@ class FileDownloadServiceTest {
     }
 
     @Test
-    void streamSelectedArchive_shouldRejectMoreThanTenFiles() {
-        MockHttpServletResponse response = new MockHttpServletResponse();
-        List<String> paths = new ArrayList<>();
-        for (int i = 0; i < 11; i++) {
-            paths.add("file-" + i + ".txt");
-        }
-
-        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
-                () -> fileDownloadService.streamSelectedArchive(userId, snapshotId, paths, response));
-
-        assertEquals("A maximum of 10 files can be downloaded per archive", ex.getMessage());
-    }
-
-    @Test
     void streamSelectedArchive_shouldRejectMissingFile() {
         MockHttpServletResponse response = new MockHttpServletResponse();
         when(snapshotFileRepository.findBySnapshotIdAndPath(snapshotId, "missing.txt")).thenReturn(Optional.empty());
@@ -128,9 +114,9 @@ class FileDownloadServiceTest {
     }
 
     @Test
-    void streamSelectedArchive_shouldSupportTenFiles() throws Exception {
+    void streamSelectedArchive_shouldSupportMoreThanTenFiles() throws Exception {
         Map<String, String> contents = new LinkedHashMap<>();
-        for (int i = 1; i <= 10; i++) {
+        for (int i = 1; i <= 12; i++) {
             contents.put("folder/file-" + i + ".txt", "content-" + i);
         }
         stubFiles(contents);
@@ -139,7 +125,7 @@ class FileDownloadServiceTest {
         fileDownloadService.streamSelectedArchive(userId, snapshotId, List.copyOf(contents.keySet()), response);
 
         Map<String, String> expected = new LinkedHashMap<>();
-        for (int i = 1; i <= 10; i++) {
+        for (int i = 1; i <= 12; i++) {
             expected.put("file-" + i + ".txt", "content-" + i);
         }
         assertZipContents(response.getContentAsByteArray(), expected);
@@ -161,7 +147,59 @@ class FileDownloadServiceTest {
         ));
     }
 
-    private void stubFiles(Map<String, String> contents) {
+    @Test
+    void streamSelectedArchive_shouldExpandFolderPaths() throws Exception {
+        Map<String, String> contents = new LinkedHashMap<>();
+        contents.put("storage/projetos/Keeply/README.md", "readme");
+        contents.put("storage/projetos/Keeply/frontend/package.json", "package");
+        contents.put("storage/outside.txt", "outside");
+        Map<String, SnapshotFile> files = stubFiles(contents);
+
+        when(snapshotFileRepository.findBySnapshotIdAndPathStartingWith(
+                snapshotId,
+                "storage/projetos/Keeply/",
+                org.springframework.data.domain.Sort.by("path").ascending()
+        )).thenReturn(List.of(
+                files.get("storage/projetos/Keeply/README.md"),
+                files.get("storage/projetos/Keeply/frontend/package.json")
+        ));
+
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        fileDownloadService.streamSelectedArchive(userId, snapshotId, List.of("storage/projetos/Keeply/"), response);
+
+        assertZipContents(response.getContentAsByteArray(), Map.of(
+                "README.md", "readme",
+                "frontend/package.json", "package"
+        ));
+    }
+
+    @Test
+    void streamSelectedArchive_shouldExpandEmptyPathAsWholeSnapshot() throws Exception {
+        Map<String, String> contents = new LinkedHashMap<>();
+        contents.put("storage/projetos/Keeply/README.md", "readme");
+        contents.put("storage/outside.txt", "outside");
+        Map<String, SnapshotFile> files = stubFiles(contents);
+
+        when(snapshotFileRepository.findBySnapshotIdAndPathStartingWith(
+                snapshotId,
+                "",
+                org.springframework.data.domain.Sort.by("path").ascending()
+        )).thenReturn(List.of(
+                files.get("storage/projetos/Keeply/README.md"),
+                files.get("storage/outside.txt")
+        ));
+
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        fileDownloadService.streamSelectedArchive(userId, snapshotId, List.of(""), response);
+
+        assertZipContents(response.getContentAsByteArray(), Map.of(
+                "storage/projetos/Keeply/README.md", "readme",
+                "storage/outside.txt", "outside"
+        ));
+    }
+
+    private Map<String, SnapshotFile> stubFiles(Map<String, String> contents) {
+        Map<String, SnapshotFile> files = new LinkedHashMap<>();
         contents.forEach((path, content) -> {
             SnapshotFile file = new SnapshotFile();
             file.id = UUID.randomUUID();
@@ -179,7 +217,9 @@ class FileDownloadServiceTest {
             when(fileChunkRepository.findBySnapshotFileIdOrderByChunkIndexAsc(file.id)).thenReturn(List.of(chunk));
             when(objectStorage.getStream(eq(ChunkService.chunkKey(userId, chunk.chunkHash))))
                     .thenReturn(new ByteArrayInputStream(Zstd.compress(content.getBytes(StandardCharsets.UTF_8))));
+            files.put(path, file);
         });
+        return files;
     }
 
     private void assertZipContents(byte[] zipBytes, Map<String, String> expected) throws IOException {
