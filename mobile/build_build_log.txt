@@ -1,0 +1,574 @@
+﻿Running Gradle task 'assembleRelease'...                        
+flutter : e: Daemon compilation failed: null
+No linha:1 caractere:1
++ flutter build apk --release 2>&1 | Out-File build_build_log.txt -Enco ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (e: Daemon compilation failed: nul 
+   l:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+java.lang.Exception
+	at org.jetbrains.kotlin.daemon.common.CompileService$CallResult$Error.get(Comp
+ileService.kt:69)
+	at org.jetbrains.kotlin.daemon.common.CompileService$CallResult$Error.get(Comp
+ileService.kt:65)
+	at org.jetbrains.kotlin.compilerRunner.GradleKotlinCompilerWork.compileWithDae
+mon(GradleKotlinCompilerWork.kt:240)
+	at org.jetbrains.kotlin.compilerRunner.GradleKotlinCompilerWork.compileWithDae
+monOrFallbackImpl(GradleKotlinCompilerWork.kt:159)
+	at org.jetbrains.kotlin.compilerRunner.GradleKotlinCompilerWork.run(GradleKotl
+inCompilerWork.kt:111)
+	at org.jetbrains.kotlin.compilerRunner.GradleCompilerRunnerWithWorkers$GradleK
+otlinCompilerWorkAction.execute(GradleCompilerRunnerWithWorkers.kt:74)
+	at org.gradle.workers.internal.DefaultWorkerServer.execute(DefaultWorkerServer
+.java:63)
+	at org.gradle.workers.internal.NoIsolationWorkerFactory$1$1.create(NoIsolation
+WorkerFactory.java:66)
+	at org.gradle.workers.internal.NoIsolationWorkerFactory$1$1.create(NoIsolation
+WorkerFactory.java:62)
+	at org.gradle.internal.classloader.ClassLoaderUtils.executeInClassloader(Class
+LoaderUtils.java:100)
+	at org.gradle.workers.internal.NoIsolationWorkerFactory$1.lambda$execute$0(NoI
+solationWorkerFactory.java:62)
+	at org.gradle.workers.internal.AbstractWorker$1.call(AbstractWorker.java:44)
+	at org.gradle.workers.internal.AbstractWorker$1.call(AbstractWorker.java:41)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$CallableBuildOpe
+rationWorker.execute(DefaultBuildOperationRunner.java:210)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$CallableBuildOpe
+rationWorker.execute(DefaultBuildOperationRunner.java:205)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(Defaul
+tBuildOperationRunner.java:67)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(Defaul
+tBuildOperationRunner.java:60)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(DefaultB
+uildOperationRunner.java:167)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(DefaultB
+uildOperationRunner.java:60)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner.call(DefaultBuil
+dOperationRunner.java:54)
+	at org.gradle.workers.internal.AbstractWorker.executeWrappedInBuildOperation(A
+bstractWorker.java:41)
+	at org.gradle.workers.internal.NoIsolationWorkerFactory$1.execute(NoIsolationW
+orkerFactory.java:59)
+	at org.gradle.workers.internal.DefaultWorkerExecutor.lambda$submitWork$0(Defau
+ltWorkerExecutor.java:174)
+	at java.base/java.util.concurrent.FutureTask.run(Unknown Source)
+	at org.gradle.internal.work.DefaultConditionalExecutionQueue$ExecutionRunner.r
+unExecution(DefaultConditionalExecutionQueue.java:194)
+	at org.gradle.internal.work.DefaultConditionalExecutionQueue$ExecutionRunner.a
+ccess$700(DefaultConditionalExecutionQueue.java:127)
+	at org.gradle.internal.work.DefaultConditionalExecutionQueue$ExecutionRunner$1
+.run(DefaultConditionalExecutionQueue.java:169)
+	at org.gradle.internal.Factories$1.create(Factories.java:31)
+	at org.gradle.internal.work.DefaultWorkerLeaseService.withLocks(DefaultWorkerL
+easeService.java:263)
+	at org.gradle.internal.work.DefaultWorkerLeaseService.runAsWorkerThread(Defaul
+tWorkerLeaseService.java:127)
+	at org.gradle.internal.work.DefaultWorkerLeaseService.runAsWorkerThread(Defaul
+tWorkerLeaseService.java:132)
+	at org.gradle.internal.work.DefaultConditionalExecutionQueue$ExecutionRunner.r
+unBatch(DefaultConditionalExecutionQueue.java:164)
+	at org.gradle.internal.work.DefaultConditionalExecutionQueue$ExecutionRunner.r
+un(DefaultConditionalExecutionQueue.java:133)
+	at java.base/java.util.concurrent.Executors$RunnableAdapter.call(Unknown 
+Source)
+	at java.base/java.util.concurrent.FutureTask.run(Unknown Source)
+	at org.gradle.internal.concurrent.ExecutorPolicy$CatchAndRecordFailures.onExec
+ute(ExecutorPolicy.java:64)
+	at org.gradle.internal.concurrent.AbstractManagedExecutor$1.run(AbstractManage
+dExecutor.java:48)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(Unknown Source)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(Unknown 
+Source)
+	at java.base/java.lang.Thread.run(Unknown Source)
+Caused by: java.nio.file.AccessDeniedException: C:\code\Keeply-Mobile\build\dev
+ice_info_plus\kotlin\compileReleaseKotlin\cacheable\dirty-sources.txt
+	at java.base/sun.nio.fs.WindowsException.translateToIOException(Unknown 
+Source)
+	at java.base/sun.nio.fs.WindowsException.rethrowAsIOException(Unknown Source)
+	at java.base/sun.nio.fs.WindowsException.rethrowAsIOException(Unknown Source)
+	at java.base/sun.nio.fs.WindowsFileSystemProvider.implDelete(Unknown Source)
+	at java.base/sun.nio.fs.AbstractFileSystemProvider.delete(Unknown Source)
+	at java.base/java.nio.file.Files.delete(Unknown Source)
+	at org.jetbrains.kotlin.incremental.NonRecoverableCompilationTransaction.delet
+eFile(CompilationTransaction.kt:148)
+	at org.jetbrains.kotlin.incremental.dirtyFiles.DirtyFilesCachedHistory.clear(D
+irtyFilesProvider.kt:38)
+	at org.jetbrains.kotlin.incremental.IncrementalCompilerRunner.doCompile(Increm
+entalCompilerRunner.kt:539)
+	at org.jetbrains.kotlin.incremental.IncrementalCompilerRunner.compileImpl(Incr
+ementalCompilerRunner.kt:416)
+	at org.jetbrains.kotlin.incremental.IncrementalCompilerRunner.compileNonIncrem
+entally(IncrementalCompilerRunner.kt:301)
+	at org.jetbrains.kotlin.incremental.IncrementalCompilerRunner.compile(Incremen
+talCompilerRunner.kt:128)
+	at org.jetbrains.kotlin.daemon.CompileServiceImplBase.execIncrementalCompiler(
+CompileServiceImpl.kt:684)
+	at org.jetbrains.kotlin.daemon.CompileServiceImplBase.access$execIncrementalCo
+mpiler(CompileServiceImpl.kt:94)
+	at org.jetbrains.kotlin.daemon.CompileServiceImpl.compile(CompileServiceImpl.k
+t:1810)
+	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(Unknown 
+Source)
+	at java.base/java.lang.reflect.Method.invoke(Unknown Source)
+	at java.rmi/sun.rmi.server.UnicastServerRef.dispatch(Unknown Source)
+	at java.rmi/sun.rmi.transport.Transport$1.run(Unknown Source)
+	at java.rmi/sun.rmi.transport.Transport$1.run(Unknown Source)
+	at java.base/java.security.AccessController.doPrivileged(Unknown Source)
+	at java.rmi/sun.rmi.transport.Transport.serviceCall(Unknown Source)
+	at java.rmi/sun.rmi.transport.tcp.TCPTransport.handleMessages(Unknown Source)
+	at java.rmi/sun.rmi.transport.tcp.TCPTransport$ConnectionHandler.run0(Unknown 
+Source)
+	at java.rmi/sun.rmi.transport.tcp.TCPTransport$ConnectionHandler.lambda$run$0(
+Unknown Source)
+	at java.base/java.security.AccessController.doPrivileged(Unknown Source)
+	at java.rmi/sun.rmi.transport.tcp.TCPTransport$ConnectionHandler.run(Unknown 
+Source)
+	... 3 more
+
+warning: [options] source value 8 is obsolete and will be removed in a future 
+release
+warning: [options] target value 8 is obsolete and will be removed in a future 
+release
+warning: [options] To suppress warnings about obsolete options, use 
+-Xlint:-options.
+3 warnings
+ERROR: Resource and asset merger: C:\code\Keeply-Mobile\build\app\intermediates
+\incremental\release\mergeReleaseResources\compile-file-map.properties (O 
+sistema n├úo pode encontrar o caminho especificado)
+    java.io.FileNotFoundException: C:\code\Keeply-Mobile\build\app\intermediate
+s\incremental\release\mergeReleaseResources\compile-file-map.properties (O 
+sistema n├úo pode encontrar o caminho especificado)
+    	at 
+java.base/java.io.IoOverNioFileSystem.convertNioToIoExceptionInStreams(Unknown 
+Source)
+    	at 
+java.base/java.io.IoOverNioFileSystem.initializeStreamsUsingNio0(Unknown 
+Source)
+    	at java.base/java.io.IoOverNioFileSystem.initializeStreamUsingNio(Unknown 
+Source)
+    	at java.base/java.io.FileOutputStream.<init>(Unknown Source)
+    	at java.base/java.io.FileOutputStream.<init>(Unknown Source)
+    	at java.base/java.io.FileWriter.<init>(Unknown Source)
+    	at com.android.ide.common.resources.MergedResourceWriter.end(MergedResourc
+eWriter.java:329)
+    	at 
+com.android.ide.common.resources.DataMerger.mergeData(DataMerger.java:299)
+    	at com.android.ide.common.resources.ResourceMerger.mergeData(ResourceMerge
+r.java:391)
+    	at com.android.build.gradle.tasks.MergeResources$doFullTaskAction$1$1$2.in
+voke(MergeResources.kt:305)
+    	at 
+com.android.build.gradle.internal.tasks.Blocks.recordSpan(Blocks.java:51)
+    	at com.android.build.gradle.tasks.MergeResources.doFullTaskAction(MergeRes
+ources.kt:301)
+    	at com.android.build.gradle.tasks.MergeResources.doTaskAction(MergeResourc
+es.kt:357)
+    	at com.android.build.gradle.internal.tasks.NewIncrementalTask$taskAction$$
+inlined$recordTaskAction$1.invoke(BaseTask.kt:63)
+    	at 
+com.android.build.gradle.internal.tasks.Blocks.recordSpan(Blocks.java:51)
+    	at com.android.build.gradle.internal.tasks.NewIncrementalTask.taskAction(N
+ewIncrementalTask.kt:46)
+    	at 
+java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(Unknown 
+Source)
+    	at java.base/java.lang.reflect.Method.invoke(Unknown Source)
+    	at org.gradle.internal.reflect.JavaMethod.invoke(JavaMethod.java:125)
+    	at org.gradle.api.internal.project.taskfactory.IncrementalTaskAction.doExe
+cute(IncrementalTaskAction.java:45)
+    	at org.gradle.api.internal.project.taskfactory.StandardTaskAction.execute(
+StandardTaskAction.java:51)
+    	at org.gradle.api.internal.project.taskfactory.IncrementalTaskAction.execu
+te(IncrementalTaskAction.java:26)
+    	at org.gradle.api.internal.project.taskfactory.StandardTaskAction.execute(
+StandardTaskAction.java:29)
+    	at org.gradle.api.internal.tasks.execution.TaskExecution$3.run(TaskExecuti
+on.java:244)
+    	at org.gradle.internal.operations.DefaultBuildOperationRunner$1.execute(De
+faultBuildOperationRunner.java:30)
+    	at org.gradle.internal.operations.DefaultBuildOperationRunner$1.execute(De
+faultBuildOperationRunner.java:27)
+    	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(De
+faultBuildOperationRunner.java:67)
+    	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(De
+faultBuildOperationRunner.java:60)
+    	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(Defa
+ultBuildOperationRunner.java:167)
+    	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(Defa
+ultBuildOperationRunner.java:60)
+    	at org.gradle.internal.operations.DefaultBuildOperationRunner.run(DefaultB
+uildOperationRunner.java:48)
+    	at org.gradle.api.internal.tasks.execution.TaskExecution.executeAction(Tas
+kExecution.java:229)
+    	at org.gradle.api.internal.tasks.execution.TaskExecution.executeActions(Ta
+skExecution.java:212)
+    	at org.gradle.api.internal.tasks.execution.TaskExecution.executeWithPrevio
+usOutputFiles(TaskExecution.java:195)
+    	at org.gradle.api.internal.tasks.execution.TaskExecution.execute(TaskExecu
+tion.java:162)
+    	at org.gradle.internal.execution.steps.ExecuteStep.executeInternal(Execute
+Step.java:105)
+    	at 
+org.gradle.internal.execution.steps.ExecuteStep.access$000(ExecuteStep.java:44)
+    	at 
+org.gradle.internal.execution.steps.ExecuteStep$1.call(ExecuteStep.java:59)
+    	at 
+org.gradle.internal.execution.steps.ExecuteStep$1.call(ExecuteStep.java:56)
+    	at org.gradle.internal.operations.DefaultBuildOperationRunner$CallableBuil
+dOperationWorker.execute(DefaultBuildOperationRunner.java:210)
+    	at org.gradle.internal.operations.DefaultBuildOperationRunner$CallableBuil
+dOperationWorker.execute(DefaultBuildOperationRunner.java:205)
+    	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(De
+faultBuildOperationRunner.java:67)
+    	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(De
+faultBuildOperationRunner.java:60)
+    	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(Defa
+ultBuildOperationRunner.java:167)
+    	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(Defa
+ultBuildOperationRunner.java:60)
+    	at org.gradle.internal.operations.DefaultBuildOperationRunner.call(Default
+BuildOperationRunner.java:54)
+    	at 
+org.gradle.internal.execution.steps.ExecuteStep.execute(ExecuteStep.java:56)
+    	at 
+org.gradle.internal.execution.steps.ExecuteStep.execute(ExecuteStep.java:44)
+    	at org.gradle.internal.execution.steps.CancelExecutionStep.execute(CancelE
+xecutionStep.java:42)
+    	at org.gradle.internal.execution.steps.TimeoutStep.executeWithoutTimeout(T
+imeoutStep.java:75)
+    	at 
+org.gradle.internal.execution.steps.TimeoutStep.execute(TimeoutStep.java:55)
+    	at org.gradle.internal.execution.steps.PreCreateOutputParentsStep.execute(
+PreCreateOutputParentsStep.java:50)
+    	at org.gradle.internal.execution.steps.PreCreateOutputParentsStep.execute(
+PreCreateOutputParentsStep.java:28)
+    	at org.gradle.internal.execution.steps.RemovePreviousOutputsStep.execute(R
+emovePreviousOutputsStep.java:67)
+    	at org.gradle.internal.execution.steps.RemovePreviousOutputsStep.execute(R
+emovePreviousOutputsStep.java:37)
+    	at org.gradle.internal.execution.steps.BroadcastChangingOutputsStep.execut
+e(BroadcastChangingOutputsStep.java:61)
+    	at org.gradle.internal.execution.steps.BroadcastChangingOutputsStep.execut
+e(BroadcastChangingOutputsStep.java:26)
+    	at org.gradle.internal.execution.steps.CaptureOutputsAfterExecutionStep.ex
+ecute(CaptureOutputsAfterExecutionStep.java:69)
+    	at org.gradle.internal.execution.steps.CaptureOutputsAfterExecutionStep.ex
+ecute(CaptureOutputsAfterExecutionStep.java:46)
+    	at org.gradle.internal.execution.steps.ResolveInputChangesStep.execute(Res
+olveInputChangesStep.java:40)
+    	at org.gradle.internal.execution.steps.ResolveInputChangesStep.execute(Res
+olveInputChangesStep.java:29)
+    	at org.gradle.internal.execution.steps.BuildCacheStep.executeWithoutCache(
+BuildCacheStep.java:189)
+    	at org.gradle.internal.execution.steps.BuildCacheStep.lambda$execute$1(Bui
+ldCacheStep.java:75)
+    	at org.gradle.internal.Either$Right.fold(Either.java:175)
+    	at 
+org.gradle.internal.execution.caching.CachingState.fold(CachingState.java:62)
+    	at org.gradle.internal.execution.steps.BuildCacheStep.execute(BuildCacheSt
+ep.java:73)
+    	at org.gradle.internal.execution.steps.BuildCacheStep.execute(BuildCacheSt
+ep.java:48)
+    	at org.gradle.internal.execution.steps.StoreExecutionStateStep.execute(Sto
+reExecutionStateStep.java:46)
+    	at org.gradle.internal.execution.steps.StoreExecutionStateStep.execute(Sto
+reExecutionStateStep.java:35)
+    	at org.gradle.internal.execution.steps.SkipUpToDateStep.executeBecause(Ski
+pUpToDateStep.java:75)
+    	at org.gradle.internal.execution.steps.SkipUpToDateStep.lambda$execute$2(S
+kipUpToDateStep.java:53)
+    	at java.base/java.util.Optional.orElseGet(Unknown Source)
+    	at org.gradle.internal.execution.steps.SkipUpToDateStep.execute(SkipUpToDa
+teStep.java:53)
+    	at org.gradle.internal.execution.steps.SkipUpToDateStep.execute(SkipUpToDa
+teStep.java:35)
+    	at org.gradle.internal.execution.steps.legacy.MarkSnapshottingInputsFinish
+edStep.execute(MarkSnapshottingInputsFinishedStep.java:37)
+    	at org.gradle.internal.execution.steps.legacy.MarkSnapshottingInputsFinish
+edStep.execute(MarkSnapshottingInputsFinishedStep.java:27)
+    	at org.gradle.internal.execution.steps.ResolveIncrementalCachingStateStep.
+executeDelegate(ResolveIncrementalCachingStateStep.java:49)
+    	at org.gradle.internal.execution.steps.ResolveIncrementalCachingStateStep.
+executeDelegate(ResolveIncrementalCachingStateStep.java:27)
+    	at org.gradle.internal.execution.steps.AbstractResolveCachingStateStep.exe
+cute(AbstractResolveCachingStateStep.java:71)
+    	at org.gradle.internal.execution.steps.AbstractResolveCachingStateStep.exe
+cute(AbstractResolveCachingStateStep.java:39)
+    	at org.gradle.internal.execution.steps.ResolveChangesStep.execute(ResolveC
+hangesStep.java:65)
+    	at org.gradle.internal.execution.steps.ResolveChangesStep.execute(ResolveC
+hangesStep.java:36)
+    	at 
+org.gradle.internal.execution.steps.ValidateStep.execute(ValidateStep.java:107)
+    	at 
+org.gradle.internal.execution.steps.ValidateStep.execute(ValidateStep.java:56)
+    	at org.gradle.internal.execution.steps.AbstractCaptureStateBeforeExecution
+Step.execute(AbstractCaptureStateBeforeExecutionStep.java:64)
+    	at org.gradle.internal.execution.steps.AbstractCaptureStateBeforeExecution
+Step.execute(AbstractCaptureStateBeforeExecutionStep.java:43)
+    	at org.gradle.internal.execution.steps.AbstractSkipEmptyWorkStep.executeWi
+thNonEmptySources(AbstractSkipEmptyWorkStep.java:125)
+    	at org.gradle.internal.execution.steps.AbstractSkipEmptyWorkStep.execute(A
+bstractSkipEmptyWorkStep.java:56)
+    	at org.gradle.internal.execution.steps.AbstractSkipEmptyWorkStep.execute(A
+bstractSkipEmptyWorkStep.java:36)
+    	at org.gradle.internal.execution.steps.legacy.MarkSnapshottingInputsStarte
+dStep.execute(MarkSnapshottingInputsStartedStep.java:38)
+    	at org.gradle.internal.execution.steps.LoadPreviousExecutionStateStep.exec
+ute(LoadPreviousExecutionStateStep.java:36)
+    	at org.gradle.internal.execution.steps.LoadPreviousExecutionStateStep.exec
+ute(LoadPreviousExecutionStateStep.java:23)
+    	at org.gradle.internal.execution.steps.HandleStaleOutputsStep.execute(Hand
+leStaleOutputsStep.java:75)
+    	at org.gradle.internal.execution.steps.HandleStaleOutputsStep.execute(Hand
+leStaleOutputsStep.java:41)
+    	at org.gradle.internal.execution.steps.AssignMutableWorkspaceStep.lambda$e
+xecute$0(AssignMutableWorkspaceStep.java:35)
+    	at org.gradle.api.internal.tasks.execution.TaskExecution$4.withWorkspace(T
+askExecution.java:289)
+    	at org.gradle.internal.execution.steps.AssignMutableWorkspaceStep.execute(
+AssignMutableWorkspaceStep.java:31)
+    	at org.gradle.internal.execution.steps.AssignMutableWorkspaceStep.execute(
+AssignMutableWorkspaceStep.java:22)
+    	at org.gradle.internal.execution.steps.ChoosePipelineStep.execute(ChoosePi
+pelineStep.java:40)
+    	at org.gradle.internal.execution.steps.ChoosePipelineStep.execute(ChoosePi
+pelineStep.java:23)
+    	at org.gradle.internal.execution.steps.ExecuteWorkBuildOperationFiringStep
+.lambda$execute$2(ExecuteWorkBuildOperationFiringStep.java:67)
+    	at java.base/java.util.Optional.orElseGet(Unknown Source)
+    	at org.gradle.internal.execution.steps.ExecuteWorkBuildOperationFiringStep
+.execute(ExecuteWorkBuildOperationFiringStep.java:67)
+    	at org.gradle.internal.execution.steps.ExecuteWorkBuildOperationFiringStep
+.execute(ExecuteWorkBuildOperationFiringStep.java:39)
+    	at org.gradle.internal.execution.steps.IdentityCacheStep.execute(IdentityC
+acheStep.java:46)
+    	at org.gradle.internal.execution.steps.IdentityCacheStep.execute(IdentityC
+acheStep.java:34)
+    	at 
+org.gradle.internal.execution.steps.IdentifyStep.execute(IdentifyStep.java:48)
+    	at 
+org.gradle.internal.execution.steps.IdentifyStep.execute(IdentifyStep.java:35)
+    	at org.gradle.internal.execution.impl.DefaultExecutionEngine$1.execute(Def
+aultExecutionEngine.java:64)
+    	at org.gradle.api.internal.tasks.execution.ExecuteActionsTaskExecuter.exec
+uteIfValid(ExecuteActionsTaskExecuter.java:127)
+    	at org.gradle.api.internal.tasks.execution.ExecuteActionsTaskExecuter.exec
+ute(ExecuteActionsTaskExecuter.java:116)
+    	at org.gradle.api.internal.tasks.execution.ProblemsTaskPathTrackingTaskExe
+cuter.execute(ProblemsTaskPathTrackingTaskExecuter.java:41)
+    	at org.gradle.api.internal.tasks.execution.FinalizePropertiesTaskExecuter.
+execute(FinalizePropertiesTaskExecuter.java:46)
+    	at org.gradle.api.internal.tasks.execution.ResolveTaskExecutionModeExecute
+r.execute(ResolveTaskExecutionModeExecuter.java:51)
+    	at org.gradle.api.internal.tasks.execution.SkipTaskWithNoActionsExecuter.e
+xecute(SkipTaskWithNoActionsExecuter.java:57)
+    	at org.gradle.api.internal.tasks.execution.SkipOnlyIfTaskExecuter.execute(
+SkipOnlyIfTaskExecuter.java:74)
+    	at org.gradle.api.internal.tasks.execution.CatchExceptionTaskExecuter.exec
+ute(CatchExceptionTaskExecuter.java:36)
+    	at org.gradle.api.internal.tasks.execution.EventFiringTaskExecuter$1.execu
+teTask(EventFiringTaskExecuter.java:77)
+    	at org.gradle.api.internal.tasks.execution.EventFiringTaskExecuter$1.call(
+EventFiringTaskExecuter.java:55)
+    	at org.gradle.api.internal.tasks.execution.EventFiringTaskExecuter$1.call(
+EventFiringTaskExecuter.java:52)
+    	at org.gradle.internal.operations.DefaultBuildOperationRunner$CallableBuil
+dOperationWorker.execute(DefaultBuildOperationRunner.java:210)
+    	at org.gradle.internal.operations.DefaultBuildOperationRunner$CallableBuil
+dOperationWorker.execute(DefaultBuildOperationRunner.java:205)
+    	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(De
+faultBuildOperationRunner.java:67)
+    	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(De
+faultBuildOperationRunner.java:60)
+    	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(Defa
+ultBuildOperationRunner.java:167)
+    	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(Defa
+ultBuildOperationRunner.java:60)
+    	at org.gradle.internal.operations.DefaultBuildOperationRunner.call(Default
+BuildOperationRunner.java:54)
+    	at org.gradle.api.internal.tasks.execution.EventFiringTaskExecuter.execute
+(EventFiringTaskExecuter.java:52)
+    	at org.gradle.execution.plan.LocalTaskNodeExecutor.execute(LocalTaskNodeEx
+ecutor.java:42)
+    	at org.gradle.execution.taskgraph.DefaultTaskExecutionGraph$InvokeNodeExec
+utorsAction.execute(DefaultTaskExecutionGraph.java:331)
+    	at org.gradle.execution.taskgraph.DefaultTaskExecutionGraph$InvokeNodeExec
+utorsAction.execute(DefaultTaskExecutionGraph.java:318)
+    	at org.gradle.execution.taskgraph.DefaultTaskExecutionGraph$BuildOperation
+AwareExecutionAction.lambda$execute$0(DefaultTaskExecutionGraph.java:314)
+    	at org.gradle.internal.operations.CurrentBuildOperationRef.with(CurrentBui
+ldOperationRef.java:85)
+    	at org.gradle.execution.taskgraph.DefaultTaskExecutionGraph$BuildOperation
+AwareExecutionAction.execute(DefaultTaskExecutionGraph.java:314)
+    	at org.gradle.execution.taskgraph.DefaultTaskExecutionGraph$BuildOperation
+AwareExecutionAction.execute(DefaultTaskExecutionGraph.java:303)
+    	at org.gradle.execution.plan.DefaultPlanExecutor$ExecutorWorker.execute(De
+faultPlanExecutor.java:459)
+    	at org.gradle.execution.plan.DefaultPlanExecutor$ExecutorWorker.run(Defaul
+tPlanExecutor.java:376)
+    	at org.gradle.internal.concurrent.ExecutorPolicy$CatchAndRecordFailures.on
+Execute(ExecutorPolicy.java:64)
+    	at org.gradle.internal.concurrent.AbstractManagedExecutor$1.run(AbstractMa
+nagedExecutor.java:48)
+    	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(Unknown 
+Source)
+    	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(Unknown 
+Source)
+    	at java.base/java.lang.Thread.run(Unknown Source)
+    Caused by: java.nio.file.NoSuchFileException: C:\code\Keeply-Mobile\build\a
+pp\intermediates\incremental\release\mergeReleaseResources\compile-file-map.pro
+perties
+    	at java.base/sun.nio.fs.WindowsException.translateToIOException(Unknown 
+Source)
+    	at java.base/sun.nio.fs.WindowsException.rethrowAsIOException(Unknown 
+Source)
+    	at java.base/sun.nio.fs.WindowsException.rethrowAsIOException(Unknown 
+Source)
+    	at java.base/sun.nio.fs.WindowsFileSystemProvider.newFileChannel(Unknown 
+Source)
+    	... 141 more
+
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':app:mergeReleaseResources'.
+> Multiple task action failures occurred:
+   > Error: C:\code\Keeply-Mobile\build\app\intermediates\incremental\release\m
+ergeReleaseResources\compile-file-map.properties (O sistema n├úo pode 
+encontrar o caminho especificado)
+   > A failure occurred while executing 
+com.android.build.gradle.internal.res.ResourceCompilerRunnable
+      > Resource compilation failed (C:\code\Keeply-Mobile\build\app\intermedia
+tes\incremental\release\mergeReleaseResources\merged.dir\values\values.xml (O 
+sistema n├úo pode encontrar o caminho especificado). Cause: 
+java.nio.file.NoSuchFileException: C:\code\Keeply-Mobile\build\app\intermediate
+s\incremental\release\mergeReleaseResources\merged.dir\values\values.xml). 
+Check logs for more details.
+   > A failure occurred while executing 
+com.android.build.gradle.internal.res.ResourceCompilerRunnable
+      > Resource compilation failed (C:\code\Keeply-Mobile\build\app\intermedia
+tes\incremental\release\mergeReleaseResources\merged.dir\values-hi\values-hi.xm
+l (O sistema n├úo pode encontrar o caminho especificado). Cause: 
+java.nio.file.NoSuchFileException: C:\code\Keeply-Mobile\build\app\intermediate
+s\incremental\release\mergeReleaseResources\merged.dir\values-hi\values-hi.xml)
+. Check logs for more details.
+   > A failure occurred while executing 
+com.android.build.gradle.internal.res.ResourceCompilerRunnable
+      > Resource compilation failed (C:\code\Keeply-Mobile\build\app\intermedia
+tes\incremental\release\mergeReleaseResources\merged.dir\values-pt\values-pt.xm
+l (O sistema n├úo pode encontrar o caminho especificado). Cause: 
+java.nio.file.NoSuchFileException: C:\code\Keeply-Mobile\build\app\intermediate
+s\incremental\release\mergeReleaseResources\merged.dir\values-pt\values-pt.xml)
+. Check logs for more details.
+   > A failure occurred while executing 
+com.android.build.gradle.internal.res.ResourceCompilerRunnable
+      > Resource compilation failed (C:\code\Keeply-Mobile\build\app\intermedia
+tes\incremental\release\mergeReleaseResources\merged.dir\values-watch-v21\value
+s-watch-v21.xml (O sistema n├úo pode encontrar o caminho especificado). Cause: 
+java.nio.file.NoSuchFileException: C:\code\Keeply-Mobile\build\app\intermediate
+s\incremental\release\mergeReleaseResources\merged.dir\values-watch-v21\values-
+watch-v21.xml). Check logs for more details.
+   > A failure occurred while executing 
+com.android.build.gradle.internal.res.ResourceCompilerRunnable
+      > Resource compilation failed (C:\code\Keeply-Mobile\build\app\intermedia
+tes\incremental\release\mergeReleaseResources\merged.dir\values-watch-v20\value
+s-watch-v20.xml (O sistema n├úo pode encontrar o caminho especificado). Cause: 
+java.nio.file.NoSuchFileException: C:\code\Keeply-Mobile\build\app\intermediate
+s\incremental\release\mergeReleaseResources\merged.dir\values-watch-v20\values-
+watch-v20.xml). Check logs for more details.
+   > A failure occurred while executing 
+com.android.build.gradle.internal.res.ResourceCompilerRunnable
+      > Resource compilation failed (C:\code\Keeply-Mobile\build\app\intermedia
+tes\incremental\release\mergeReleaseResources\merged.dir\values-hr\values-hr.xm
+l (O sistema n├úo pode encontrar o caminho especificado). Cause: 
+java.nio.file.NoSuchFileException: C:\code\Keeply-Mobile\build\app\intermediate
+s\incremental\release\mergeReleaseResources\merged.dir\values-hr\values-hr.xml)
+. Check logs for more details.
+   > A failure occurred while executing 
+com.android.build.gradle.internal.res.ResourceCompilerRunnable
+      > Resource compilation failed (C:\code\Keeply-Mobile\build\app\intermedia
+tes\incremental\release\mergeReleaseResources\merged.dir\values-hu\values-hu.xm
+l (O sistema n├úo pode encontrar o caminho especificado). Cause: 
+java.nio.file.NoSuchFileException: C:\code\Keeply-Mobile\build\app\intermediate
+s\incremental\release\mergeReleaseResources\merged.dir\values-hu\values-hu.xml)
+. Check logs for more details.
+   > A failure occurred while executing 
+com.android.build.gradle.internal.res.ResourceCompilerRunnable
+      > Resource compilation failed (C:\code\Keeply-Mobile\build\app\intermedia
+tes\incremental\release\mergeReleaseResources\merged.dir\values-hy\values-hy.xm
+l (O sistema n├úo pode encontrar o caminho especificado). Cause: 
+java.nio.file.NoSuchFileException: C:\code\Keeply-Mobile\build\app\intermediate
+s\incremental\release\mergeReleaseResources\merged.dir\values-hy\values-hy.xml)
+. Check logs for more details.
+   > A failure occurred while executing 
+com.android.build.gradle.internal.res.ResourceCompilerRunnable
+      > Resource compilation failed (C:\code\Keeply-Mobile\build\app\intermedia
+tes\incremental\release\mergeReleaseResources\merged.dir\values-v16\values-v16.
+xml (O sistema n├úo pode encontrar o caminho especificado). Cause: 
+java.nio.file.NoSuchFileException: C:\code\Keeply-Mobile\build\app\intermediate
+s\incremental\release\mergeReleaseResources\merged.dir\values-v16\values-v16.xm
+l). Check logs for more details.
+   > A failure occurred while executing 
+com.android.build.gradle.internal.res.ResourceCompilerRunnable
+      > Resource compilation failed (C:\code\Keeply-Mobile\build\app\intermedia
+tes\incremental\release\mergeReleaseResources\merged.dir\values-v18\values-v18.
+xml (O sistema n├úo pode encontrar o caminho especificado). Cause: 
+java.nio.file.NoSuchFileException: C:\code\Keeply-Mobile\build\app\intermediate
+s\incremental\release\mergeReleaseResources\merged.dir\values-v18\values-v18.xm
+l). Check logs for more details.
+   > A failure occurred while executing 
+com.android.build.gradle.internal.res.ResourceCompilerRunnable
+      > Resource compilation failed (C:\code\Keeply-Mobile\build\app\intermedia
+tes\incremental\release\mergeReleaseResources\merged.dir\values-v17\values-v17.
+xml (O sistema n├úo pode encontrar o caminho especificado). Cause: 
+java.nio.file.NoSuchFileException: C:\code\Keeply-Mobile\build\app\intermediate
+s\incremental\release\mergeReleaseResources\merged.dir\values-v17\values-v17.xm
+l). Check logs for more details.
+   > A failure occurred while executing 
+com.android.build.gradle.internal.res.ResourceCompilerRunnable
+      > Resource compilation failed (C:\code\Keeply-Mobile\build\app\intermedia
+tes\incremental\release\mergeReleaseResources\merged.dir\values-ldltr-v21\value
+s-ldltr-v21.xml (O sistema n├úo pode encontrar o caminho especificado). Cause: 
+java.nio.file.NoSuchFileException: C:\code\Keeply-Mobile\build\app\intermediate
+s\incremental\release\mergeReleaseResources\merged.dir\values-ldltr-v21\values-
+ldltr-v21.xml). Check logs for more details.
+
+* Try:
+> Run with --stacktrace option to get the stack trace.
+> Run with --info or --debug option to get more log output.
+> Run with --scan to get full insights.
+> Get more help at https://help.gradle.org.
+
+BUILD FAILED in 1m 27s
+Running Gradle task 'assembleRelease'...                           87,6s
+[!] Gradle threw an error while downloading artifacts from the network.
+Retrying Gradle Build: #1, wait time: 100ms
+Running Gradle task 'assembleRelease'...                        
+C:\code\Keeply-Mobile\.dart_tool\package_config.json does not exist.
+Did you run this command from the same directory as your pubspec.yaml file?
+C:\code\Keeply-Mobile\.dart_tool\package_config.json does not exist.
+Did you run this command from the same directory as your pubspec.yaml file?
+Target gen_dart_plugin_registrant failed: Error: 
+Target dart_build failed: Error: 
+
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':app:compileFlutterBuildRelease'.
+> Process 'command 
+'C:\src\flutter_windows_3.41.6-stable\flutter\bin\flutter.bat'' finished with 
+non-zero exit value 1
+
+* Try:
+> Run with --stacktrace option to get the stack trace.
+> Run with --info or --debug option to get more log output.
+> Run with --scan to get full insights.
+> Get more help at https://help.gradle.org.
+
+BUILD FAILED in 3s
+Running Gradle task 'assembleRelease'...                            4,0s
+Gradle task assembleRelease failed with exit code 1
