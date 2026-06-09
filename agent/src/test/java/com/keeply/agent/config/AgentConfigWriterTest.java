@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -22,25 +23,30 @@ class AgentConfigWriterTest {
         ProtectionPlan plan = new ProtectionPlan(
                 ProtectionPlan.PlanType.CUSTOM,
                 List.of("/data/a", "/data/b"),
-                false,
+                true,
                 true,
                 true,
                 "0 4 * * *",
                 ProtectionPlan.RetentionMode.KEEP_DAYS,
                 15,
-                null
+                Instant.parse("2026-06-08T12:00:00Z")
         );
 
-        writer.savePlan("http://localhost:8080", "user@example.com", plan);
+        writer.savePlan("http://localhost:8080", "user@example.com", plan,
+                Instant.parse("2026-06-08T12:05:00Z"),
+                Instant.parse("2026-06-08T12:00:00Z"));
 
         AgentConfigReader.UiConfig saved = reader.read().orElseThrow();
         assertEquals("http://localhost:8080", saved.backendUrl());
         assertEquals("user@example.com", saved.email());
         assertEquals(List.of("/data/a", "/data/b"), saved.sources());
         assertEquals("0 4 * * *", saved.cron());
+        assertTrue(saved.cdpEnabled());
         assertTrue(saved.validationEnabled());
         assertEquals("KEEP_DAYS", saved.retentionMode());
         assertEquals(15, saved.retentionDays());
+        assertEquals(Instant.parse("2026-06-08T12:05:00Z"), saved.localUpdatedAt());
+        assertEquals(Instant.parse("2026-06-08T12:00:00Z"), saved.lastRemoteUpdatedAt());
         assertTrue(configPath.toFile().isFile());
     }
 

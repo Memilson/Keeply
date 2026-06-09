@@ -10,4 +10,9 @@ public interface TransferObjectClient {
     void uploadManifest(Path zstdFile);
     InputStream openManifest(UUID snapshotId);
     InputStream openChunk(String hash, ChunkCodec codec);
+    StoredObjectInfo statManifest(UUID snapshotId);
+    StoredObjectInfo statChunk(String hash, ChunkCodec codec);
+
+    record StoredObjectInfo(boolean readable, Long size) {
+    }
 }

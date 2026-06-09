@@ -1,6 +1,7 @@
 package com.keeply.agent.config;
 
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.List;
 
 public record AgentConfig(
@@ -10,7 +11,10 @@ public record AgentConfig(
         Backup backup,
         Schedule schedule,
         Retention retention,
-        Validation validation
+        Validation validation,
+        Cdp cdp,
+        Encryption encryption,
+        PlanSync planSync
 ) {
     public record Backend(String url) {
     }
@@ -31,5 +35,14 @@ public record AgentConfig(
     }
 
     public record Validation(Boolean enabled) {
+    }
+
+    public record Cdp(Boolean enabled) {
+    }
+
+    public record Encryption(Boolean enabled, String password) {
+    }
+
+    public record PlanSync(Instant localUpdatedAt, Instant lastRemoteUpdatedAt) {
     }
 }

@@ -57,7 +57,6 @@ const ICONS: Record<string, React.ReactNode> = {
 const NAV_ITEMS: Item[] = [
   { href: "/dashboard", label: "Visão geral", icon: ICONS.grid },
   { href: "/dashboard/machines", label: "Máquinas", icon: ICONS.server },
-  { href: "/dashboard/backups", label: "Backups", icon: ICONS.archive },
   { href: "/dashboard/activities", label: "Atividades", icon: ICONS.chart },
   { href: "/dashboard/protection", label: "Proteção", icon: ICONS.shield },
 ];

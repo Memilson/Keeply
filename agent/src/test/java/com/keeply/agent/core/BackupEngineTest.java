@@ -10,14 +10,17 @@ import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.Assumptions;
 import org.mockito.MockedConstruction;
 
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermission;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -25,6 +28,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.mockConstruction;
 import static org.mockito.Mockito.when;
@@ -162,12 +168,100 @@ class BackupEngineTest {
         }
     }
 
+    @Test
+    void backupValidatesUploadedSnapshotBeforeCompletionWhenEnabled() throws Exception {
+        Path source = Files.createDirectory(tempDir.resolve("validated-source"));
+        Files.writeString(source.resolve("data.txt"), "validated payload");
+        TrackingBackendClient backend = new TrackingBackendClient(true);
+        List<BackupProgressListener.BackupProgress> progressEvents = new ArrayList<>();
+
+        try (LocalDatabase db = new LocalDatabase(tempDir.resolve("validated.sqlite").toString());
+             MockedConstruction<DirectTransferStorage> ignored = mockTransferStorageWithRemoteObjects(
+                     backend.transferSessionId, tempDir.resolve("uploaded-objects"), false)) {
+            BackupEngine backupEngine = new BackupEngine(backend, db, progressEvents::add);
+            backupEngine.backup(UUID.randomUUID(), source);
+        }
+
+        assertEquals(1, backend.completeSnapshotCalls);
+        assertTrue(progressEvents.stream().anyMatch(event -> event.message().equals("Validando backup")));
+        assertTrue(progressEvents.stream().anyMatch(event -> event.message().equals("Validação concluída")));
+    }
+
+    @Test
+    void backupFailsWhenPostBackupValidationCannotReadRemoteChunk() throws Exception {
+        Path source = Files.createDirectory(tempDir.resolve("invalid-source"));
+        Files.writeString(source.resolve("data.txt"), "chunk missing remotely");
+        TrackingBackendClient backend = new TrackingBackendClient(true);
+
+        try (LocalDatabase db = new LocalDatabase(tempDir.resolve("invalid.sqlite").toString());
+             MockedConstruction<DirectTransferStorage> ignored = mockTransferStorageWithRemoteObjects(
+                     backend.transferSessionId, tempDir.resolve("uploaded-missing"), true)) {
+            BackupEngine backupEngine = new BackupEngine(backend, db);
+
+            BackupSnapshotException error = assertThrows(BackupSnapshotException.class,
+                    () -> backupEngine.backup(UUID.randomUUID(), source));
+
+            assertTrue(error.userMessage().contains("Validação pós-backup falhou"));
+            assertEquals(0, backend.completeSnapshotCalls);
+            assertEquals(backend.snapshotId, backend.failedSnapshotId);
+        }
+    }
+
     private static MockedConstruction<DirectTransferStorage> mockTransferStorage(UUID sessionId) {
         return mockConstruction(DirectTransferStorage.class, (mock, context) -> {
             when(mock.sessionId()).thenReturn(sessionId);
             doNothing().when(mock).uploadManifest(org.mockito.ArgumentMatchers.any());
             doNothing().when(mock).uploadChunk(org.mockito.ArgumentMatchers.anyString(),
                     org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+        });
+    }
+
+    private MockedConstruction<DirectTransferStorage> mockTransferStorageWithRemoteObjects(UUID sessionId,
+                                                                                           Path outputDir,
+                                                                                           boolean omitChunkFromRemote) {
+        return mockConstruction(DirectTransferStorage.class, (mock, context) -> {
+            when(mock.sessionId()).thenReturn(sessionId);
+            Map<String, Path> uploadedChunks = new HashMap<>();
+            Path[] manifestHolder = new Path[1];
+
+            doAnswer(invocation -> {
+                Path source = invocation.getArgument(0);
+                Files.createDirectories(outputDir);
+                Path stored = outputDir.resolve("manifest.json.zst");
+                Files.copy(source, stored, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                manifestHolder[0] = stored;
+                return null;
+            }).when(mock).uploadManifest(any());
+
+            doAnswer(invocation -> {
+                String hash = invocation.getArgument(0);
+                Path source = invocation.getArgument(1);
+                if (!omitChunkFromRemote) {
+                    Files.createDirectories(outputDir);
+                    Path stored = outputDir.resolve(hash + ".zst");
+                    Files.copy(source, stored, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                    uploadedChunks.put(hash, stored);
+                }
+                return null;
+            }).when(mock).uploadChunk(anyString(), any(), any());
+
+            doAnswer(invocation -> Files.newInputStream(manifestHolder[0])).when(mock).openManifest(any());
+            doAnswer(invocation -> {
+                Path stored = uploadedChunks.get(invocation.getArgument(0));
+                if (stored == null) {
+                    throw new IllegalStateException("chunk missing");
+                }
+                return Files.newInputStream(stored);
+            }).when(mock).openChunk(anyString(), any());
+            doAnswer(invocation -> new TransferObjectClient.StoredObjectInfo(true, Files.size(manifestHolder[0])))
+                    .when(mock).statManifest(any());
+            doAnswer(invocation -> {
+                Path stored = uploadedChunks.get(invocation.getArgument(0));
+                if (stored == null) {
+                    throw new IllegalStateException("chunk missing");
+                }
+                return new TransferObjectClient.StoredObjectInfo(true, Files.size(stored));
+            }).when(mock).statChunk(anyString(), any());
         });
     }
 
@@ -188,13 +282,20 @@ class BackupEngineTest {
     private static final class TrackingBackendClient extends BackendClient {
         private final UUID snapshotId = UUID.randomUUID();
         private final UUID transferSessionId = UUID.randomUUID();
+        private final boolean validationEnabled;
         private UUID cancelledTransferSessionId;
         private UUID failedSnapshotId;
         private String failedSnapshotMessage;
         private int startSnapshotCalls;
+        private int completeSnapshotCalls;
 
         private TrackingBackendClient() {
+            this(false);
+        }
+
+        private TrackingBackendClient(boolean validationEnabled) {
             super("http://localhost:8080", null);
+            this.validationEnabled = validationEnabled;
         }
 
         @Override
@@ -218,8 +319,23 @@ class BackupEngineTest {
         }
 
         @Override
+        public java.util.Optional<com.keeply.agent.model.ProtectionPlan> getDevicePlan(UUID deviceId) {
+            return java.util.Optional.of(new com.keeply.agent.model.ProtectionPlan(
+                    com.keeply.agent.model.ProtectionPlan.PlanType.CUSTOM,
+                    List.of("/validated-source"),
+                    false,
+                    validationEnabled,
+                    false,
+                    "0 2 * * *",
+                    com.keeply.agent.model.ProtectionPlan.RetentionMode.KEEP_ALL,
+                    null,
+                    Instant.now()));
+        }
+
+        @Override
         public void completeSnapshot(UUID snapshotId, UUID transferSessionId, long totalFiles,
                                      long totalOriginalSize, long totalCompressedSize) {
+            completeSnapshotCalls++;
         }
 
         @Override

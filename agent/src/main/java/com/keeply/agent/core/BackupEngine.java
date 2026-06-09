@@ -1,6 +1,12 @@
 package com.keeply.agent.core;
 
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.keeply.agent.api.BackendClient;
+import com.keeply.agent.model.ManifestChunk;
+import com.keeply.agent.model.ProtectionPlan;
+import com.keeply.agent.model.SnapshotManifest;
 import com.keeply.agent.model.SnapshotSummary;
 import com.keeply.agent.model.StartedSnapshot;
 import com.keeply.agent.model.TransferCredentials;
@@ -12,11 +18,14 @@ import org.slf4j.LoggerFactory;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
+import java.io.InputStream;
 import java.util.List;
 import java.util.Map;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -31,8 +40,13 @@ public class BackupEngine {
     private static final int PROCESSING_START_PERCENT = 2;
     private static final int PROCESSING_END_PERCENT = 94;
     private static final int MANIFEST_PERCENT = 95;
+    private static final int VALIDATION_PERCENT = 96;
     private static final int SNAPSHOT_COMPLETION_PERCENT = 97;
     private static final int COMPLETED_PERCENT = 100;
+    private static final ObjectMapper MANIFEST_MAPPER = new ObjectMapper()
+            .registerModule(new JavaTimeModule())
+            .findAndRegisterModules()
+            .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
     private final BackendClient backend;
     private final LocalDatabase db;
     private final BackupProgressListener progressListener;
@@ -61,6 +75,7 @@ public class BackupEngine {
             validateSourceRoot(sourceRoot);
             autoSyncCache(deviceId, sourceRoot);
             emitProgress(SCANNING_PERCENT, "Escaneando arquivos", sourceRoot);
+            boolean validationEnabled = resolveValidationEnabled(deviceId);
 
             long scanStartedAt = System.nanoTime();
             FileScanner.ScanStats preScanStats = FileScanner.walk(sourceRoot, file -> {
@@ -315,6 +330,12 @@ public class BackupEngine {
                     emitProgress(MANIFEST_PERCENT, "Enviando manifesto", sourceRoot);
                     db.writeManifestZstd(manifestFile, snapshotId.toString(), sourcePath);
                     transferStorage.uploadManifest(manifestFile);
+                    if (validationEnabled) {
+                        emitProgress(VALIDATION_PERCENT, "Validando backup", sourceRoot);
+                        validateUploadedSnapshot(snapshotId, transferStorage.sessionId(), sourcePath,
+                                manifestFile, transferStorage, writeCodec, sessionChunks, totalFiles.get());
+                        emitProgress(VALIDATION_PERCENT, "Validação concluída", sourceRoot);
+                    }
                     emitProgress(SNAPSHOT_COMPLETION_PERCENT, "Concluindo snapshot", sourceRoot);
                     backend.completeSnapshot(snapshotId, transferStorage.sessionId(), totalFiles.get(), totalOriginalSize.get(), totalCompressedSize);
                     emitProgress(COMPLETED_PERCENT, "Backup concluído", sourceRoot);
@@ -355,6 +376,82 @@ public class BackupEngine {
             }
         } finally {
             backingUp = false;
+        }
+    }
+
+    private boolean resolveValidationEnabled(UUID deviceId) {
+        try {
+            return backend.getDevicePlan(deviceId).map(ProtectionPlan::validationEnabled).orElse(false);
+        } catch (Exception e) {
+            log.warn("event=backup.validation status=plan_lookup_failed message={}", e.getMessage());
+            return false;
+        }
+    }
+
+    private void validateUploadedSnapshot(UUID snapshotId, UUID transferSessionId, String sourcePath,
+                                          Path localManifestFile, TransferObjectClient transferStorage,
+                                          ChunkCodec codec, Map<String, ChunkMetadata> sessionChunks,
+                                          int expectedFiles) {
+        try {
+            TransferObjectClient.StoredObjectInfo manifestInfo = transferStorage.statManifest(snapshotId);
+            if (!manifestInfo.readable()) {
+                throw new IllegalStateException("Manifesto remoto não está legível");
+            }
+            long localManifestSize = Files.size(localManifestFile);
+            if (manifestInfo.size() != null && manifestInfo.size() != localManifestSize) {
+                throw new IllegalStateException("Tamanho do manifesto remoto difere do arquivo enviado");
+            }
+
+            SnapshotManifest manifest;
+            try (InputStream raw = transferStorage.openManifest(snapshotId);
+                 ZstdInputStream zstd = new ZstdInputStream(raw)) {
+                manifest = MANIFEST_MAPPER.readValue(zstd, SnapshotManifest.class);
+            }
+
+            if (manifest == null) {
+                throw new IllegalStateException("Manifesto remoto está vazio");
+            }
+            if (!snapshotId.toString().equals(manifest.snapshotId())) {
+                throw new IllegalStateException("snapshotId do manifesto remoto não confere");
+            }
+            if (!Objects.equals(sourcePath, manifest.sourcePath())) {
+                throw new IllegalStateException("sourcePath do manifesto remoto não confere");
+            }
+            if (manifest.files() == null) {
+                throw new IllegalStateException("Manifesto remoto sem lista de arquivos");
+            }
+            if (manifest.files().size() != expectedFiles) {
+                throw new IllegalStateException("Contagem de arquivos do manifesto remoto não confere");
+            }
+
+            Set<String> distinctChunks = new HashSet<>();
+            for (var file : manifest.files()) {
+                if (file.chunks() == null) {
+                    continue;
+                }
+                for (ManifestChunk chunk : file.chunks()) {
+                    if (!distinctChunks.add(chunk.hash())) {
+                        continue;
+                    }
+                    TransferObjectClient.StoredObjectInfo chunkInfo = transferStorage.statChunk(chunk.hash(), codec);
+                    if (!chunkInfo.readable()) {
+                        throw new IllegalStateException("Chunk remoto não está legível: " + chunk.hash());
+                    }
+                    if (chunkInfo.size() != null && chunkInfo.size() != chunk.storedSize()) {
+                        throw new IllegalStateException("Tamanho remoto divergente para chunk " + chunk.hash());
+                    }
+                    try (InputStream chunkStream = transferStorage.openChunk(chunk.hash(), codec)) {
+                        chunkStream.readNBytes(1);
+                    }
+                }
+            }
+
+            if (distinctChunks.size() != sessionChunks.size()) {
+                throw new IllegalStateException("Contagem de chunks do manifesto remoto não confere");
+            }
+        } catch (Exception e) {
+            throw new BackupSnapshotException(snapshotId, transferSessionId, sourcePath,
+                    "Validação pós-backup falhou: " + safeMessage(e), e);
         }
     }
 

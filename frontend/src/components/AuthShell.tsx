@@ -55,7 +55,7 @@ export function AuthShell({ title, subtitle, children, footer }: ShellProps) {
 export function AuthInput(
   props: React.InputHTMLAttributes<HTMLInputElement> & { label: string }
 ) {
-  const { label, id, className: _cls, ...rest } = props;
+  const { label, id, ...rest } = props;
   const inputId = id ?? rest.name;
   return (
     <label htmlFor={inputId} className="block">

@@ -12,7 +12,6 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -29,8 +28,7 @@ import java.util.zip.ZipOutputStream;
 @Service
 @Transactional(readOnly = true)
 public class FileDownloadService {
-    private static final int MAX_SELECTED_FILES = 10;
-    // VULN-015: limite de 5 GB para download de archive (evita exhaustão de banda/memória)
+    // VULN-015: limite de 5 GB para download de archive (evita downloads sem limite operacional)
     private static final long MAX_ARCHIVE_TOTAL_BYTES = 5L * 1024 * 1024 * 1024;
 
     private final SnapshotRepository snapshotRepository;
@@ -65,37 +63,34 @@ public class FileDownloadService {
     public void streamSelectedArchive(UUID userId, UUID snapshotId, List<String> requestedPaths, HttpServletResponse response) throws IOException {
         requireCompletedSnapshot(userId, snapshotId);
         List<String> paths = normalizeSelectedPaths(requestedPaths);
-        List<SnapshotFile> files = paths.stream()
-                .map(path -> requireSnapshotFile(snapshotId, path))
+        List<ArchiveFile> files = paths.stream()
+                .flatMap(path -> resolveArchiveFiles(snapshotId, path).stream())
                 .toList();
 
         // VULN-015: verificar tamanho total antes de iniciar o stream
-        long totalSize = files.stream().mapToLong(f -> f.size).sum();
+        long totalSize = files.stream().mapToLong(f -> f.file.size).sum();
         if (totalSize > MAX_ARCHIVE_TOTAL_BYTES) {
             throw new IllegalArgumentException(
                     "Tamanho total dos arquivos selecionados excede o limite de 5 GB para download"
             );
         }
 
-        ByteArrayOutputStream buffer = new ByteArrayOutputStream();
-        try (ZipOutputStream zip = new ZipOutputStream(buffer)) {
+        response.setContentType("application/zip");
+        response.setHeader("Content-Disposition", "attachment; filename=\"keeply-selected-" + snapshotId + ".zip\"");
+
+        try (ZipOutputStream zip = new ZipOutputStream(response.getOutputStream())) {
             Map<String, Integer> usedEntryNames = new HashMap<>();
-            for (SnapshotFile file : files) {
-                ZipEntry entry = new ZipEntry(uniqueFlatEntryName(file.path, usedEntryNames));
-                if (file.lastModified != null) {
-                    entry.setTime(file.lastModified.toEpochMilli());
+            for (ArchiveFile archiveFile : files) {
+                ZipEntry entry = new ZipEntry(uniqueEntryName(archiveFile.entryName, usedEntryNames));
+                if (archiveFile.file.lastModified != null) {
+                    entry.setTime(archiveFile.file.lastModified.toEpochMilli());
                 }
                 zip.putNextEntry(entry);
-                streamSnapshotFileContent(userId, file, zip);
+                streamSnapshotFileContent(userId, archiveFile.file, zip);
                 zip.closeEntry();
             }
             zip.finish();
         }
-
-        response.setContentType("application/zip");
-        response.setHeader("Content-Disposition", "attachment; filename=\"keeply-selected-" + snapshotId + ".zip\"");
-        response.setContentLength(buffer.size());
-        buffer.writeTo(response.getOutputStream());
     }
 
     private Snapshot requireCompletedSnapshot(UUID userId, UUID snapshotId) {
@@ -112,6 +107,27 @@ public class FileDownloadService {
     private SnapshotFile requireSnapshotFile(UUID snapshotId, String filePath) {
         return snapshotFileRepository.findBySnapshotIdAndPath(snapshotId, filePath)
                 .orElseThrow(() -> new IllegalArgumentException("File not found in snapshot: " + filePath));
+    }
+
+    private List<ArchiveFile> resolveArchiveFiles(UUID snapshotId, String path) {
+        if (path.isBlank() || path.endsWith("/")) {
+            List<SnapshotFile> folderFiles = snapshotFileRepository.findBySnapshotIdAndPathStartingWith(
+                    snapshotId,
+                    path,
+                    org.springframework.data.domain.Sort.by("path").ascending()
+            );
+            if (folderFiles.isEmpty()) {
+                throw new IllegalArgumentException(path.isBlank()
+                        ? "Snapshot has no files"
+                        : "Folder not found in snapshot: " + path);
+            }
+            return folderFiles.stream()
+                    .map(file -> new ArchiveFile(file, relativeFolderEntryName(path, file.path)))
+                    .toList();
+        }
+
+        SnapshotFile file = requireSnapshotFile(snapshotId, path);
+        return List.of(new ArchiveFile(file, basename(file.path)));
     }
 
     /**
@@ -158,31 +174,44 @@ public class FileDownloadService {
 
         List<String> paths = requestedPaths.stream()
                 .map(path -> path == null ? null : path.trim())
-                .filter(path -> path != null && !path.isEmpty())
+                .filter(path -> path != null)
                 .distinct()
                 .toList();
 
         if (paths.isEmpty()) {
             throw new IllegalArgumentException("At least one file path must be provided");
         }
-        if (paths.size() > MAX_SELECTED_FILES) {
-            throw new IllegalArgumentException("A maximum of 10 files can be downloaded per archive");
-        }
         return paths;
     }
 
-    private String uniqueFlatEntryName(String snapshotPath, Map<String, Integer> usedEntryNames) {
-        String basename = basename(snapshotPath);
-        int count = usedEntryNames.merge(basename, 1, Integer::sum);
+    private String uniqueEntryName(String entryName, Map<String, Integer> usedEntryNames) {
+        String safeEntryName = safeZipEntryName(entryName);
+        int count = usedEntryNames.merge(safeEntryName, 1, Integer::sum);
         if (count == 1) {
-            return basename;
+            return safeEntryName;
         }
 
-        int dot = basename.lastIndexOf('.');
+        int slash = safeEntryName.lastIndexOf('/');
+        String dir = slash >= 0 ? safeEntryName.substring(0, slash + 1) : "";
+        String name = slash >= 0 ? safeEntryName.substring(slash + 1) : safeEntryName;
+        int dot = name.lastIndexOf('.');
         if (dot > 0) {
-            return basename.substring(0, dot) + " (" + count + ")" + basename.substring(dot);
+            return dir + name.substring(0, dot) + " (" + count + ")" + name.substring(dot);
         }
-        return basename + " (" + count + ")";
+        return dir + name + " (" + count + ")";
+    }
+
+    private String relativeFolderEntryName(String folderPath, String filePath) {
+        String relative = filePath.substring(Math.min(folderPath.length(), filePath.length()));
+        return relative.isBlank() ? basename(filePath) : relative;
+    }
+
+    private String safeZipEntryName(String entryName) {
+        String normalized = entryName.replace('\\', '/');
+        if (normalized.startsWith("/") || normalized.contains("../") || normalized.startsWith("..")) {
+            throw new IllegalArgumentException("Nome de arquivo inválido no snapshot: " + entryName);
+        }
+        return normalized;
     }
 
     private String basename(String snapshotPath) {
@@ -194,4 +223,6 @@ public class FileDownloadService {
         }
         return name;
     }
+
+    private record ArchiveFile(SnapshotFile file, String entryName) {}
 }

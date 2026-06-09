@@ -440,13 +440,13 @@ function SnapshotsSection({
       subtitle="Últimas execuções do ambiente"
       action={
         <Link
-          href="/dashboard/backups"
+          href="/dashboard/machines"
           className="text-[11px] font-semibold transition-colors duration-200 focus:outline-none"
           style={{ color: PURPLE_L }}
           onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = "#fff"; }}
           onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = PURPLE_L; }}
         >
-          Ver todos →
+          Ver em máquinas →
         </Link>
       }
       noPadding
@@ -550,7 +550,7 @@ function SnapshotsSection({
                     </td>
                     <td className="px-5 py-3 text-right">
                       <Link
-                        href={`/dashboard/backups/${snap.id}`}
+                        href="/dashboard/machines"
                         className="text-[11px] font-bold transition-colors duration-150"
                         style={{ color: PURPLE_L }}
                         onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = "#fff"; }}

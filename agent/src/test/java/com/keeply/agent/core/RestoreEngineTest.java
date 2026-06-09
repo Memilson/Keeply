@@ -120,5 +120,15 @@ class RestoreEngineTest {
         public InputStream openChunk(String hash, ChunkCodec codec) {
             throw new UnsupportedOperationException();
         }
+
+        @Override
+        public StoredObjectInfo statManifest(UUID snapshotId) {
+            return new StoredObjectInfo(true, (long) manifest.length);
+        }
+
+        @Override
+        public StoredObjectInfo statChunk(String hash, ChunkCodec codec) {
+            throw new UnsupportedOperationException();
+        }
     }
 }
