@@ -189,6 +189,12 @@ services:
       KEEPLY_JWT_SECRET: ${KEEPLY_JWT_SECRET}
       KEEPLY_MASTER_KEY: ${KEEPLY_MASTER_KEY}
       KEEPLY_TRUST_PROXY_HEADERS: ${KEEPLY_TRUST_PROXY_HEADERS:-true}
+      KEEPLY_AI_BASE_URL: ${KEEPLY_AI_BASE_URL:-https://openrouter.ai/api/v1}
+      KEEPLY_AI_MODEL: ${KEEPLY_AI_MODEL:-nvidia/nemotron-3-super-120b-a12b:free}
+      KEEPLY_AI_API_KEY: ${KEEPLY_AI_API_KEY}
+      KEEPLY_AI_TITLE: ${KEEPLY_AI_TITLE:-Keeply}
+      KEEPLY_AI_REFERER: ${KEEPLY_AI_REFERER:-https://keeply.app.br}
+      KEEPLY_AI_TIMEOUT_SECONDS: ${KEEPLY_AI_TIMEOUT_SECONDS:-60}
       JAVA_TOOL_OPTIONS: "-Xms256m -Xmx768m"
     depends_on:
       postgres:

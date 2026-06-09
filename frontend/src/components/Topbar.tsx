@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { KeeplyAiAssistant } from "./KeeplyAiAssistant";
 
 type Props = {
   title?: string;
@@ -56,6 +57,7 @@ export function Topbar({ title, subtitle, action }: Props) {
             {time}
           </span>
         )}
+        <KeeplyAiAssistant />
         {action}
       </div>
     </header>

@@ -91,3 +91,10 @@ keeply:
   audit:
     workers: ${KEEPLY_AUDIT_WORKERS:4}
     queue-size: ${KEEPLY_AUDIT_QUEUE_SIZE:16}
+  ai:
+    base-url: ${KEEPLY_AI_BASE_URL:https://openrouter.ai/api/v1}
+    model: ${KEEPLY_AI_MODEL:nvidia/nemotron-3-super-120b-a12b:free}
+    api-key: ${KEEPLY_AI_API_KEY:}
+    referer: ${KEEPLY_AI_REFERER:}
+    title: ${KEEPLY_AI_TITLE:Keeply}
+    timeout-seconds: ${KEEPLY_AI_TIMEOUT_SECONDS:60}
