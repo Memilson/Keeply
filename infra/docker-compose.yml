@@ -65,6 +65,12 @@ services:
       KEEPLY_MINIO_BUCKET: ${KEEPLY_MINIO_BUCKET:-keeply}
       KEEPLY_JWT_SECRET: ${KEEPLY_JWT_SECRET:-dev-jwt-secret-change-me-32chars-min}
       KEEPLY_MASTER_KEY: ${KEEPLY_MASTER_KEY:-dev-master-key-change-me-64hex}
+      KEEPLY_AI_BASE_URL: ${KEEPLY_AI_BASE_URL:-https://openrouter.ai/api/v1}
+      KEEPLY_AI_MODEL: ${KEEPLY_AI_MODEL:-nvidia/nemotron-3-super-120b-a12b:free}
+      KEEPLY_AI_API_KEY: ${KEEPLY_AI_API_KEY:-}
+      KEEPLY_AI_TITLE: ${KEEPLY_AI_TITLE:-Keeply}
+      KEEPLY_AI_REFERER: ${KEEPLY_AI_REFERER:-http://localhost:3000}
+      KEEPLY_AI_TIMEOUT_SECONDS: ${KEEPLY_AI_TIMEOUT_SECONDS:-60}
       JAVA_TOOL_OPTIONS: "-Xms256m -Xmx512m"
     ports:
       - "127.0.0.1:${BACKEND_PORT:-8080}:8080"
