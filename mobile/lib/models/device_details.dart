@@ -5,7 +5,6 @@ class DeviceDetails {
   final String kernelVersion;
   final int cpuCores;
   final int totalMemoryBytes;
-
   DeviceDetails({
     this.localIps = const [],
     this.cpuModel = '',
@@ -14,7 +13,6 @@ class DeviceDetails {
     this.cpuCores = 0,
     this.totalMemoryBytes = 0,
   });
-
   Map<String, dynamic> toJson() {
     return {
       'localIps': localIps,

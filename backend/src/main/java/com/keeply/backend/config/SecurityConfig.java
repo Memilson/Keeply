@@ -37,7 +37,7 @@ public class SecurityConfig {
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/auth/register", "/api/auth/login", "/api/auth/login-device", "/api/auth/refresh", "/actuator/health", "/actuator/prometheus").permitAll()
+                        .requestMatchers("/api/auth/register", "/api/auth/login", "/api/auth/login-device", "/api/auth/refresh", "/api/auth/qr/exchange", "/actuator/health", "/actuator/prometheus").permitAll()
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(traceIdFilter, UsernamePasswordAuthenticationFilter.class)

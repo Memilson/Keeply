@@ -22,7 +22,6 @@ class WsCommand {
   final String entryType;
   final String encryptionKey;
   final String raw;
-
   WsCommand({
     this.type = '',
     this.requestId = '',
@@ -48,7 +47,6 @@ class WsCommand {
     this.encryptionKey = '',
     this.raw = '',
   });
-
   factory WsCommand.fromJson(Map<String, dynamic> json) {
     return WsCommand(
       type: (json['type'] as String? ?? '').trim(),
@@ -76,25 +74,41 @@ class WsCommand {
       raw: '',
     );
   }
-
   factory WsCommand.fromLegacy(String payload) {
     if (payload == 'ping') return WsCommand(type: 'ping', raw: payload);
     if (payload == 'state') return WsCommand(type: 'state', raw: payload);
-    if (payload == 'snapshots') return WsCommand(type: 'snapshots', raw: payload);
+    if (payload == 'snapshots')
+      return WsCommand(type: 'snapshots', raw: payload);
     if (payload == 'fs.list') return WsCommand(type: 'fs.list', raw: payload);
     if (payload == 'fs.disks') return WsCommand(type: 'fs.disks', raw: payload);
     if (payload == 'backup') return WsCommand(type: 'backup', raw: payload);
     if (payload.startsWith('scan.scope:')) {
-      return WsCommand(type: 'scan.scope', scopeId: payload.substring(11), raw: payload);
+      return WsCommand(
+        type: 'scan.scope',
+        scopeId: payload.substring(11),
+        raw: payload,
+      );
     }
     if (payload.startsWith('config.source:')) {
-      return WsCommand(type: 'config.source', path: payload.substring(14), raw: payload);
+      return WsCommand(
+        type: 'config.source',
+        path: payload.substring(14),
+        raw: payload,
+      );
     }
     if (payload.startsWith('config.archive:')) {
-      return WsCommand(type: 'config.archive', path: payload.substring(15), raw: payload);
+      return WsCommand(
+        type: 'config.archive',
+        path: payload.substring(15),
+        raw: payload,
+      );
     }
     if (payload.startsWith('config.restoreRoot:')) {
-      return WsCommand(type: 'config.restoreRoot', path: payload.substring(19), raw: payload);
+      return WsCommand(
+        type: 'config.restoreRoot',
+        path: payload.substring(19),
+        raw: payload,
+      );
     }
     if (payload.startsWith('backup:')) {
       final parts = payload.substring(7).split('|');
@@ -107,7 +121,14 @@ class WsCommand {
         if (parts[i].startsWith('source=')) src = parts[i].substring(7);
         if (parts[i].startsWith('key=')) key = parts[i].substring(4);
       }
-      return WsCommand(type: 'backup', label: lbl, storage: stor, sourcePath: src, encryptionKey: key, raw: payload);
+      return WsCommand(
+        type: 'backup',
+        label: lbl,
+        storage: stor,
+        sourcePath: src,
+        encryptionKey: key,
+        raw: payload,
+      );
     }
     if (payload.startsWith('restore.file:')) {
       final parts = payload.substring(13).split('|');

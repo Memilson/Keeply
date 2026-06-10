@@ -100,6 +100,8 @@ public class MainShellController {
         this.onLogout = onLogout;
     }
 
+
+
     public void setNavigationHandler(Consumer<String> handler) {
         this.onNavigate = handler;
     }

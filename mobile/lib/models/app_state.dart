@@ -1,5 +1,4 @@
 import 'scan_scope.dart';
-
 class AppState {
   String source;
   String archive;
@@ -7,7 +6,6 @@ class AppState {
   ScanScope scanScope;
   bool archiveSplitEnabled;
   int archiveSplitMaxBytes;
-
   AppState({
     this.source = '',
     this.archive = '',
@@ -16,7 +14,6 @@ class AppState {
     this.archiveSplitEnabled = false,
     this.archiveSplitMaxBytes = 0,
   }) : scanScope = scanScope ?? ScanScope();
-
   factory AppState.fromJson(Map<String, dynamic> json) {
     return AppState(
       source: json['source'] as String? ?? '',
@@ -29,7 +26,6 @@ class AppState {
       archiveSplitMaxBytes: json['archiveSplitMaxBytes'] as int? ?? 0,
     );
   }
-
   Map<String, dynamic> toJson() {
     return {
       'source': source,
