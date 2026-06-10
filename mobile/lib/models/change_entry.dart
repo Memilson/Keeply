@@ -5,7 +5,6 @@ class ChangeEntry {
   final int newSize;
   final int oldMtime;
   final int newMtime;
-
   ChangeEntry({
     this.path = '',
     this.status = '',
@@ -14,7 +13,6 @@ class ChangeEntry {
     this.oldMtime = 0,
     this.newMtime = 0,
   });
-
   factory ChangeEntry.fromJson(Map<String, dynamic> json) {
     return ChangeEntry(
       path: json['path'] as String? ?? '',

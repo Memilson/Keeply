@@ -6,7 +6,6 @@ class BackupStats {
   int uniqueChunksInserted;
   int bytesRead;
   int warnings;
-
   BackupStats({
     this.scanned = 0,
     this.added = 0,
@@ -16,7 +15,6 @@ class BackupStats {
     this.bytesRead = 0,
     this.warnings = 0,
   });
-
   factory BackupStats.fromJson(Map<String, dynamic> json) {
     return BackupStats(
       scanned: json['filesScanned'] as int? ?? 0,
@@ -29,7 +27,6 @@ class BackupStats {
     );
   }
 }
-
 class BackupProgress {
   BackupStats stats;
   int filesQueued;
@@ -37,7 +34,6 @@ class BackupProgress {
   bool discoveryComplete;
   String phase;
   String currentFile;
-
   BackupProgress({
     BackupStats? stats,
     this.filesQueued = 0,
@@ -46,7 +42,6 @@ class BackupProgress {
     this.phase = 'idle',
     this.currentFile = '',
   }) : stats = stats ?? BackupStats();
-
   factory BackupProgress.fromJson(Map<String, dynamic> json) {
     return BackupProgress(
       stats: BackupStats.fromJson(json),
@@ -57,7 +52,6 @@ class BackupProgress {
       currentFile: json['currentFile'] as String? ?? '',
     );
   }
-
   double get progressPercent {
     if (filesQueued <= 0) return 0.0;
     return (filesCompleted / filesQueued).clamp(0.0, 1.0);

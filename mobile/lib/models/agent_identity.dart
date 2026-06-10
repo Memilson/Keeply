@@ -5,7 +5,6 @@ class AgentIdentity {
   String pairingCode;
   String certPemPath;
   String keyPemPath;
-
   AgentIdentity({
     this.deviceId = '',
     this.userId = '',
@@ -14,10 +13,8 @@ class AgentIdentity {
     this.certPemPath = '',
     this.keyPemPath = '',
   });
-
   bool get isPaired => userId.isNotEmpty;
   bool get hasCertificate => certPemPath.isNotEmpty && keyPemPath.isNotEmpty;
-
   Map<String, String> toMeta() {
     return {
       'device_id': deviceId,
@@ -28,7 +25,6 @@ class AgentIdentity {
       'key_pem': keyPemPath,
     };
   }
-
   factory AgentIdentity.fromMeta(Map<String, String> meta) {
     return AgentIdentity(
       deviceId: meta['device_id'] ?? '',

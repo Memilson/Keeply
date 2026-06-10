@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-
 class AppTheme {
   static const Color primaryColor = Color(0xFF4F46E5);
   static const Color secondaryColor = Color(0xFF818CF8);
@@ -12,7 +11,6 @@ class AppTheme {
   static const Color textPrimary = Color(0xFF1E293B);
   static const Color textSecondary = Color(0xFF64748B);
   static const Color dividerColor = Color(0xFFE2E8F0);
-
   static ThemeData get lightTheme {
     return ThemeData(
       useMaterial3: true,
@@ -45,10 +43,7 @@ class AppTheme {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
           ),
-          textStyle: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-          ),
+          textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
@@ -64,7 +59,10 @@ class AppTheme {
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: Colors.white,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 20,
+          vertical: 16,
+        ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
           borderSide: const BorderSide(color: dividerColor),
@@ -85,9 +83,7 @@ class AppTheme {
       ),
       cardTheme: CardThemeData(
         elevation: 0,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         color: surfaceColor,
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       ),
@@ -96,10 +92,7 @@ class AppTheme {
         foregroundColor: Colors.white,
         elevation: 4,
       ),
-      dividerTheme: const DividerThemeData(
-        color: dividerColor,
-        thickness: 1,
-      ),
+      dividerTheme: const DividerThemeData(color: dividerColor, thickness: 1),
       textTheme: const TextTheme(
         headlineLarge: TextStyle(
           fontSize: 32,
@@ -121,14 +114,8 @@ class AppTheme {
           fontWeight: FontWeight.w500,
           color: textPrimary,
         ),
-        bodyLarge: TextStyle(
-          fontSize: 16,
-          color: textPrimary,
-        ),
-        bodyMedium: TextStyle(
-          fontSize: 14,
-          color: textSecondary,
-        ),
+        bodyLarge: TextStyle(fontSize: 16, color: textPrimary),
+        bodyMedium: TextStyle(fontSize: 14, color: textSecondary),
         labelLarge: TextStyle(
           fontSize: 14,
           fontWeight: FontWeight.w600,
@@ -137,7 +124,6 @@ class AppTheme {
       ),
     );
   }
-
   static ThemeData get darkTheme {
     return ThemeData(
       useMaterial3: true,
@@ -170,16 +156,16 @@ class AppTheme {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
           ),
-          textStyle: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-          ),
+          textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: const Color(0xFF1E1E1E),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 20,
+          vertical: 16,
+        ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide.none,
@@ -201,9 +187,7 @@ class AppTheme {
       ),
       cardTheme: CardThemeData(
         elevation: 0,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         color: const Color(0xFF1E1E1E),
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       ),
@@ -213,10 +197,7 @@ class AppTheme {
         unselectedItemColor: Colors.grey,
         elevation: 10,
       ),
-      dividerTheme: DividerThemeData(
-        color: Colors.grey[800],
-        thickness: 1,
-      ),
+      dividerTheme: DividerThemeData(color: Colors.grey[800], thickness: 1),
     );
   }
 }

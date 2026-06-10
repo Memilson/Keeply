@@ -5,7 +5,6 @@ class Snapshot {
   final String label;
   final String backupType;
   final int fileCount;
-
   Snapshot({
     this.id = 0,
     this.createdAt = '',
@@ -14,7 +13,6 @@ class Snapshot {
     this.backupType = '',
     this.fileCount = 0,
   });
-
   factory Snapshot.fromJson(Map<String, dynamic> json) {
     return Snapshot(
       id: json['id'] as int? ?? 0,
@@ -25,7 +23,6 @@ class Snapshot {
       fileCount: json['fileCount'] as int? ?? 0,
     );
   }
-
   Map<String, dynamic> toJson() {
     return {
       'id': id,

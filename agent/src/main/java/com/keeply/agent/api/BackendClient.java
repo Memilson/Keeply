@@ -73,6 +73,15 @@ public class BackendClient {
         sessionPersisted = session != null;
     }
 
+    public QrTokenResponse generateQrToken() {
+        String traceId = traceId();
+        try {
+            return auth.generateQrToken(traceId);
+        } catch (Exception e) {
+            throw failure("Falha ao gerar token QR", traceId, e);
+        }
+    }
+
     public DeviceSession getSession() {
         return session;
     }
@@ -379,4 +388,5 @@ public class BackendClient {
     public record PageMetadata(long totalElements, int page, int size) {}
     public record SnapshotFilePage(List<SnapshotFileItem> items, PageMetadata pagination) {}
     public record SnapshotPage(List<SnapshotSummary> items, PageMetadata pagination) {}
+    public record QrTokenResponse(String token, Instant expiresAt) {}
 }

@@ -14,7 +14,6 @@ class WsConfig {
   String identityDir;
   bool allowInsecureTls;
   int pairingPollIntervalMs;
-
   WsConfig({
     this.url = 'wss://backend.keeply.app.br/ws/agent',
     this.agentId = '',
