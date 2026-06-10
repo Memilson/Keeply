@@ -39,12 +39,23 @@ import javafx.animation.Timeline;
 import javafx.scene.image.Image;
 import javafx.util.Duration;
 
+import java.awt.SystemTray;
+import java.awt.TrayIcon;
+import java.awt.image.BufferedImage;
+import java.awt.Toolkit;
+
 import java.io.OutputStream;
 import java.io.PrintStream;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.net.InetAddress;
 import java.nio.charset.StandardCharsets;
+import java.util.Base64;
+import javax.crypto.Cipher;
+import javax.crypto.spec.SecretKeySpec;
+import javax.crypto.spec.IvParameterSpec;
+import java.security.MessageDigest;
+import java.security.SecureRandom;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalTime;
@@ -65,6 +76,17 @@ import java.util.UUID;
 import java.util.Optional;
 import java.util.Collections;
 import java.util.concurrent.atomic.AtomicBoolean;
+
+import com.google.zxing.BarcodeFormat;
+import com.google.zxing.client.j2se.MatrixToImageWriter;
+import com.google.zxing.common.BitMatrix;
+import com.google.zxing.qrcode.QRCodeWriter;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.time.Instant;
+import javafx.scene.image.ImageView;
+import javafx.scene.image.Image;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -608,6 +630,8 @@ public class KeeplyAgentApp extends Application {
         }
     }
 
+
+
     private Button navigationButton(String view, String label, String iconName) {
         Button button = new Button(label, createNavigationIcon(iconName));
         button.getStyleClass().add("nav-button");
@@ -684,6 +708,38 @@ public class KeeplyAgentApp extends Application {
         setShellChrome(true);
         updateAuthenticationNavigation(true);
         showView("Dashboard");
+
+        // Dispara a notificação de sistema (System Tray) sobre a conexão
+        showDesktopNotification("Keeply Conectado", "Dispositivo protegido e sincronizado (" + deviceId + ")");
+    }
+
+    private void showDesktopNotification(String title, String message) {
+        if (!SystemTray.isSupported()) return;
+        try {
+            SystemTray tray = SystemTray.getSystemTray();
+            java.net.URL imgUrl = getClass().getResource("/icons/keeply.png");
+            java.awt.Image image = null;
+            if (imgUrl != null) {
+                image = Toolkit.getDefaultToolkit().createImage(imgUrl);
+            }
+            if (image == null) {
+                image = new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB);
+            }
+            TrayIcon trayIcon = new TrayIcon(image, "Keeply");
+            trayIcon.setImageAutoSize(true);
+            tray.add(trayIcon);
+            trayIcon.displayMessage(title, message, TrayIcon.MessageType.INFO);
+            
+            // Remove the icon after displaying the toast to avoid cluttering the tray if not a persistent app
+            new java.util.Timer().schedule(new java.util.TimerTask() {
+                @Override
+                public void run() {
+                    tray.remove(trayIcon);
+                }
+            }, 5000);
+        } catch (Exception e) {
+            log.warn("Falha ao exibir notificação de desktop: " + e.getMessage());
+        }
     }
 
     private void applyOfflineState(DeviceSession session, String reason) {

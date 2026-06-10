@@ -3,16 +3,8 @@ class FsEntry {
   final String path;
   final String kind;
   final int size;
-
-  FsEntry({
-    this.name = '',
-    this.path = '',
-    this.kind = 'file',
-    this.size = 0,
-  });
-
+  FsEntry({this.name = '', this.path = '', this.kind = 'file', this.size = 0});
   bool get isDir => kind == 'dir';
-
   factory FsEntry.fromJson(Map<String, dynamic> json) {
     return FsEntry(
       name: json['name'] as String? ?? '',
@@ -21,13 +13,7 @@ class FsEntry {
       size: json['size'] as int? ?? 0,
     );
   }
-
   Map<String, dynamic> toJson() {
-    return {
-      'name': name,
-      'path': path,
-      'kind': kind,
-      'size': size,
-    };
+    return {'name': name, 'path': path, 'kind': kind, 'size': size};
   }
 }

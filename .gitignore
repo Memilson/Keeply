@@ -1,46 +1,86 @@
-# Gradle
-.gradle/
+# ==================================
+# SECURITY & SECRETS (STRICT BLOCK)
+# ==================================
+.env
+.env.*
+!.env.example
+env_config.dart
+!env_config.example.dart
+*.keystore
+*.jks
+*.p12
+*.key
+*.pem
+google-services.json
+GoogleService-Info.plist
+local.properties
+gradle.properties
+secrets.yml
+credentials.json
+keeply_master_key*
+*jwt*secret*
+
+# ==================================
+# DATABASES & DATA VOLUMES
+# ==================================
+postgres_data/
+minio_data/
+prometheus/
+grafana/
+*.db
+*.sqlite
+*.sqlite3
+tmp/
+data/
+
+# ==================================
+# BUILD ARTIFACTS & CACHES
+# ==================================
 build/
 bin/
 /out/
+.dart_tool/
+.packages
+.pub-cache/
+.pub/
+*.apk
+*.aab
+*.app
+*.ipa
+*.exe
+*.dll
+*.so
+*.dylib
 
-# Manter o Wrapper (necessário para rodar o projeto)
-!gradle/wrapper/gradle-wrapper.jar
-!gradle/wrapper/gradle-wrapper.properties
-!gradlew
-!gradlew.bat
+# ==================================
+# GRADLE & IDE CONFIGURATIONS
+# ==================================
+.gradle/
+# Ocultando Wrapper confome solicitado por segurança máxima
+gradle/
+gradlew
+gradlew.bat
 
-# IntelliJ IDEA
 .idea/
 *.iws
 *.iml
 *.ipr
-
-# VS Code
 .vscode/
 .history/
 *.code-workspace
 
-# Codex / AI Tools
-.codex
-.gemini
-.cursor
-
-# OS Files
+# ==================================
+# OS FILES & LOGS
+# ==================================
 .DS_Store
 Thumbs.db
 *.swp
-
-# Logs
 *.log
 logs/
 
-# Environment files
-.env
-.env.*
-!.env.example
-
-# Database / Temp
-*.db
-*.sqlite
-tmp/
+# ==================================
+# AI TOOLS
+# ==================================
+.codex
+.gemini
+.cursor

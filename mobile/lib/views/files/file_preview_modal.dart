@@ -4,109 +4,33 @@ import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 import '../../models/remote_file.dart';
 import '../../services/api_client_service.dart';
-
-/// [FilePreviewModal] - Modal bottom sheet para preview e download de arquivos.
-///
-/// Responsabilidades:
-/// 1. Exibir informações detalhadas do arquivo
-/// 2. Mostrar botão de download
-/// 3. Gerenciar download com barra de progresso
-/// 4. Salvar arquivo localmente
-/// 5. Tratamento de erros durante download
-///
-/// Layout:
-/// ```
-/// ┌─────────────────────────────────┐
-/// │  ↓ (drag down to close)         │
-/// ├─────────────────────────────────┤
-/// │ 📄 documento.pdf                │
-/// │ 44 MB • Upd. 08/06/2026         │
-/// ├─────────────────────────────────┤
-/// │ 📍 Localização: /Backups/...    │
-/// │ 🔒 Criptografado                │
-/// │ ✓ Verificado                    │
-/// ├─────────────────────────────────┤
-/// │ [  Baixar Arquivo (44 MB)    ] │  ← Botão download
-/// │ [  Compartilhar               ] │
-/// └─────────────────────────────────┘
-/// ```
-///
-/// Fluxo de Download:
-/// 1. Usuário toca "Baixar Arquivo"
-/// 2. Modal exibe barra de progresso
-/// 3. ApiClientService faz requisição GET /api/files/{id}/download
-/// 4. Arquivo salvo em getApplicationDocumentsDirectory()
-/// 5. Sucesso: exibir botão "Abrir" ou "Compartilhar"
-/// 6. Erro: exibir mensagem + retry
-///
-/// Integração com Backend:
-/// - GET /api/files/{id}/download
-/// - Retorna arquivo binário
-/// - Header: Authorization: Bearer <token>
-///
-/// Segurança:
-/// - Download só com token válido
-/// - Arquivo salvo apenas em diretório seguro do app
-/// - Metadados de arquivo vêm do backend
-///
-/// Uso:
-/// ```dart
-/// showModalBottomSheet(
-///   context: context,
-///   isScrollControlled: true,
-///   backgroundColor: Colors.transparent,
-///   builder: (_) => FilePreviewModal(file: file),
-/// );
-/// ```
 class FilePreviewModal extends StatefulWidget {
   final RemoteFile file;
-
   const FilePreviewModal({super.key, required this.file});
-
   @override
   State<FilePreviewModal> createState() => _FilePreviewModalState();
 }
-
-/// [_FilePreviewModalState] - Estado do modal de preview.
 class _FilePreviewModalState extends State<FilePreviewModal> {
-  /// Cliente de API para download.
   final ApiClientService _apiClient = ApiClientService();
-
-  /// Flag de download em progresso.
   bool _isDownloading = false;
-
-  /// Progresso do download (0.0 a 1.0).
   double _downloadProgress = 0.0;
-
-  /// Arquivo salvo (se download bem-sucedido).
   File? _downloadedFile;
-
-  /// Mensagem de erro (se houver).
   String _errorMessage = '';
-
-  /// Formata tamanho de arquivo em formato legível.
   String _formatFileSize(int bytes) {
     const suffixes = ['B', 'KB', 'MB', 'GB'];
     double size = bytes.toDouble();
-
     int suffixIndex = 0;
     while (size > 1024 && suffixIndex < suffixes.length - 1) {
       size /= 1024;
       suffixIndex++;
     }
-
     return '${size.toStringAsFixed(1)} ${suffixes[suffixIndex]}';
   }
-
-  /// Formata data em formato legível.
   String _formatDate(DateTime date) {
     return intl.DateFormat('dd/MM/yyyy • HH:mm').format(date);
   }
-
-  /// Retorna cor baseada no tipo de arquivo.
   Color _getFileColor(String filename) {
     final ext = filename.split('.').last.toLowerCase();
-
     switch (ext) {
       case 'pdf':
         return const Color(0xFFEF4444);
@@ -129,11 +53,8 @@ class _FilePreviewModalState extends State<FilePreviewModal> {
         return const Color(0xFF3B82F6);
     }
   }
-
-  /// Retorna ícone apropriado para o tipo de arquivo.
   IconData _getFileIcon(String filename) {
     final ext = filename.split('.').last.toLowerCase();
-
     switch (ext) {
       case 'pdf':
         return Icons.picture_as_pdf;
@@ -160,15 +81,6 @@ class _FilePreviewModalState extends State<FilePreviewModal> {
         return Icons.file_present;
     }
   }
-
-  /// Inicia download do arquivo.
-  ///
-  /// Fluxo:
-  /// 1. Obter diretório de documentos do app
-  /// 2. Chamar ApiClientService.downloadFile()
-  /// 3. Atualizar progress em tempo real
-  /// 4. Se sucesso: salvar referência do arquivo
-  /// 5. Se erro: exibir mensagem de erro
   Future<void> _downloadFile() async {
     try {
       setState(() {
@@ -176,33 +88,26 @@ class _FilePreviewModalState extends State<FilePreviewModal> {
         _errorMessage = '';
         _downloadProgress = 0.0;
       });
-
-      // Obter diretório de documentos
       final appDocDir = await getApplicationDocumentsDirectory();
       final downloadDir = Directory('${appDocDir.path}/Keeply/Downloads');
       await downloadDir.create(recursive: true);
-
-      // Caminho de destino
       final destinationPath = '${downloadDir.path}/${widget.file.name}';
-
       print('Iniciando download para: $destinationPath');
-
-      // Fazer download (em produção, implementar progresso streaming)
-      // Por enquanto, download simples sem progresso em tempo real
+      final snapshotId = widget.file.snapshotId ?? widget.file.id;
+      final filePath = widget.file.path.isNotEmpty
+          ? widget.file.path
+          : widget.file.name;
       final file = await _apiClient.downloadFile(
-        widget.file.id,
+        snapshotId,
+        filePath,
         destinationPath,
       );
-
       if (!mounted) return;
-
       setState(() {
         _isDownloading = false;
         _downloadedFile = file;
         _downloadProgress = 1.0;
       });
-
-      // Mostrar snackbar de sucesso
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -231,17 +136,9 @@ class _FilePreviewModalState extends State<FilePreviewModal> {
       }
     }
   }
-
-  /// Abre o arquivo após download bem-sucedido.
-  ///
-  /// TODO: Implementar abertura do arquivo com app apropriado
-  /// Pode usar plugins como: open_file, url_launcher, etc
   Future<void> _openDownloadedFile() async {
     if (_downloadedFile == null) return;
-
     try {
-      // TODO: Implementar abertura do arquivo
-      // Por enquanto, apenas exibir mensagem
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Arquivo salvo em: Downloads/Keeply/'),
@@ -257,13 +154,10 @@ class _FilePreviewModalState extends State<FilePreviewModal> {
       );
     }
   }
-
   @override
   void dispose() {
-    _apiClient.dispose();
     super.dispose();
   }
-
   @override
   Widget build(BuildContext context) {
     return DraggableScrollableSheet(
@@ -276,7 +170,6 @@ class _FilePreviewModalState extends State<FilePreviewModal> {
           ),
           child: Column(
             children: [
-              // Handle drag indicator
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 12),
                 child: Container(
@@ -288,8 +181,6 @@ class _FilePreviewModalState extends State<FilePreviewModal> {
                   ),
                 ),
               ),
-
-              // Conteúdo scrollável
               Expanded(
                 child: SingleChildScrollView(
                   controller: scrollController,
@@ -298,17 +189,15 @@ class _FilePreviewModalState extends State<FilePreviewModal> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Header com ícone + nome
                         Row(
                           children: [
-                            // Ícone grande
                             Container(
                               width: 64,
                               height: 64,
                               decoration: BoxDecoration(
                                 color: _getFileColor(
                                   widget.file.name,
-                                ).withOpacity(0.2),
+                                ).withValues(alpha: 0.2),
                                 borderRadius: BorderRadius.circular(12),
                               ),
                               child: Icon(
@@ -317,10 +206,7 @@ class _FilePreviewModalState extends State<FilePreviewModal> {
                                 size: 32,
                               ),
                             ),
-
                             const SizedBox(width: 16),
-
-                            // Nome + metadados
                             Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -337,7 +223,7 @@ class _FilePreviewModalState extends State<FilePreviewModal> {
                                   ),
                                   const SizedBox(height: 4),
                                   Text(
-                                    '${_formatFileSize(widget.file.sizeBytes)} • Upd. ${_formatDate(widget.file.uploadedAt)}',
+                                    '${_formatFileSize(widget.file.size)} • Upd. ${_formatDate(widget.file.modifiedAt ?? DateTime.now())}',
                                     style: TextStyle(
                                       fontSize: 12,
                                       color: Colors.grey[400],
@@ -348,15 +234,9 @@ class _FilePreviewModalState extends State<FilePreviewModal> {
                             ),
                           ],
                         ),
-
                         const SizedBox(height: 32),
-
-                        // Informações detalhadas
                         _buildInfoSection(),
-
                         const SizedBox(height: 32),
-
-                        // Progress bar (se downloading)
                         if (_isDownloading)
                           Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -365,7 +245,7 @@ class _FilePreviewModalState extends State<FilePreviewModal> {
                                 mainAxisAlignment:
                                     MainAxisAlignment.spaceBetween,
                                 children: [
-                                  const Text(
+                                  Text(
                                     'Progresso do Download',
                                     style: TextStyle(
                                       fontSize: 12,
@@ -390,24 +270,21 @@ class _FilePreviewModalState extends State<FilePreviewModal> {
                                   value: _downloadProgress,
                                   minHeight: 6,
                                   backgroundColor: const Color(0xFF0F172A),
-                                  valueColor:
-                                      const AlwaysStoppedAnimation<Color>(
-                                        Color(0xFF3B82F6),
-                                      ),
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    Color(0xFF3B82F6),
+                                  ),
                                 ),
                               ),
                               const SizedBox(height: 32),
                             ],
                           ),
-
-                        // Mensagem de erro
                         if (_errorMessage.isNotEmpty)
                           Container(
                             padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(
-                              color: Colors.red.withOpacity(0.1),
+                              color: Colors.red.withValues(alpha: 0.1),
                               border: Border.all(
-                                color: Colors.red.withOpacity(0.3),
+                                color: Colors.red.withValues(alpha: 0.3),
                                 width: 1,
                               ),
                               borderRadius: BorderRadius.circular(8),
@@ -433,10 +310,7 @@ class _FilePreviewModalState extends State<FilePreviewModal> {
                               ],
                             ),
                           ),
-
                         const SizedBox(height: 24),
-
-                        // Botões de ação
                         _buildActionButtons(),
                       ],
                     ),
@@ -449,8 +323,6 @@ class _FilePreviewModalState extends State<FilePreviewModal> {
       },
     );
   }
-
-  /// Widget de informações detalhadas do arquivo.
   Widget _buildInfoSection() {
     return Column(
       children: [
@@ -474,8 +346,6 @@ class _FilePreviewModalState extends State<FilePreviewModal> {
       ],
     );
   }
-
-  /// Widget de linha de informação.
   Widget _buildInfoRow({
     required IconData icon,
     required String label,
@@ -506,11 +376,8 @@ class _FilePreviewModalState extends State<FilePreviewModal> {
       ],
     );
   }
-
-  /// Widget de botões de ação.
   Widget _buildActionButtons() {
     if (_downloadedFile != null) {
-      // Arquivo já foi baixado
       return Column(
         children: [
           SizedBox(
@@ -549,7 +416,6 @@ class _FilePreviewModalState extends State<FilePreviewModal> {
         ],
       );
     }
-
     return Column(
       children: [
         SizedBox(
@@ -577,7 +443,7 @@ class _FilePreviewModalState extends State<FilePreviewModal> {
             label: Text(
               _isDownloading
                   ? 'Baixando... (${(_downloadProgress * 100).toStringAsFixed(0)}%)'
-                  : 'Baixar Arquivo (${_formatFileSize(widget.file.sizeBytes)})',
+                  : 'Baixar Arquivo (${_formatFileSize(widget.file.size)})',
               style: const TextStyle(fontWeight: FontWeight.w600),
             ),
           ),

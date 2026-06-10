@@ -38,6 +38,11 @@ public final class AuthApiClient {
         return parseSession(response.body(), session.deviceInstallationId());
     }
 
+    BackendClient.QrTokenResponse generateQrToken(String traceId) throws Exception {
+        HttpResponse<String> response = executor.get("/api/auth/qr", traceId);
+        return mapper.readValue(response.body(), BackendClient.QrTokenResponse.class);
+    }
+
     private DeviceSession parseSession(String body, String installationId) throws Exception {
         Map<String, Object> json = mapper.readValue(body, new TypeReference<>() {});
         UUID userId = json.get("userId") == null ? null : UUID.fromString((String) json.get("userId"));

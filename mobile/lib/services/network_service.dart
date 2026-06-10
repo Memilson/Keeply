@@ -1,11 +1,8 @@
 import 'dart:io';
-
 class NetworkService {
   static final NetworkService _instance = NetworkService._();
   factory NetworkService() => _instance;
   NetworkService._();
-
-  /// Retorna true se o dispositivo estiver conectado à internet.
   Future<bool> hasInternetConnection() async {
     try {
       final result = await InternetAddress.lookup(

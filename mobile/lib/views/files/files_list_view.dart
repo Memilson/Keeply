@@ -2,126 +2,42 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart' as intl;
 import '../../models/remote_file.dart';
 import '../../services/api_client_service.dart';
-import 'file_preview_modal.dart';
-
-/// [FilesListView] - Tela principal do aplicativo estilo OneDrive.
-///
-/// Responsabilidades:
-/// 1. Exibir lista de arquivos do backend (MinIO via API)
-/// 2. Implementar busca em tempo real
-/// 3. Fornecer filtros por tipo (Data, Imagens, Documentos, PDF)
-/// 4. Mostrar ícone, nome, data e tamanho para cada arquivo
-/// 5. Permitir tap para abrir preview modal
-/// 6. Implementar infinite scroll / paginação
-/// 7. Tratamento de erros de rede / autenticação
-///
-/// Estrutura da UI:
-/// ```
-/// ┌─────────────────────────────────────┐
-/// │ Keeply                         [Menu]│  ← AppBar
-/// ├─────────────────────────────────────┤
-/// │ 🔍 Buscar arquivos...              │  ← SearchBar
-/// ├─────────────────────────────────────┤
-/// │ Recentes  |  Imagens  |  Docs  |... │  ← FilterChips
-/// ├─────────────────────────────────────┤
-/// │ 📄 documento.pdf                    │
-/// │    08/06/2026 • 44 MB               │  ← FileItem
-/// ├─────────────────────────────────────┤
-/// │ 🖼️  foto.jpg                         │
-/// │    06/06/2026 • 2.3 MB              │
-/// ├─────────────────────────────────────┤
-/// │ ... (infinite scroll)               │
-/// └─────────────────────────────────────┘
-/// ```
-///
-/// Integração com Backend:
-/// - GET /api/files?page=1&pageSize=50&q=search
-/// - Resposta: { "items": [...], "total": 100 }
-///
-/// Fluxo de Usuário:
-/// 1. Tela carrega → busca arquivos via ApiClientService
-/// 2. Lista exibida com scroll infinito
-/// 3. Usuário digita busca → realiza nova requisição
-/// 4. Usuário toca em arquivo → abre FilePreviewModal
-/// 5. Modal exibe preview + botão download
-///
-/// Segurança:
-/// - Todas as requisições usam JWT do SecureStorageService
-/// - Erros 401 indicam token expirado → logout
-/// - Dados sensíveis não são logados
-///
-/// Uso:
-/// ```dart
-/// MaterialApp(
-///   routes: {
-///     '/files': (_) => const FilesListView(),
-///   },
-/// )
-/// ```
+import 'snapshot_details_view.dart';
+import 'package:flutter/services.dart';
 class FilesListView extends StatefulWidget {
   const FilesListView({super.key});
-
   @override
   State<FilesListView> createState() => _FilesListViewState();
 }
-
-/// [_FilesListViewState] - Estado e lógica da tela de arquivos.
 class _FilesListViewState extends State<FilesListView> {
-  /// Cliente de API para buscar arquivos.
   final ApiClientService _apiClient = ApiClientService();
-
-  /// Controller de busca.
   late TextEditingController _searchController;
-
-  /// ScrollController para infinite scroll.
   late ScrollController _scrollController;
-
-  /// Lista de arquivos exibida.
   List<RemoteFile> _files = [];
-
-  /// Página atual (paginação).
   int _currentPage = 1;
-
-  /// Filtro selecionado atualmente.
-  FileFilter _selectedFilter = FileFilter.recent;
-
-  /// Flag de carregamento.
   bool _isLoading = false;
-
-  /// Flag de erro.
   bool _hasError = false;
   String _errorMessage = '';
-
-  /// Flag de fim de lista (sem mais itens para carregar).
   bool _endOfList = false;
-
+  List<Map<String, dynamic>> _deepSearchResults = [];
+  bool _isDeepSearching = false;
+  bool _isDeepSearchMode = false;
   @override
   void initState() {
     super.initState();
     _searchController = TextEditingController();
     _scrollController = ScrollController();
-
-    // Carregar arquivos iniciais
     _loadFiles();
-
-    // Listener para infinite scroll
     _scrollController.addListener(() {
       if (_scrollController.position.pixels >=
           _scrollController.position.maxScrollExtent - 500) {
         _loadMoreFiles();
       }
     });
-
-    // Listener para busca com debounce
     _searchController.addListener(_onSearchChanged);
   }
-
-  /// Carrega a primeira página de arquivos.
-  ///
-  /// Reseta página para 1 e limpa lista anterior.
   Future<void> _loadFiles() async {
     if (_isLoading) return;
-
     try {
       setState(() {
         _isLoading = true;
@@ -129,25 +45,33 @@ class _FilesListViewState extends State<FilesListView> {
         _currentPage = 1;
         _endOfList = false;
       });
-
       final files = await _apiClient.listFiles(
-        query: _searchController.text.isNotEmpty
-            ? _searchController.text
-            : null,
+        query: _searchController.text.isNotEmpty ? _searchController.text : null,
         page: 1,
         pageSize: 50,
       );
-
       if (!mounted) return;
-
       setState(() {
         _files = files;
         _isLoading = false;
         _endOfList = files.isEmpty;
       });
-    } on TokenExpiredException {
+    } on TokenExpiredException catch (_) {
       if (mounted) {
-        Navigator.of(context).pushNamedAndRemoveUntil('/splash', (_) => false);
+        setState(() {
+          _isLoading = false;
+          _hasError = true;
+          _errorMessage = 'Sessão expirada. Reinicie o app para fazer login novamente.';
+        });
+      }
+    } on NetworkException {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _hasError = true;
+          _errorMessage =
+              'Sem conexão com a nuvem.\n\nVerifique se o seu celular está conectado à internet ou à mesma rede do servidor.';
+        });
       }
     } on ApiException catch (e) {
       if (mounted) {
@@ -159,29 +83,17 @@ class _FilesListViewState extends State<FilesListView> {
       }
     }
   }
-
-  /// Carrega próxima página de arquivos (infinite scroll).
-  ///
-  /// Append ao final da lista sem resetar.
   Future<void> _loadMoreFiles() async {
     if (_isLoading || _endOfList) return;
-
     try {
-      setState(() {
-        _isLoading = true;
-      });
-
+      setState(() => _isLoading = true);
       final nextPage = _currentPage + 1;
       final files = await _apiClient.listFiles(
-        query: _searchController.text.isNotEmpty
-            ? _searchController.text
-            : null,
+        query: _searchController.text.isNotEmpty ? _searchController.text : null,
         page: nextPage,
         pageSize: 50,
       );
-
       if (!mounted) return;
-
       setState(() {
         if (files.isEmpty) {
           _endOfList = true;
@@ -195,63 +107,94 @@ class _FilesListViewState extends State<FilesListView> {
       if (mounted) {
         Navigator.of(context).pushNamedAndRemoveUntil('/splash', (_) => false);
       }
-    } catch (e) {
+    } catch (_) {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+  void _onSearchChanged() {
+    Future.delayed(const Duration(milliseconds: 500), () {
+      if (!mounted) return;
+      final query = _searchController.text.trim();
+      if (query.length >= 3) {
+        _performDeepSearch(query);
+      } else {
+        setState(() {
+          _isDeepSearchMode = false;
+          _deepSearchResults = [];
+        });
+        _loadFiles();
+      }
+    });
+  }
+  Future<void> _performDeepSearch(String query) async {
+    if (_isDeepSearching) return;
+    setState(() {
+      _isDeepSearching = true;
+      _isDeepSearchMode = true;
+      _deepSearchResults = [];
+    });
+    try {
+      final snapshots = await _apiClient.listFiles(page: 1, pageSize: 50);
+      List<Map<String, dynamic>> results = [];
+      for (final snapshot in snapshots) {
+        try {
+          final files = await _apiClient.listSnapshotFiles(
+            snapshotId: snapshot.id,
+            search: query,
+            size: 20,
+          );
+          for (final file in files) {
+            results.add({
+              'file': file,
+              'snapshot': snapshot,
+            });
+          }
+        } catch (_) {
+        }
+      }
+      if (!mounted) return;
       setState(() {
-        _isLoading = false;
+        _deepSearchResults = results;
+        _isDeepSearching = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isDeepSearching = false;
+        _hasError = true;
+        _errorMessage = 'Erro na busca profunda: $e';
       });
     }
   }
-
-  /// Debounce para busca (executa após 500ms de pausa).
-  void _onSearchChanged() {
-    Future.delayed(const Duration(milliseconds: 500), () {
-      _loadFiles();
-    });
-  }
-
-  /// Abre modal de preview do arquivo.
-  ///
-  /// Parâmetro:
-  /// - [file]: Arquivo selecionado
   void _openFilePreview(RemoteFile file) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => FilePreviewModal(file: file),
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => SnapshotDetailsView(
+          snapshotId: file.id,
+          snapshotName: file.name,
+        ),
+      ),
     );
   }
-
-  /// Formata tamanho de arquivo em formato legível.
-  ///
-  /// Exemplos:
-  /// - 500 bytes → "500 B"
-  /// - 1048576 bytes → "1.0 MB"
-  /// - 1073741824 bytes → "1.0 GB"
   String _formatFileSize(int bytes) {
+    if (bytes <= 0) return '— B';
     const suffixes = ['B', 'KB', 'MB', 'GB'];
     double size = bytes.toDouble();
-
     int suffixIndex = 0;
     while (size > 1024 && suffixIndex < suffixes.length - 1) {
       size /= 1024;
       suffixIndex++;
     }
-
     return '${size.toStringAsFixed(1)} ${suffixes[suffixIndex]}';
   }
 
-  /// Formata data em formato legível.
-  ///
-  /// Exemplo: "08/06/2026"
-  String _formatDate(DateTime date) {
-    return intl.DateFormat('dd/MM/yyyy').format(date);
-  }
-
-  /// Retorna ícone apropriado para o tipo de arquivo.
+  String _formatDateTime(DateTime date) =>
+      intl.DateFormat("dd/MM/yyyy 'às' HH:mm").format(date.toLocal());
   IconData _getFileIcon(String filename) {
-    final ext = filename.split('.').last.toLowerCase();
-
+    final ext = filename.contains('.')
+        ? filename.split('.').last.toLowerCase()
+        : '';
     switch (ext) {
       case 'pdf':
         return Icons.picture_as_pdf;
@@ -284,66 +227,84 @@ class _FilesListViewState extends State<FilesListView> {
       case 'flac':
         return Icons.audio_file;
       default:
+        if (filename.toLowerCase().contains('backup') ||
+            filename.toLowerCase().contains('snapshot')) {
+          return Icons.backup;
+        }
         return Icons.file_present;
     }
   }
-
   @override
   void dispose() {
     _searchController.dispose();
     _scrollController.dispose();
-    _apiClient.dispose();
     super.dispose();
   }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0F172A),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF1E293B),
-        elevation: 0,
-        title: const Text(
-          'Keeply',
-          style: TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
+      backgroundColor: const Color(0xFF08071A),
+        appBar: AppBar(
+          leading: const SizedBox(),
+          leadingWidth: 0,
+          automaticallyImplyLeading: false,
+          backgroundColor: const Color(0xFF08071A),
+          elevation: 0,
+          title: Row(
+            children: [
+              Image.asset(
+                'assets/images/keeply_icon.png',
+                width: 28,
+                height: 28,
+              ),
+              const SizedBox(width: 10),
+              const Text(
+                'Keeply',
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.white,
+                ),
+              ),
+            ],
           ),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.refresh, color: Colors.white70),
+              tooltip: 'Recarregar',
+              onPressed: () {
+                setState(() {
+                  _isDeepSearchMode = false;
+                  _deepSearchResults = [];
+                  _searchController.clear();
+                });
+                _loadFiles();
+              },
+            ),
+          ],
         ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.menu),
-            onPressed: () {
-              // TODO: Implementar menu (logout, configurações, etc)
-            },
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          // SearchBar
-          _buildSearchBar(),
-
-          // FilterChips
-          _buildFilterChips(),
-
-          // Lista de arquivos
-          Expanded(
-            child: _isLoading && _files.isEmpty
-                ? _buildLoadingWidget()
-                : _hasError
-                ? _buildErrorWidget()
-                : _files.isEmpty
-                ? _buildEmptyWidget()
-                : _buildFilesList(),
-          ),
-        ],
-      ),
+        body: Column(
+          children: [
+            _buildSearchBar(),
+            Expanded(
+              child: _isDeepSearching
+                  ? _buildLoadingWidget()
+                  : _isDeepSearchMode
+                      ? _deepSearchResults.isEmpty
+                          ? _buildEmptyDeepSearchWidget()
+                          : _buildDeepSearchResults()
+                      : _isLoading && _files.isEmpty
+                          ? _buildLoadingWidget()
+                          : _hasError
+                              ? _buildErrorWidget()
+                              : _files.isEmpty
+                                  ? _buildEmptyWidget()
+                                  : _buildFilesList(),
+            ),
+          ],
+        ),
     );
   }
-
-  /// Widget da barra de busca.
   Widget _buildSearchBar() {
     return Padding(
       padding: const EdgeInsets.all(16),
@@ -351,176 +312,263 @@ class _FilesListViewState extends State<FilesListView> {
         controller: _searchController,
         style: const TextStyle(color: Colors.white),
         decoration: InputDecoration(
-          hintText: 'Buscar arquivos...',
+          hintText: 'Buscar arquivos nos backups...',
           hintStyle: TextStyle(color: Colors.grey[600]),
-          prefixIcon: const Icon(Icons.search, color: Color(0xFF3B82F6)),
+          prefixIcon: const Icon(Icons.search, color: Color(0xFF7B61FF)),
           suffixIcon: _searchController.text.isNotEmpty
               ? GestureDetector(
                   onTap: () {
                     _searchController.clear();
+                    setState(() {
+                      _isDeepSearchMode = false;
+                      _deepSearchResults = [];
+                    });
                     _loadFiles();
                   },
                   child: const Icon(Icons.close, color: Colors.grey),
                 )
               : null,
           filled: true,
-          fillColor: const Color(0xFF1E293B),
+          fillColor: const Color(0xFF0D0C22),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: Color(0xFF334155), width: 1),
+            borderSide: BorderSide(color: const Color(0xFF7B61FF).withValues(alpha: 0.3), width: 1),
           ),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: Color(0xFF334155), width: 1),
+            borderSide: BorderSide(color: const Color(0xFF7B61FF).withValues(alpha: 0.3), width: 1),
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: Color(0xFF3B82F6), width: 2),
+            borderSide: const BorderSide(color: Color(0xFF7B61FF), width: 2),
           ),
         ),
       ),
     );
   }
-
-  /// Widget dos chips de filtro.
-  Widget _buildFilterChips() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          children: FileFilter.values.map((filter) {
-            final isSelected = _selectedFilter == filter;
-
-            return Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: FilterChip(
-                label: Text(filter.label),
-                selected: isSelected,
-                onSelected: (selected) {
-                  setState(() {
-                    _selectedFilter = filter;
-                  });
-                  _loadFiles();
-                },
-                backgroundColor: const Color(0xFF1E293B),
-                selectedColor: const Color(0xFF3B82F6),
-                labelStyle: TextStyle(
-                  color: isSelected ? Colors.white : Colors.grey[400],
-                  fontWeight: FontWeight.w500,
-                ),
-                side: BorderSide(
-                  color: isSelected
-                      ? const Color(0xFF3B82F6)
-                      : const Color(0xFF334155),
-                  width: 1,
-                ),
-              ),
-            );
-          }).toList(),
-        ),
-      ),
-    );
-  }
-
-  /// Widget da lista de arquivos.
   Widget _buildFilesList() {
     return ListView.builder(
       controller: _scrollController,
       itemCount: _files.length + (_isLoading ? 1 : 0),
       padding: const EdgeInsets.all(8),
       itemBuilder: (context, index) {
-        // Loading indicator no final da lista
         if (index == _files.length) {
-          return Padding(
-            padding: const EdgeInsets.symmetric(vertical: 16),
+          return const Padding(
+            padding: EdgeInsets.symmetric(vertical: 16),
             child: Center(
               child: SizedBox(
                 width: 32,
                 height: 32,
                 child: CircularProgressIndicator(
                   strokeWidth: 2,
-                  valueColor: const AlwaysStoppedAnimation<Color>(
-                    Color(0xFF3B82F6),
-                  ),
+                  valueColor:
+                      AlwaysStoppedAnimation<Color>(Color(0xFF7B61FF)),
                 ),
               ),
             ),
           );
         }
-
-        final file = _files[index];
-        return _buildFileItem(file);
+        return _buildFileItem(_files[index]);
       },
     );
   }
-
-  /// Widget individual de arquivo.
   Widget _buildFileItem(RemoteFile file) {
     return GestureDetector(
       onTap: () => _openFilePreview(file),
       child: Card(
-        color: const Color(0xFF1E293B),
-        margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 0),
+        color: const Color(0xFF0D0C22),
+        margin: const EdgeInsets.symmetric(vertical: 4),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+          side: BorderSide(color: const Color(0xFF7B61FF).withValues(alpha: 0.15)),
+        ),
         child: Padding(
           padding: const EdgeInsets.all(12),
           child: Row(
             children: [
-              // Ícone do arquivo
               Container(
                 width: 48,
                 height: 48,
                 decoration: BoxDecoration(
-                  color: const Color(0xFF0F172A),
+                  color: const Color(0xFF7B61FF).withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: Icon(
-                  _getFileIcon(file.name),
-                  color: const Color(0xFF3B82F6),
-                  size: 24,
-                ),
+                child: file.mimeType == 'application/x-keeply-snapshot'
+                    ? const Icon(
+                        Icons.auto_awesome,
+                        color: Color(0xFF7B61FF),
+                        size: 26,
+                      )
+                    : Icon(
+                        _getFileIcon(file.name),
+                        color: const Color(0xFFA78BFA),
+                        size: 24,
+                      ),
               ),
-
               const SizedBox(width: 12),
-
-              // Nome e metadados
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Nome do arquivo
                     Text(
                       file.name,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFFE2E8F0),
                       ),
                     ),
-
                     const SizedBox(height: 4),
-
-                    // Data e tamanho
                     Text(
-                      '${_formatDate(file.uploadedAt)} • ${_formatFileSize(file.sizeBytes)}',
-                      style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+                      '${_formatDateTime(file.modifiedAt ?? DateTime.now())} • ${_formatFileSize(file.size)}',
+                      style: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
                     ),
                   ],
                 ),
               ),
-
-              // Ícone de seta / menu
-              Icon(Icons.chevron_right, color: Colors.grey[600]),
+              Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.delete, color: Color(0xFFEF4444)),
+                    tooltip: 'Excluir backup',
+                    onPressed: () async {
+                      final confirmed = await showDialog<bool>(
+                        context: context,
+                        builder: (ctx) => AlertDialog(
+                          backgroundColor: const Color(0xFF0D0C22),
+                          title: const Text('Confirmar exclusão', style: TextStyle(color: Colors.white)),
+                          content: const Text('Deseja excluir este backup? Esta ação não pode ser desfeita.', style: TextStyle(color: Color(0xFFCBD5E1))),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.of(ctx).pop(false),
+                              child: const Text('Cancelar', style: TextStyle(color: Color(0xFF94A3B8))),
+                            ),
+                            TextButton(
+                              onPressed: () => Navigator.of(ctx).pop(true),
+                              child: const Text('Excluir', style: TextStyle(color: Color(0xFFEF4444))),
+                            ),
+                          ],
+                        ),
+                      );
+                      if (confirmed == true) {
+                        try {
+                          await _apiClient.deleteSnapshot(file.id);
+                          setState(() {
+                            _files.removeWhere((f) => f.id == file.id);
+                          });
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Backup excluído com sucesso'), backgroundColor: Color(0xFF10B981)),
+                          );
+                        } catch (e) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Erro ao excluir: $e'), backgroundColor: const Color(0xFFEF4444)),
+                          );
+                        }
+                      }
+                    },
+                  ),
+                  const Icon(Icons.chevron_right, color: Color(0xFF64748B)),
+                ],
+              ),
             ],
           ),
         ),
       ),
     );
   }
-
-  /// Widget de carregamento.
+  Widget _buildDeepSearchResults() {
+    return ListView.builder(
+      itemCount: _deepSearchResults.length,
+      padding: const EdgeInsets.all(8),
+      itemBuilder: (context, index) {
+        final result = _deepSearchResults[index];
+        final file = result['file'] as RemoteFile;
+        final snapshot = result['snapshot'] as RemoteFile;
+        return GestureDetector(
+          onTap: () => _openFilePreview(snapshot),
+          child: Card(
+            color: const Color(0xFF0D0C22),
+            margin: const EdgeInsets.symmetric(vertical: 4),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+              side: BorderSide(color: const Color(0xFF7B61FF).withValues(alpha: 0.15)),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Row(
+                children: [
+                  Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF7B61FF).withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(
+                      _getFileIcon(file.name),
+                      color: const Color(0xFFA78BFA),
+                      size: 24,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          file.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFFE2E8F0),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Encontrado em Backup (${_formatDateTime(snapshot.modifiedAt ?? DateTime.now())})',
+                          style: const TextStyle(fontSize: 11, color: Color(0xFF7B61FF)),
+                        ),
+                        Text(
+                          _formatFileSize(file.size),
+                          style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8)),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Icon(Icons.chevron_right, color: Color(0xFF64748B)),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+  Widget _buildEmptyDeepSearchWidget() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.search_off, size: 64, color: Colors.grey[600]),
+          const SizedBox(height: 16),
+          Text(
+            'Nenhum arquivo encontrado',
+            style: TextStyle(fontSize: 16, color: Colors.grey[400]),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Nenhum resultado para "${_searchController.text}"\nnos backups disponíveis.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+          ),
+        ],
+      ),
+    );
+  }
   Widget _buildLoadingWidget() {
     return Center(
       child: Column(
@@ -530,20 +578,19 @@ class _FilesListViewState extends State<FilesListView> {
             width: 50,
             height: 50,
             child: CircularProgressIndicator(
-              valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF3B82F6)),
+              valueColor:
+                  AlwaysStoppedAnimation<Color>(Color(0xFF7B61FF)),
             ),
           ),
           const SizedBox(height: 16),
           Text(
-            'Carregando arquivos...',
+            _isDeepSearching ? 'Buscando nos backups...' : 'Carregando snapshots...',
             style: TextStyle(fontSize: 14, color: Colors.grey[400]),
           ),
         ],
       ),
     );
   }
-
-  /// Widget de erro.
   Widget _buildErrorWidget() {
     return Center(
       child: Padding(
@@ -553,9 +600,9 @@ class _FilesListViewState extends State<FilesListView> {
           children: [
             const Icon(Icons.error_outline, color: Colors.red, size: 48),
             const SizedBox(height: 16),
-            Text(
-              'Erro ao carregar arquivos',
-              style: const TextStyle(
+            const Text(
+              'Erro ao carregar',
+              style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.bold,
                 color: Colors.white,
@@ -571,7 +618,7 @@ class _FilesListViewState extends State<FilesListView> {
             ElevatedButton.icon(
               onPressed: _loadFiles,
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF3B82F6),
+                backgroundColor: const Color(0xFF7B61FF),
               ),
               icon: const Icon(Icons.refresh),
               label: const Text('Tentar Novamente'),
@@ -581,24 +628,23 @@ class _FilesListViewState extends State<FilesListView> {
       ),
     );
   }
-
-  /// Widget de lista vazia.
   Widget _buildEmptyWidget() {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.folder_open, size: 64, color: Colors.grey[600]),
+          Icon(Icons.auto_awesome, size: 64, color: Colors.grey[600]),
           const SizedBox(height: 16),
           Text(
-            'Nenhum arquivo encontrado',
+            'Nenhum snapshot encontrado',
             style: TextStyle(fontSize: 16, color: Colors.grey[400]),
           ),
           const SizedBox(height: 8),
           Text(
             _searchController.text.isNotEmpty
                 ? 'Tente refinar sua busca'
-                : 'Seus arquivos aparecerão aqui',
+                : 'Execute um backup no agente Keeply\npara ver seus snapshots aqui.',
+            textAlign: TextAlign.center,
             style: TextStyle(fontSize: 12, color: Colors.grey[500]),
           ),
         ],
@@ -606,14 +652,11 @@ class _FilesListViewState extends State<FilesListView> {
     );
   }
 }
-
-/// Enum para tipos de filtro.
 enum FileFilter {
   recent('Recentes'),
   images('Imagens'),
   documents('Documentos'),
   pdf('PDF');
-
   final String label;
   const FileFilter(this.label);
 }

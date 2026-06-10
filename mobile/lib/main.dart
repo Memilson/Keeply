@@ -1,36 +1,41 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'core/constants/app_constants.dart';
 import 'views/splash/splash_view_new.dart';
-import 'views/pairing/qr_pairing_view.dart';
+import 'views/pairing/login_view.dart';
 import 'views/security/security_question_view.dart';
 import 'views/files/files_list_view.dart';
+import 'views/main_shell.dart';
+import 'package:provider/provider.dart';
+import 'controllers/auth_controller.dart';
+import 'controllers/files_controller.dart';
+import 'controllers/settings_controller.dart';
 
-void main() {
-  WidgetsFlutterBinding.ensureInitialized();
-  runApp(const KeeplyApp());
+class MyHttpOverrides extends HttpOverrides {
+  @override
+  HttpClient createHttpClient(SecurityContext? context) {
+    return super.createHttpClient(context)
+      ..badCertificateCallback = (X509Certificate cert, String host, int port) => true;
+  }
 }
 
-/// [KeeplyApp] - Aplicativo principal do Keeply.
-///
-/// Configuração:
-/// - Tema escuro com Material 3
-/// - Cores principais: #3B82F6 (azul), #06B6D4 (ciano)
-/// - Rota inicial: /splash
-///
-/// Fluxo de Navegação:
-/// /splash (verificação de pareamento)
-///   ├─ Pareado + biometria OK → /files
-///   ├─ Pareado + biometria falhou → /security-question
-///   └─ Não pareado → /pairing
-///
-/// Rotas Registradas:
-/// - /splash: SplashViewNew (orquestrador de autenticação)
-/// - /pairing: QrPairingView (pareamento via QR)
-/// - /security-question: SecurityQuestionView (fallback auth)
-/// - /files: FilesListView (tela principal estilo OneDrive)
+void main() {
+  HttpOverrides.global = MyHttpOverrides();
+  WidgetsFlutterBinding.ensureInitialized();
+  
+  runApp(
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => AuthController()),
+        ChangeNotifierProvider(create: (_) => FilesController()),
+        ChangeNotifierProvider(create: (_) => SettingsController()),
+      ],
+      child: const KeeplyApp(),
+    ),
+  );
+}
 class KeeplyApp extends StatelessWidget {
   const KeeplyApp({super.key});
-
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -48,13 +53,14 @@ class KeeplyApp extends StatelessWidget {
       ),
       initialRoute: AppConstants.routeSplash,
       routes: {
-        AppConstants.routeSplash: (context) => const SplashViewNew(),
-        AppConstants.routePairing: (context) => const QrPairingView(),
+        AppConstants.routeSplash: (context) => const SplashView(),
+        AppConstants.routePairing: (context) => const LoginView(),
         '/security-question': (context) => const SecurityQuestionView(),
         AppConstants.routeFiles: (context) => const FilesListView(),
+        '/main': (context) => MainShell(),
       },
       onGenerateRoute: (settings) {
-        return MaterialPageRoute(builder: (context) => const SplashViewNew());
+        return MaterialPageRoute(builder: (context) => const SplashView());
       },
     );
   }

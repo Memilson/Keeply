@@ -1,4 +1,4 @@
-export const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8080";
+export const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "https://localhost:8080";
 
 const ACCESS_KEY = "keeply.accessToken";
 const REFRESH_KEY = "keeply.refreshToken";

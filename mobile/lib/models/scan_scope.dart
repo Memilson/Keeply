@@ -3,14 +3,12 @@ class ScanScope {
   final String label;
   final String requestedPath;
   final String resolvedPath;
-
   ScanScope({
     this.id = 'home',
     this.label = 'Home',
     this.requestedPath = '',
     this.resolvedPath = '',
   });
-
   factory ScanScope.fromJson(Map<String, dynamic> json) {
     return ScanScope(
       id: json['id'] as String? ?? 'home',
@@ -19,7 +17,6 @@ class ScanScope {
       resolvedPath: json['resolvedPath'] as String? ?? '',
     );
   }
-
   Map<String, dynamic> toJson() {
     return {
       'id': id,
@@ -28,8 +25,12 @@ class ScanScope {
       'resolvedPath': resolvedPath,
     };
   }
-
-  ScanScope copyWith({String? id, String? label, String? requestedPath, String? resolvedPath}) {
+  ScanScope copyWith({
+    String? id,
+    String? label,
+    String? requestedPath,
+    String? resolvedPath,
+  }) {
     return ScanScope(
       id: id ?? this.id,
       label: label ?? this.label,

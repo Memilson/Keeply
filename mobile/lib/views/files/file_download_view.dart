@@ -3,27 +3,21 @@ import '../../models/remote_file.dart';
 import '../../services/auth_service.dart';
 import '../../services/file_download_service.dart';
 import '../../services/permission_service.dart';
-
 class FileDownloadView extends StatefulWidget {
   final String backendBaseUrl;
-
   const FileDownloadView({super.key, required this.backendBaseUrl});
-
   @override
   State<FileDownloadView> createState() => _FileDownloadViewState();
 }
-
 class _FileDownloadViewState extends State<FileDownloadView> {
   late final FileDownloadService _service;
   late final AuthService _authService;
   final PermissionService _permissions = PermissionService();
-
   Future<List<RemoteFile>>? _filesFuture;
   String? _activeDownloadId;
   String? _statusMessage;
   bool _isLoading = true;
   bool _authenticated = false;
-
   @override
   void initState() {
     super.initState();
@@ -31,18 +25,15 @@ class _FileDownloadViewState extends State<FileDownloadView> {
     _authService = AuthService();
     _initializeScreen();
   }
-
   @override
   void dispose() {
     _service.dispose();
     super.dispose();
   }
-
   Future<void> _initializeScreen() async {
     try {
       final storageGranted = await _permissions.requestStoragePermission();
       final cameraGranted = await _permissions.requestCameraPermission();
-
       if (!storageGranted || !cameraGranted) {
         setState(() {
           _statusMessage =
@@ -51,7 +42,6 @@ class _FileDownloadViewState extends State<FileDownloadView> {
         });
         return;
       }
-
       final authenticated = await _authService.authenticateBiometric(
         reason: 'Autentique-se para acessar os arquivos remotos.',
       );
@@ -63,7 +53,6 @@ class _FileDownloadViewState extends State<FileDownloadView> {
         });
         return;
       }
-
       setState(() {
         _authenticated = true;
         _filesFuture = _service.fetchRemoteFiles();
@@ -76,7 +65,6 @@ class _FileDownloadViewState extends State<FileDownloadView> {
       });
     }
   }
-
   void _showMessage(String message, {bool error = false}) {
     final snackBar = SnackBar(
       content: Text(message),
@@ -85,7 +73,6 @@ class _FileDownloadViewState extends State<FileDownloadView> {
     );
     ScaffoldMessenger.of(context).showSnackBar(snackBar);
   }
-
   Future<void> _handleDownload(RemoteFile file) async {
     if (!_authenticated) {
       _showMessage(
@@ -94,9 +81,7 @@ class _FileDownloadViewState extends State<FileDownloadView> {
       );
       return;
     }
-
     setState(() => _activeDownloadId = file.id);
-
     try {
       await _service.downloadFile(file);
       _showMessage('Download concluído: ${file.name}');
@@ -110,7 +95,6 @@ class _FileDownloadViewState extends State<FileDownloadView> {
       }
     }
   }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -134,16 +118,13 @@ class _FileDownloadViewState extends State<FileDownloadView> {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
                 }
-
                 if (snapshot.hasError) {
                   return _buildError(snapshot.error.toString());
                 }
-
                 final files = snapshot.data ?? [];
                 if (files.isEmpty) {
                   return _buildEmptyState();
                 }
-
                 return ListView.separated(
                   padding: const EdgeInsets.all(16),
                   itemCount: files.length,
@@ -152,7 +133,6 @@ class _FileDownloadViewState extends State<FileDownloadView> {
                   itemBuilder: (context, index) {
                     final file = files[index];
                     final isDownloading = _activeDownloadId == file.id;
-
                     return Card(
                       color: const Color(0xFF1E293B),
                       shape: RoundedRectangleBorder(
@@ -197,7 +177,6 @@ class _FileDownloadViewState extends State<FileDownloadView> {
             ),
     );
   }
-
   Widget _buildEmptyState() {
     return const Center(
       child: Text(
@@ -207,7 +186,6 @@ class _FileDownloadViewState extends State<FileDownloadView> {
       ),
     );
   }
-
   Widget _buildError(String message) {
     return Center(
       child: Padding(
