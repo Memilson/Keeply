@@ -19,8 +19,26 @@ public final class HttpExecutor {
     private static final String TRACE_ID_HEADER = "X-Trace-Id";
 
     private final HttpClient http = HttpClient.newBuilder()
+            .sslContext(createInsecureSslContext())
             .connectTimeout(Duration.ofSeconds(15))
             .build();
+
+    private static javax.net.ssl.SSLContext createInsecureSslContext() {
+        try {
+            javax.net.ssl.TrustManager[] trustAllCerts = new javax.net.ssl.TrustManager[] {
+                new javax.net.ssl.X509TrustManager() {
+                    public java.security.cert.X509Certificate[] getAcceptedIssuers() { return null; }
+                    public void checkClientTrusted(java.security.cert.X509Certificate[] certs, String authType) { }
+                    public void checkServerTrusted(java.security.cert.X509Certificate[] certs, String authType) { }
+                }
+            };
+            javax.net.ssl.SSLContext sc = javax.net.ssl.SSLContext.getInstance("TLS");
+            sc.init(null, trustAllCerts, new java.security.SecureRandom());
+            return sc;
+        } catch (Exception e) {
+            throw new RuntimeException("Falha ao criar SSLContext inseguro", e);
+        }
+    }
     private final ObjectMapper mapper;
     private final String baseUrl;
     private final Supplier<DeviceSession> sessionSupplier;

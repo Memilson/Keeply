@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
 import '../models/remote_file.dart';
 import '../services/api_client_service.dart';
@@ -10,6 +12,7 @@ class FilesController extends ChangeNotifier {
   bool isLoading = true;
   bool hasError = false;
   String errorMessage = '';
+  bool isOfflineMode = false;
 
   List<RemoteFile> deepSearchResults = [];
   bool isDeepSearching = false;
@@ -22,15 +25,44 @@ class FilesController extends ChangeNotifier {
     errorMessage = '';
     notifyListeners();
 
+    final prefs = await SharedPreferences.getInstance();
+    
+    // 1. Tenta carregar o cache primeiro
+    final cachedData = prefs.getString('cached_snapshots');
+    if (cachedData != null && cachedData.isNotEmpty) {
+      try {
+        final List<dynamic> decoded = jsonDecode(cachedData);
+        snapshots = decoded.map((e) => RemoteFile.fromJson(e)).toList();
+        isOfflineMode = true;
+        isLoading = false;
+        notifyListeners(); // Exibe o cache imediatamente
+      } catch (e) {
+        debugPrint('Erro ao decodificar cache: $e');
+      }
+    }
+
+    // 2. Tenta buscar da API
     try {
       final data = await _apiClient.listFiles(page: 1, pageSize: 50);
       snapshots = data;
+      isOfflineMode = false;
       isLoading = false;
+      
+      // Salva o novo cache
+      final encoded = jsonEncode(data.map((e) => e.toJson()).toList());
+      await prefs.setString('cached_snapshots', encoded);
+      
       notifyListeners();
     } catch (e) {
+      // Se a API falhar e NÃO houver cache, mostra erro.
+      // Se houver cache, mantém o cache silenciosamente (modo offline)
       isLoading = false;
-      hasError = true;
-      errorMessage = e.toString().replaceAll('ApiException: ', '');
+      if (snapshots.isEmpty) {
+        hasError = true;
+        errorMessage = e.toString().replaceAll('ApiException: ', '');
+      } else {
+        isOfflineMode = true; // Confirma modo offline
+      }
       notifyListeners();
     }
   }

@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart' as intl;
 import 'package:path_provider/path_provider.dart';
@@ -35,8 +37,34 @@ class _SnapshotDetailsViewState extends State<SnapshotDetailsView> {
       _isLoading = true;
       _hasError = false;
     });
+
+    final prefs = await SharedPreferences.getInstance();
+    final cacheKey = 'cached_snapshot_files_${widget.snapshotId}';
+
+    // 1. Tenta carregar o cache
+    final cachedData = prefs.getString(cacheKey);
+    if (cachedData != null && cachedData.isNotEmpty) {
+      try {
+        final List<dynamic> decoded = jsonDecode(cachedData);
+        if (mounted) {
+          setState(() {
+            _files = decoded.map((e) => RemoteFile.fromJson(e)).toList();
+            _isLoading = false; // Exibe o cache imediatamente
+          });
+        }
+      } catch (e) {
+        debugPrint('Erro ao decodificar cache de snapshot: $e');
+      }
+    }
+
+    // 2. Busca API
     try {
       final files = await _apiClient.listSnapshotFiles(snapshotId: widget.snapshotId);
+      
+      // Salva o cache
+      final encoded = jsonEncode(files.map((e) => e.toJson()).toList());
+      await prefs.setString(cacheKey, encoded);
+
       if (!mounted) return;
       setState(() {
         _files = files;
@@ -45,9 +73,11 @@ class _SnapshotDetailsViewState extends State<SnapshotDetailsView> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _hasError = true;
-        _errorMessage = e.toString();
         _isLoading = false;
+        if (_files.isEmpty) {
+          _hasError = true;
+          _errorMessage = e.toString();
+        }
       });
     }
   }
