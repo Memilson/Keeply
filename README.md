@@ -505,7 +505,7 @@ Para acessar o app, você precisará:
 
 ### 2. A Questão do IP (Importante!)
 Na tela de login do aplicativo no celular, você verá um campo chamado "Servidor".
-Por padrão, o celular tentará procurar um servidor na nuvem. Como estamos rodando localmente na sua casa, **você precisará descobrir o número de IP da sua máquina (IPv4)** (ex: `192.168.1.15`).
+Por padrão, o celular tentará procurar um servidor na nuvem. Como estamos rodando localmente na sua casa, **você precisará descobrir o número de IP da sua máquina (IPv4)**
 
 Na tela de login do app, digite o IP do seu computador no campo Servidor:
 `http://SEU_IP:8080`
