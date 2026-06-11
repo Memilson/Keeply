@@ -15,16 +15,13 @@ import java.util.stream.Collectors;
 @RequestMapping("/api/auth")
 public class AuthController {
     private final AuthService auth;
-    private final com.keeply.backend.service.QrAuthService qrAuth;
     private final boolean trustProxyHeaders;
     private final Set<String> trustedProxyIps;
 
     public AuthController(AuthService auth,
-                          com.keeply.backend.service.QrAuthService qrAuth,
                           @Value("${keeply.security.trust-proxy-headers:false}") boolean trustProxyHeaders,
                           @Value("${keeply.security.trusted-proxy-ips:}") String trustedProxyIps) {
         this.auth = auth;
-        this.qrAuth = qrAuth;
         this.trustProxyHeaders = trustProxyHeaders;
         this.trustedProxyIps = Set.of(trustedProxyIps.split(",")).stream()
                 .map(String::trim)
@@ -50,17 +47,6 @@ public class AuthController {
     @PostMapping("/refresh")
     public AuthDtos.AuthResponse refresh(@Valid @RequestBody AuthDtos.RefreshRequest request, HttpServletRequest servletRequest) {
         return auth.refresh(request, getClientIp(servletRequest));
-    }
-
-    @GetMapping("/qr")
-    public com.keeply.backend.dto.QrAuthDtos.QrTokenResponse generateQrToken() {
-        var principal = com.keeply.backend.util.CurrentUser.get();
-        return qrAuth.generateQrToken(principal.userId(), principal.email());
-    }
-
-    @PostMapping("/qr/exchange")
-    public AuthDtos.AuthResponse exchangeQrToken(@Valid @RequestBody com.keeply.backend.dto.QrAuthDtos.QrExchangeRequest request) {
-        return qrAuth.exchangeQrToken(request.token());
     }
 
     private String getClientIp(HttpServletRequest request) {
