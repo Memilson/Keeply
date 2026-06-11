@@ -293,26 +293,232 @@ Os IPs estáticos e tokens de Firebase não sobem no GitHub.
 
 Feito isso, o projeto já pode ser testado normalmente:
 ```bash
+```bash
+./gradlew :agent:run
+```
+
+## Rodando o agente headless (daemon)
+
+ExecuÃ§Ã£o local com config explÃ­cita:
+
+```bash
+./gradlew :agent:runDaemon -PdaemonArgs="--config /caminho/agent.yaml"
+```
+
+O daemon executa:
+
+1. Aguarda prÃ³ximo horÃ¡rio de `schedule.cron` por padrÃ£o.
+2. Opcional: backup imediato no startup com `schedule.runOnStartup: true`.
+3. Sem concorrÃªncia entre execuÃ§Ãµes (tick sobreposto Ã© ignorado e logado).
+4. A UI JavaFX mostra status/instruÃ§Ãµes e permite "tentar start local" manualmente (fallback para dev).
+5. O daemon segue ativo mesmo apÃ³s fechar a UI.
+
+## Corte Para Zstd
+
+A troca de GZIP para Zstd e do perfil CDC para `1 MB / 4 MB / 8 MB` e destrutiva. Snapshots, chunks,
+objetos MinIO e caches locais antigos nÃ£o podem ser restaurados nem auditados por esta versÃ£o.
+
+Antes do primeiro backup com Zstd:
+
+1. Pare agente/daemon e backend.
+2. Execute `./debug/reset_env.sh`; ele remove volumes PostgreSQL/MinIO e dados locais do agente.
+3. Suba o backend atualizado e registre ou autentique novamente o agente.
+4. Inicie um novo backup; apenas objetos `.zst` serao produzidos.
+
+## ConfiguraÃ§Ã£o do Backend (.env)
+
+O backend utiliza variÃ¡veis de ambiente para configuraÃ§Ã£o. VocÃª pode criar um arquivo `.env` na raiz do projeto (ou no diretÃ³rio `backend/`) baseando-se no `.env.example`:
+
+```bash
+cp .env.example .env
+```
+
+Principais variÃ¡veis:
+- `SPRING_DATASOURCE_URL`: URL de conexÃ£o com o PostgreSQL.
+- `KEEPLY_JWT_SECRET`: Chave secreta para assinatura dos tokens JWT.
+- `KEEPLY_MINIO_ENDPOINT`: URL da API do MinIO.
+- `KEEPLY_MINIO_ACCESS_KEY` / `KEEPLY_MINIO_SECRET_KEY`: Credenciais do MinIO.
+
+## Contrato de configuraÃ§Ã£o YAML
+
+O agente busca a configuraÃ§Ã£o nos seguintes locais padrÃµes:
+
+- **Linux:** `~/.config/keeply/agent.yaml`
+- **Windows:** `%APPDATA%\keeply\agent.yaml`
+- **Override:** `--config <path>`
+
+### LocalizaÃ§Ã£o de Logs e Dados (Agente)
+
+| Tipo | Linux | Windows |
+| :--- | :--- | :--- |
+| **ConfiguraÃ§Ã£o** | `~/.config/keeply/` | `%APPDATA%\keeply\` |
+| **Banco de Dados** | `~/.local/share/keeply/` | `%LOCALAPPDATA%\keeply\` |
+| **Logs** | `~/.local/state/keeply/` | `%LOCALAPPDATA%\keeply\` |
+| **PID/Runtime** | `/tmp/keeply/` | `%TEMP%\keeply\` |
+
+Exemplo de `agent.yaml`:
+
+```yaml
+backend:
+  url: http://localhost:8080
+
+auth:
+  email: keeply@keeply.com
+  password: keeply123
+  # token: "<jwt-opcional>"
+
+device:
+  name: workstation-main
+
+backup:
+  sources:
+    - /home/user/Documents
+    - /home/user/Pictures
+
+schedule:
+  cron: "*/30 * * * *"
+  runOnStartup: false
+```
+
+Campos obrigatÃ³rios:
+
+- `backend.url`
+- `auth.token` ou `auth.email` + `auth.password`
+- `backup.sources` (lista nÃ£o vazia de diretÃ³rios existentes)
+- `schedule.cron` (formato cron UNIX com 5 campos)
+
+## Linux (systemd)
+
+Arquivos:
+
+- `scripts/linux/keeply-agent.service`
+- `scripts/linux/install-systemd.sh`
+- `scripts/linux/start-daemon.sh` (execuÃ§Ã£o manual em dev)
+
+InstalaÃ§Ã£o:
+
+```bash
+./gradlew :agent:daemonStartScripts
+sudo scripts/linux/install-systemd.sh
+```
+
+O launcher Ã© gerado em `agent/build/daemon/bin/keeply-agent-daemon` e deve ser publicado em `/opt/keeply/bin/keeply-agent-daemon`.
+
+OperaÃ§Ã£o:
+
+```bash
+sudo systemctl enable --now keeply-agent
+sudo systemctl status keeply-agent
+journalctl -u keeply-agent -f
+```
+
+## Windows (Task Scheduler)
+
+Arquivo:
+
+- `scripts/windows/install-task.ps1`
+
+Criar/atualizar e iniciar:
+
+```powershell
+.\gradlew.bat :agent:daemonStartScripts
+powershell -ExecutionPolicy Bypass -File .\scripts\windows\install-task.ps1 `
+  -TaskName "KeeplyAgent" `
+  -KeeplyHome "C:\Keeply" `
+  -ConfigPath "$env:ProgramData\Keeply\agent.yaml" `
+  -LogPath "$env:ProgramData\Keeply\agent.log"
+```
+
+No Windows, publique `agent\build\daemon\bin\keeply-agent-daemon.bat` em `C:\Keeply\bin\keeply-agent-daemon.bat`.
+
+Consultar:
+
+```powershell
+schtasks /Query /TN KeeplyAgent /V /FO LIST
+```
+
+## Fluxo mÃ­nimo de teste
+
+1. Suba PostgreSQL e MinIO.
+2. Rode o backend.
+3. Rode o agente.
+4. FaÃ§a register/login pelo endpoint ou ajuste para criar usuÃ¡rio via React depois.
+5. Escolha uma pasta no agente.
+6. Execute backup.
+7. Restaure usando o snapshot gerado.
+
+## ObservaÃ§Ã£o
+
+Este Ã© um starter tÃ©cnico. Ainda faltam:
+
+- React frontend.
+- Testes automatizados.
+- RetenÃ§Ã£o automÃ¡tica completa.
+- Parser persistente do manifesto em `snapshot_files` e `file_chunks`.
+- Criptografia ponta a ponta.
+- Endurecimento de seguranÃ§a.
+
+## ?? Arquitetura Mobile (Artigo Técnico)
+
+O novo aplicativo companheiro **Keeply Mobile** atua como um controle remoto seguro para a sua nuvem de backups, construído com foco primário em estabilidade e segurança:
+
+1. **Arquitetura Pura (MVC)**: O app foi totalmente isolado em uma arquitetura declarativa usando Provider. O estado é gerenciado globalmente pelos *Controllers* (como FilesController e AuthController), mantendo as *Views* focadas apenas em renderização.
+2. **Deep Search (Busca Profunda)**: A busca do aplicativo não é uma busca local ingênua; ela se comunica com o backend, percorrendo os manifestos do banco de dados para encontrar arquivos perdidos *dentro* de múltiplos snapshots com altíssima performance.
+3. **Resiliência de Sessão**: Implementamos injeção de SecureStorage para reter o Token JWT, atrelado a um sistema interceptador (Interceptor) que fará o kick limpo do usuário se o servidor expirar a sessão, mantendo a integridade dos dados locais.
+
+---
+
+## ??? Primeiros Passos para Novos Desenvolvedores (Clonando o Projeto)
+
+Ao clonar este repositório, você notará que ele está blindado. Siga os passos abaixo para compilar a aplicação na sua máquina:
+
+### 1. Configurando o Backend / Docker
+As credenciais do banco de dados e as chaves JWT não estão no repositório.
+1. Na raiz do projeto, duplique o arquivo .env.example e renomeie a cópia para .env.
+2. Preencha as chaves change-me com suas próprias senhas e secrets locais.
+3. Rode docker-compose -f infra/docker-compose.yml up -d para subir o banco (agora resiliente com healthchecks!).
+
+### 2. Configurando o Aplicativo Mobile
+Os IPs estáticos e tokens de Firebase não sobem no GitHub.
+1. Acesse mobile/lib/core/constants/.
+2. Duplique o arquivo env_config.example.dart e renomeie-o para env_config.dart.
+3. Abra `env_config.dart` e altere a URL `http://SEU_IP:8080` para apontar para a máquina onde o seu Backend está rodando.
+   > **Aviso sobre Testes Locais:** Se o seu backend estiver rodando apenas na sua máquina local (sem um servidor na nuvem), você **deve** usar o seu IP local (ex: `192.168.x.x`) neste arquivo, e o celular precisará estar conectado na **mesma rede Wi-Fi** que o servidor para os backups e navegação funcionarem!
+4. Crie o arquivo `local.properties` em `mobile/android/local.properties` contendo o caminho do seu SDK do Android se você for rodar via linha de comando puro.
+
+Feito isso, o projeto já pode ser testado normalmente:
+```bash
 cd mobile
 flutter pub get
 flutter run
 ```
 
-## Android (Mobile App)
+## Como Usar o Aplicativo Mobile (Keeply)
 
-O aplicativo companheiro permite listar backups e arquivos da nuvem.
+O aplicativo Mobile é o controle remoto dos seus backups. Para que qualquer pessoa consiga utilizá-lo, o ambiente principal precisa estar rodando.
 
-Build e Instalação:
+### 1. Requisitos para Uso
+Para acessar o app, você precisará:
+- Ter criado uma conta com **E-mail e Senha** previamente (pelo Agent de computador).
+- O seu computador principal deve estar com o **Backend (Spring Boot) rodando**.
+- O computador principal e o celular Android devem estar conectados **na mesma rede Wi-Fi** (para que o celular encontre o computador).
 
+### 2. A Questão do IP (Importante!)
+Na tela de login do aplicativo no celular, você verá um campo chamado "Servidor".
+Por padrão, o celular tentará procurar um servidor na nuvem. Como estamos rodando localmente na sua casa, **você precisará descobrir o número de IP da sua máquina (IPv4)** (ex: `192.168.1.15`).
+
+Na tela de login do app, digite o IP do seu computador no campo Servidor:
+`http://SEU_IP:8080`
+
+> **Aviso:** Se você colocar `localhost` no celular, ele tentará se conectar a si mesmo e vai falhar! O celular precisa do número de IP exato do computador onde o Backend do Keeply está rodando.
+
+### 3. Build e Instalação
+Se você for o desenvolvedor e quiser compilar um novo APK:
 ```bash
 # Entre no diretório mobile
 cd mobile
 
 # Gere o pacote Release APK
 flutter build apk --release
-
-# Instale no dispositivo via ADB
-flutter install
 ```
-
-O APK gerado ficará disponível em `mobile\build\app\outputs\flutter-apk\Keeply.apk` e pode ser enviado ou transferido manualmente para qualquer aparelho Android.
+O APK gerado ficará disponível em `mobile\build\app\outputs\flutter-apk\app-release.apk` e pode ser enviado para qualquer aparelho Android.

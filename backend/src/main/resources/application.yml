@@ -1,7 +1,7 @@
 server:
   port: 8080
   ssl:
-    enabled: true
+    enabled: false
     key-store: classpath:keeply.p12
     key-store-password: keeply123
     key-store-type: PKCS12
