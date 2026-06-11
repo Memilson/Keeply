@@ -78,11 +78,15 @@ services:
             }
 
             location = /prod {
-              return 308 /prod/;
+              return 308 /prod/login;
+            }
+
+            location = /prod/ {
+              return 308 /prod/login;
             }
 
             location /prod/ {
-              proxy_pass http://keeply_frontend;
+              proxy_pass http://keeply_frontend/;
             }
 
             location = /minio {
@@ -173,6 +177,7 @@ services:
       KEEPLY_MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
       KEEPLY_MINIO_BUCKET: ${KEEPLY_MINIO_BUCKET:-keeply}
       KEEPLY_JWT_SECRET: ${KEEPLY_JWT_SECRET}
+      KEEPLY_REGISTRATION_CODE: ${KEEPLY_REGISTRATION_CODE:-}
       KEEPLY_MASTER_KEY: ${KEEPLY_MASTER_KEY}
       KEEPLY_ALLOWED_ORIGINS: ${KEEPLY_ALLOWED_ORIGINS:-https://keeply.app.br}
       KEEPLY_TRUST_PROXY_HEADERS: ${KEEPLY_TRUST_PROXY_HEADERS:-true}

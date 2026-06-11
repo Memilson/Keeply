@@ -11,6 +11,7 @@ import com.keeply.backend.repository.DeviceRepository;
 import com.keeply.backend.repository.UserRepository;
 import com.keeply.backend.security.JwtService;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,10 +30,12 @@ public class AuthService {
     private final JwtService jwtService;
     private final RateLimitService rateLimit;
     private final ObjectMapper objectMapper;
+    private final String registrationCode;
 
     public AuthService(UserRepository users, DeviceRepository devices, AuditLogRepository auditLogs,
                        PasswordEncoder passwordEncoder, JwtService jwtService, RateLimitService rateLimit,
-                       ObjectMapper objectMapper) {
+                       ObjectMapper objectMapper,
+                       @Value("${keeply.security.registration-code:}") String registrationCode) {
         this.users = users;
         this.devices = devices;
         this.auditLogs = auditLogs;
@@ -40,11 +43,13 @@ public class AuthService {
         this.jwtService = jwtService;
         this.rateLimit = rateLimit;
         this.objectMapper = objectMapper;
+        this.registrationCode = registrationCode == null ? "" : registrationCode.trim();
     }
 
     @Transactional
     public AuthDtos.AuthResponse register(AuthDtos.RegisterRequest request, String ip) {
         rateLimit.checkRateLimit(ip, request.email());
+        validateRegistrationCode(request.registrationCode());
         String email = normalizedEmail(request.email());
         if (users.existsByEmail(email)) {
             recordAudit(null, null, "REGISTER_FAILED", "Tentativa de registro com email ja existente: " + email, ip);
@@ -64,6 +69,20 @@ public class AuthService {
         recordAudit(user, null, "REGISTER_SUCCESS", "Usuario registrado com sucesso", ip);
         String accessToken = jwtService.generateAccessToken(user.id, user.email);
         return new AuthDtos.AuthResponse(accessToken, null, user.id, user.email, null);
+    }
+
+    private void validateRegistrationCode(String providedCode) {
+        if (isBlank(registrationCode)) {
+            throw new IllegalStateException("Registro desabilitado");
+        }
+        String provided = providedCode == null ? "" : providedCode.trim();
+        boolean valid = MessageDigest.isEqual(
+                registrationCode.getBytes(StandardCharsets.UTF_8),
+                provided.getBytes(StandardCharsets.UTF_8)
+        );
+        if (!valid) {
+            throw new IllegalArgumentException("Codigo de registro invalido");
+        }
     }
 
     @Transactional

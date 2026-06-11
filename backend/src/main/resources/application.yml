@@ -55,6 +55,7 @@ keeply:
   security:
     trust-proxy-headers: ${KEEPLY_TRUST_PROXY_HEADERS:false}
     trusted-proxy-ips: ${KEEPLY_TRUSTED_PROXY_IPS:}
+    registration-code: ${KEEPLY_REGISTRATION_CODE:}
     # VULN-006: origins permitidos — configurar em produção via env var
     # Produção: KEEPLY_ALLOWED_ORIGINS=https://keeply.app.br,https://minio.keeply.app.br
     allowed-origins: ${KEEPLY_ALLOWED_ORIGINS:http://localhost:*,http://127.0.0.1:*}
