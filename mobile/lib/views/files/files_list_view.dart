@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart' as intl;
 import '../../models/remote_file.dart';
@@ -36,6 +38,8 @@ class _FilesListViewState extends State<FilesListView> {
     });
     _searchController.addListener(_onSearchChanged);
   }
+  bool _isOfflineMode = false;
+
   Future<void> _loadFiles() async {
     if (_isLoading) return;
     try {
@@ -45,15 +49,40 @@ class _FilesListViewState extends State<FilesListView> {
         _currentPage = 1;
         _endOfList = false;
       });
+
+      final prefs = await SharedPreferences.getInstance();
+      final cachedData = prefs.getString('cached_snapshots_view');
+      if (cachedData != null && cachedData.isNotEmpty) {
+        try {
+          final List<dynamic> decoded = jsonDecode(cachedData);
+          if (mounted) {
+            setState(() {
+              _files = decoded.map((e) => RemoteFile.fromJson(e)).toList();
+              _isOfflineMode = true;
+              _isLoading = false;
+            });
+          }
+        } catch (e) {
+          debugPrint('Erro cache files list: $e');
+        }
+      }
+
       final files = await _apiClient.listFiles(
         query: _searchController.text.isNotEmpty ? _searchController.text : null,
         page: 1,
         pageSize: 50,
       );
+      
+      if (_searchController.text.isEmpty) {
+        final encoded = jsonEncode(files.map((e) => e.toJson()).toList());
+        await prefs.setString('cached_snapshots_view', encoded);
+      }
+
       if (!mounted) return;
       setState(() {
         _files = files;
         _isLoading = false;
+        _isOfflineMode = false;
         _endOfList = files.isEmpty;
       });
     } on TokenExpiredException catch (_) {
@@ -68,19 +97,31 @@ class _FilesListViewState extends State<FilesListView> {
       if (mounted) {
         setState(() {
           _isLoading = false;
-          _hasError = true;
-          _errorMessage =
-              'Sem conexão com a nuvem.\n\nVerifique se o seu celular está conectado à internet ou à mesma rede do servidor.';
+          if (_files.isEmpty) {
+            _hasError = true;
+            _errorMessage = 'Sem conexão com a nuvem.\n\nVerifique se o seu celular está conectado à internet ou à mesma rede do servidor.';
+          } else {
+            _isOfflineMode = true;
+          }
         });
       }
     } on ApiException catch (e) {
       if (mounted) {
         setState(() {
           _isLoading = false;
-          _hasError = true;
-          _errorMessage = e.message;
+          if (_files.isEmpty) {
+            _hasError = true;
+            _errorMessage = e.message;
+          } else {
+            _isOfflineMode = true;
+          }
         });
       }
+    } catch (_) {
+      if (mounted) setState(() {
+        _isLoading = false;
+        if (_files.isNotEmpty) _isOfflineMode = true;
+      });
     }
   }
   Future<void> _loadMoreFiles() async {
@@ -286,6 +327,23 @@ class _FilesListViewState extends State<FilesListView> {
         body: Column(
           children: [
             _buildSearchBar(),
+            if (_isOfflineMode)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                color: Colors.amber.withOpacity(0.2),
+                child: const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.offline_bolt, size: 14, color: Colors.amber),
+                    SizedBox(width: 6),
+                    Text(
+                      'Modo Offline (Exibindo últimos dados salvos)',
+                      style: TextStyle(color: Colors.amber, fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
             Expanded(
               child: _isDeepSearching
                   ? _buildLoadingWidget()
