@@ -3,21 +3,15 @@
 FROM node:22-alpine AS deps
 WORKDIR /app
 
-COPY frontend/package.json frontend/package-lock.json ./
+COPY landing/package.json landing/package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm \
     npm ci
 
 FROM node:22-alpine AS build
 WORKDIR /app
 
-ARG NEXT_PUBLIC_API_BASE
-ARG NEXT_BASE_PATH
-ENV NEXT_PUBLIC_API_BASE=$NEXT_PUBLIC_API_BASE
-ENV NEXT_BASE_PATH=$NEXT_BASE_PATH
-ENV NEXT_PUBLIC_BASE_PATH=$NEXT_BASE_PATH
-
 COPY --from=deps /app/node_modules ./node_modules
-COPY frontend ./
+COPY landing ./
 
 RUN NODE_OPTIONS="--max-old-space-size=1024" npm run build
 
@@ -25,11 +19,6 @@ FROM node:22-alpine AS runtime
 WORKDIR /app
 
 ENV NODE_ENV=production
-ARG NEXT_PUBLIC_API_BASE
-ARG NEXT_BASE_PATH
-ENV NEXT_PUBLIC_API_BASE=$NEXT_PUBLIC_API_BASE
-ENV NEXT_BASE_PATH=$NEXT_BASE_PATH
-ENV NEXT_PUBLIC_BASE_PATH=$NEXT_BASE_PATH
 
 COPY --from=build /app/package.json ./package.json
 COPY --from=build /app/package-lock.json ./package-lock.json

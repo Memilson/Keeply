@@ -1,4 +1,11 @@
 export const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "https://localhost:8080";
+export const APP_BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? process.env.NEXT_BASE_PATH ?? "";
+
+export function appPath(path: string) {
+  const normalizedBase = APP_BASE_PATH.endsWith("/") ? APP_BASE_PATH.slice(0, -1) : APP_BASE_PATH;
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  return `${normalizedBase}${normalizedPath}`;
+}
 
 const ACCESS_KEY = "keeply.accessToken";
 const REFRESH_KEY = "keeply.refreshToken";
@@ -29,8 +36,9 @@ export function clearTokens() {
 
 export function redirectToLogin() {
   if (typeof window === "undefined") return;
-  if (window.location.pathname !== "/login") {
-    window.location.replace("/login");
+  const loginPath = appPath("/login");
+  if (window.location.pathname !== loginPath) {
+    window.location.replace(loginPath);
   }
 }
 
