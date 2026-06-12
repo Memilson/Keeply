@@ -89,6 +89,26 @@ services:
               proxy_pass http://keeply_frontend/;
             }
 
+            location = /keeply {
+              client_max_body_size 0;
+              proxy_request_buffering off;
+              proxy_buffering off;
+              proxy_read_timeout 3600s;
+              proxy_send_timeout 3600s;
+              proxy_connect_timeout 300s;
+              proxy_pass http://keeply_minio;
+            }
+
+            location /keeply/ {
+              client_max_body_size 0;
+              proxy_request_buffering off;
+              proxy_buffering off;
+              proxy_read_timeout 3600s;
+              proxy_send_timeout 3600s;
+              proxy_connect_timeout 300s;
+              proxy_pass http://keeply_minio;
+            }
+
             location = /minio {
               return 308 /minio/;
             }
@@ -172,7 +192,7 @@ services:
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
       KEEPLY_MINIO_ENDPOINT: http://minio:9000
-      KEEPLY_MINIO_PUBLIC_ENDPOINT: ${KEEPLY_MINIO_PUBLIC_ENDPOINT:-https://keeply.app.br/minio}
+      KEEPLY_MINIO_PUBLIC_ENDPOINT: ${KEEPLY_MINIO_PUBLIC_ENDPOINT:-https://keeply.app.br}
       KEEPLY_MINIO_ACCESS_KEY: ${MINIO_ROOT_USER}
       KEEPLY_MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
       KEEPLY_MINIO_BUCKET: ${KEEPLY_MINIO_BUCKET:-keeply}

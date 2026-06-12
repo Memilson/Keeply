@@ -5,7 +5,8 @@ O compose de produção fica em `infra/docker-compose.prod.yml` e publica soment
 - `https://keeply.app.br/` serve a landing.
 - `https://keeply.app.br/prod` serve o app web.
 - `https://keeply.app.br/api` encaminha para o backend Spring.
-- `https://keeply.app.br/minio` encaminha para a API S3 do MinIO, sem expor o console.
+- `https://keeply.app.br` também encaminha requisições S3 do bucket `keeply` para o MinIO, sem expor o console.
+- O endpoint S3 público deve ser `https://keeply.app.br`, sem subpath como `/minio`, porque clientes S3/MinIO rejeitam endpoints com caminho.
 - Postgres, backend, frontend, landing e MinIO ficam apenas na rede Docker.
 
 Crie o arquivo de ambiente fora do repositório, por exemplo `/opt/keeply/.env.prod`:
@@ -18,6 +19,7 @@ POSTGRES_PASSWORD=<senha-forte>
 MINIO_ROOT_USER=<usuario-forte>
 MINIO_ROOT_PASSWORD=<senha-forte>
 KEEPLY_MINIO_BUCKET=keeply
+KEEPLY_MINIO_PUBLIC_ENDPOINT=https://keeply.app.br
 
 KEEPLY_JWT_SECRET=<32+-chars>
 KEEPLY_MASTER_KEY=<64-hex-chars>
