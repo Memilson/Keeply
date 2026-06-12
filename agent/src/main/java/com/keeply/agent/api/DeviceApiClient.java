@@ -19,11 +19,11 @@ public final class DeviceApiClient {
     }
 
     void heartbeat(UUID deviceId, String traceId) throws Exception {
-        executor.require2xx(executor.sendJson("/api/devices/" + deviceId + "/heartbeat", "", "PATCH", traceId));
+        executor.require2xx(executor.sendJson(ApiEndpoints.deviceHeartbeat(deviceId), "", "PATCH", traceId));
     }
 
     Optional<ProtectionPlan> getPlan(UUID deviceId, String traceId) throws Exception {
-        HttpResponse<String> response = executor.getAllowingNotFound("/api/devices/" + deviceId + "/plan", traceId);
+        HttpResponse<String> response = executor.getAllowingNotFound(ApiEndpoints.devicePlan(deviceId), traceId);
         if (response.statusCode() == 404) {
             return Optional.empty();
         }
@@ -60,7 +60,7 @@ public final class DeviceApiClient {
         if (retentionMode != null) payload.put("retentionMode", retentionMode);
         if (retentionDays != null) payload.put("retentionDays", retentionDays);
         String body = mapper.writeValueAsString(payload);
-        return mapper.readValue(executor.sendJson("/api/devices/" + deviceId + "/plan",
+        return mapper.readValue(executor.sendJson(ApiEndpoints.devicePlan(deviceId),
                 body, "PUT", traceId).body(), ProtectionPlan.class);
     }
 }

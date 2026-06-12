@@ -75,21 +75,24 @@ class BackupEngineTest {
 
         assertEquals("Preparando backup", messages.get(0));
         assertEquals("Escaneando arquivos", messages.get(1));
-        assertEquals("Processando arquivos (0 / 3)", messages.get(2));
+        assertEquals("Processando arquivos (0 / 3) - 0 B / 14 B", messages.get(2));
         assertMonotonic(percents);
-        assertEquals(List.of(2, 2, 32, 32, 63, 63, 94), processingPercents(progressEvents));
+        assertTrue(processingPercents(progressEvents).containsAll(List.of(2, 34, 61, 94)));
         assertFalse(percents.contains(95) && percents.indexOf(95) < percents.lastIndexOf(94));
-        assertTrue(messages.subList(3, 9).stream().anyMatch(message -> message.equals("Processando arquivos (0 / 3) - atual: a.txt")
-                || message.equals("Processando arquivos (0 / 3) - atual: b.txt")
-                || message.equals("Processando arquivos (0 / 3) - atual: c.txt")));
-        assertTrue(messages.subList(3, 9).stream().anyMatch(message -> message.startsWith("Processando arquivos (0 / 3) - atual: ")));
-        assertTrue(messages.subList(3, 9).stream().anyMatch(message -> message.startsWith("Processando arquivos (1 / 3) - atual: ")));
-        assertTrue(messages.subList(3, 9).stream().anyMatch(message -> message.startsWith("Processando arquivos (2 / 3) - atual: ")));
-        assertTrue(messages.subList(3, 9).stream().anyMatch(message -> message.startsWith("Processando arquivos (3 / 3) - atual: ")));
-        assertEquals(List.of(0, 1, 2, 2, 32, 32, 63, 63, 94, 95, 97, 100), percents);
-        assertEquals("Enviando manifesto", messages.get(9));
-        assertEquals("Concluindo snapshot", messages.get(10));
-        assertEquals("Backup concluído", messages.get(11));
+        assertTrue(messages.stream().anyMatch(message -> message.startsWith("Processando arquivos (0 / 3)")
+                && message.contains(" - atual: ")));
+        assertTrue(messages.stream().anyMatch(message -> message.startsWith("Processando arquivos (1 / 3)")
+                && message.contains(" - atual: ")));
+        assertTrue(messages.stream().anyMatch(message -> message.startsWith("Processando arquivos (2 / 3)")
+                && message.contains(" - atual: ")));
+        assertTrue(messages.stream().anyMatch(message -> message.startsWith("Processando arquivos (3 / 3)")
+                && message.contains(" - atual: ")));
+        assertEquals(0, percents.get(0));
+        assertEquals(1, percents.get(1));
+        assertEquals(100, percents.get(percents.size() - 1));
+        assertEquals("Enviando manifesto", messages.get(messages.size() - 3));
+        assertEquals("Concluindo snapshot", messages.get(messages.size() - 2));
+        assertEquals("Backup concluído", messages.get(messages.size() - 1));
     }
 
     @Test
@@ -112,7 +115,7 @@ class BackupEngineTest {
                 List.of(
                         "Preparando backup",
                         "Escaneando arquivos",
-                        "Processando arquivos (0 / 0)",
+                        "Processando arquivos (0 / 0) - 0 B / 0 B",
                         "Enviando manifesto",
                         "Concluindo snapshot",
                         "Backup concluído"

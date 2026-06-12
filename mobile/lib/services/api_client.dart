@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
+import '../core/constants/api_endpoints.dart';
 import '../models/remote_file.dart';
 class ApiClient {
   final String baseUrl;
@@ -15,10 +16,15 @@ class ApiClient {
     int page = 1,
     int pageSize = 50,
   }) async {
-    final q = query != null && query.isNotEmpty
-        ? '&q=${Uri.encodeQueryComponent(query)}'
-        : '';
-    final uri = Uri.parse('$baseUrl/api/snapshots?page=${page - 1}&size=$pageSize$q');
+    final uri = ApiEndpoints.uri(
+      baseUrl,
+      ApiEndpoints.snapshots,
+      {
+        'page': page - 1,
+        'size': pageSize,
+        if (query != null && query.isNotEmpty) 'q': query,
+      },
+    );
     final resp = await http.get(uri, headers: _headers).timeout(const Duration(seconds: 15));
     if (resp.statusCode != 200) {
       throw Exception('Falha ao listar snapshots: ${resp.statusCode}');
@@ -30,7 +36,7 @@ class ApiClient {
         .toList();
   }
   Future<RemoteFile> getFile(String id) async {
-    final uri = Uri.parse('$baseUrl/api/snapshots/$id');
+    final uri = ApiEndpoints.uri(baseUrl, ApiEndpoints.snapshot(id));
     final resp = await http.get(uri, headers: _headers).timeout(const Duration(seconds: 15));
     if (resp.statusCode != 200) {
       throw Exception('Falha ao obter snapshot: ${resp.statusCode}');
@@ -39,8 +45,11 @@ class ApiClient {
     return RemoteFile.fromSnapshotJson(json);
   }
   Future<File> downloadFileToPath(String snapshotId, String filePath, String destPath) async {
-    final encodedPath = Uri.encodeQueryComponent(filePath);
-    final uri = Uri.parse('$baseUrl/api/snapshots/$snapshotId/files/download?path=$encodedPath');
+    final uri = ApiEndpoints.uri(
+      baseUrl,
+      '${ApiEndpoints.snapshotFiles(snapshotId)}/download',
+      {'path': filePath},
+    );
     final resp = await http.get(uri, headers: _headers).timeout(const Duration(minutes: 2));
     if (resp.statusCode != 200) {
       throw Exception('Falha ao baixar arquivo: ${resp.statusCode}');

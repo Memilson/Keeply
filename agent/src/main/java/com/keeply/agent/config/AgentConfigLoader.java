@@ -6,6 +6,8 @@ import com.cronutils.parser.CronParser;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.keeply.agent.api.ApiEndpoints;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -16,6 +18,7 @@ import java.util.List;
 public final class AgentConfigLoader {
     private final CronParser cronParser = new CronParser(CronDefinitionBuilder.instanceDefinitionFor(CronType.UNIX));
     private final ObjectMapper mapper = new ObjectMapper(new YAMLFactory())
+            .registerModule(new JavaTimeModule())
             .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 
     public AgentConfig load(Path path) {
@@ -38,8 +41,11 @@ public final class AgentConfigLoader {
 
         List<String> errors = new ArrayList<>();
 
-        if (config.backend() == null || isBlank(config.backend().url())) {
-            errors.add("backend.url é obrigatório");
+        AgentConfig.Backend backend = config.backend();
+        if (backend == null || isBlank(backend.url())) {
+            backend = new AgentConfig.Backend(ApiEndpoints.DEFAULT_BASE_URL);
+        } else {
+            backend = new AgentConfig.Backend(ApiEndpoints.normalizeBaseUrl(backend.url()));
         }
 
         if (config.schedule() != null && !isBlank(config.schedule().cron())) {
@@ -60,7 +66,17 @@ public final class AgentConfigLoader {
             throw new IllegalArgumentException("Configuração inválida: " + String.join("; ", errors));
         }
 
-        return config;
+        return new AgentConfig(
+                backend,
+                config.auth(),
+                config.device(),
+                config.backup(),
+                config.schedule(),
+                config.retention(),
+                config.validation(),
+                config.cdp(),
+                config.encryption(),
+                config.planSync());
     }
 
     private boolean isBlank(String value) {

@@ -1,4 +1,4 @@
-import 'env_config.dart';
+import 'api_endpoints.dart';
 
 class AppConstants {
   static const String routeSplash = '/splash';
@@ -14,8 +14,7 @@ class AppConstants {
   static const int splashDurationMillis = 2000;
   static const int apiTimeoutSeconds = 30;
   static const int maxRetryAttempts = 3;
-  static const String wsDefaultUrl = EnvConfig.wsDefaultUrl;
-  static const String backendBaseUrl = EnvConfig.backendBaseUrl;
+  static const String backendBaseUrl = ApiEndpoints.defaultBackendBaseUrl;
   static const String storageKeyBiometricsEnabled = 'keeply_biometrics_enabled';
   static const int wsReconnectMs = 5000;
   static const int wsKeepAliveMs = 25000;

@@ -22,7 +22,7 @@ public final class SnapshotApiClient {
 
     StartedSnapshot start(UUID deviceId, String sourcePath, String traceId) throws Exception {
         String body = mapper.writeValueAsString(Map.of("deviceId", deviceId.toString(), "sourcePath", sourcePath));
-        return mapper.readValue(executor.sendJson("/api/snapshots/start", body, "POST", traceId).body(),
+        return mapper.readValue(executor.sendJson(ApiEndpoints.SNAPSHOT_START, body, "POST", traceId).body(),
                 StartedSnapshot.class);
     }
 
@@ -33,23 +33,23 @@ public final class SnapshotApiClient {
                 "totalFiles", totalFiles,
                 "totalOriginalSize", totalOriginalSize,
                 "totalCompressedSize", totalCompressedSize));
-        executor.sendJson("/api/snapshots/" + snapshotId + "/complete", body, "POST", traceId);
+        executor.sendJson(ApiEndpoints.snapshotComplete(snapshotId), body, "POST", traceId);
     }
 
     void fail(UUID snapshotId, String errorMessage, String traceId) throws Exception {
-        executor.sendJson("/api/snapshots/" + snapshotId + "/fail",
+        executor.sendJson(ApiEndpoints.snapshotFail(snapshotId),
                 mapper.writeValueAsString(Map.of("errorMessage", errorMessage)), "POST", traceId);
     }
 
     SnapshotSummary get(UUID snapshotId, String traceId) throws Exception {
-        return mapper.readValue(executor.get("/api/snapshots/" + snapshotId, traceId).body(), SnapshotSummary.class);
+        return mapper.readValue(executor.get(ApiEndpoints.snapshot(snapshotId), traceId).body(), SnapshotSummary.class);
     }
 
     List<SnapshotSummary> list(String traceId) throws Exception {
         List<SnapshotSummary> all = new java.util.ArrayList<>();
         int page = 0;
         while (true) {
-            String path = "/api/snapshots?page=" + page + "&size=200";
+            String path = ApiEndpoints.SNAPSHOTS + "?page=" + page + "&size=200";
             BackendClient.SnapshotPage result = mapper.readValue(
                     executor.get(path, traceId).body(), BackendClient.SnapshotPage.class);
             all.addAll(result.items());
@@ -60,13 +60,13 @@ public final class SnapshotApiClient {
     }
 
     void delete(UUID snapshotId, String traceId) throws Exception {
-        executor.delete("/api/snapshots/" + snapshotId, traceId);
+        executor.delete(ApiEndpoints.snapshot(snapshotId), traceId);
     }
 
     BackendClient.SnapshotFilePage listFiles(UUID snapshotId, int page, int size, String search,
                                              String prefix, String traceId) throws Exception {
-        StringBuilder path = new StringBuilder("/api/snapshots/").append(snapshotId)
-                .append("/files?page=").append(page).append("&size=").append(size);
+        StringBuilder path = new StringBuilder(ApiEndpoints.snapshotFiles(snapshotId))
+                .append("?page=").append(page).append("&size=").append(size);
         appendQuery(path, "search", search);
         appendQuery(path, "prefix", prefix);
         return mapper.readValue(executor.get(path.toString(), traceId).body(),

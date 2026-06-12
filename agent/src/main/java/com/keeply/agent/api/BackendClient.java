@@ -179,19 +179,19 @@ public class BackendClient {
     }
 
     public TransferCredentials renewTransferSession(UUID transferSessionId) {
-        return transfer("/api/transfer-sessions/" + transferSessionId + "/renew");
+        return transfer(ApiEndpoints.transferRenew(transferSessionId));
     }
 
     public TransferCredentials startRestoreSession(UUID snapshotId) {
-        return transfer("/api/snapshots/" + snapshotId + "/restore-sessions");
+        return transfer(ApiEndpoints.snapshotRestoreSessions(snapshotId));
     }
 
     public void finishTransferSession(UUID transferSessionId) {
-        finishTransfer("/api/transfer-sessions/" + transferSessionId + "/finish");
+        finishTransfer(ApiEndpoints.transferFinish(transferSessionId));
     }
 
     public void cancelTransferSession(UUID transferSessionId) {
-        finishTransfer("/api/transfer-sessions/" + transferSessionId + "/cancel");
+        finishTransfer(ApiEndpoints.transferCancel(transferSessionId));
     }
 
     public void failSnapshot(UUID snapshotId, String errorMessage) {

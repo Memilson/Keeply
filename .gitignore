@@ -81,6 +81,7 @@ logs/
 # ==================================
 # AI TOOLS
 # ==================================
-.codex
-.gemini
+.tools/
+.Agent
+.Agent
 .cursor

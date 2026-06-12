@@ -17,12 +17,12 @@ public final class ChunkApiClient {
 
     BackendClient.CheckChunksResult checkChunks(List<String> hashes, String traceId) throws Exception {
         String body = mapper.writeValueAsString(Map.of("hashes", hashes));
-        return mapper.readValue(executor.sendJson("/api/chunks/check", body, "POST", traceId).body(),
+        return mapper.readValue(executor.sendJson(ApiEndpoints.CHUNKS_CHECK, body, "POST", traceId).body(),
                 BackendClient.CheckChunksResult.class);
     }
 
     long getStorageUsedBytes(String traceId) throws Exception {
-        Map<String, Long> usage = mapper.readValue(executor.get("/api/chunks/storage-usage", traceId).body(),
+        Map<String, Long> usage = mapper.readValue(executor.get(ApiEndpoints.STORAGE_USAGE, traceId).body(),
                 new TypeReference<>() {});
         return usage.getOrDefault("usedBytes", 0L);
     }

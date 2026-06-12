@@ -21,6 +21,16 @@ O agente (`agent/`) executa backup e restore, com UI JavaFX e modo daemon.
 4. Envio do manifesto e `completeSnapshot`.
 5. Polling até status final do snapshot.
 
+## Backend
+
+O agente usa `https://keeply.app.br` por padrão. A URL pode ser sobrescrita por `backend.url` no YAML do agente, pela propriedade JVM `-Dkeeply.backend.url=...` ou pela variável `KEEPLY_BACKEND_URL`.
+
+- Produção: `https://keeply.app.br`
+- Desenvolvimento local no mesmo computador: `http://localhost:8080`
+- Desenvolvimento local em outra máquina: `http://IP_DA_MAQUINA:8080`
+
+No desktop, `localhost` funciona quando o backend roda no mesmo host do agente. No mobile, prefira IP da máquina ou `10.0.2.2` no emulador Android.
+
 ## Gargalos atuais
 
 - Polling de auditoria por `listSnapshots` em loop.

@@ -5,6 +5,7 @@ import 'package:intl/intl.dart' as intl;
 import '../../models/remote_file.dart';
 import '../../services/api_client_service.dart';
 import 'snapshot_details_view.dart';
+import '../../widgets/keeply_mark.dart';
 import 'package:flutter/services.dart';
 class FilesListView extends StatefulWidget {
   const FilesListView({super.key});
@@ -293,11 +294,7 @@ class _FilesListViewState extends State<FilesListView> {
           elevation: 0,
           title: Row(
             children: [
-              Image.asset(
-                'assets/images/keeply_icon.png',
-                width: 28,
-                height: 28,
-              ),
+              const KeeplyMark(size: 28),
               const SizedBox(width: 10),
               const Text(
                 'Keeply',

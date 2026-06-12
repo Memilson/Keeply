@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 import '../models/remote_file.dart';
 import 'secure_storage_service.dart';
+import '../core/constants/api_endpoints.dart';
 import '../core/constants/app_constants.dart';
 class ApiClientService {
   static final ApiClientService _instance = ApiClientService._();
@@ -109,7 +110,7 @@ class ApiClientService {
   Future<void> login(String email, String password) async {
     try {
       final baseUrl = await _getBaseUrl();
-      final uri = '$baseUrl/api/auth/login';
+      final uri = ApiEndpoints.uri(baseUrl, ApiEndpoints.login).toString();
       final response = await http
           .post(
             Uri.parse(uri),
@@ -160,7 +161,10 @@ class ApiClientService {
     try {
       final baseUrl = await _getBaseUrl();
       final springPage = page - 1;
-      final uri = '$baseUrl/api/snapshots?page=$springPage&size=$pageSize';
+      final uri = ApiEndpoints.uri(baseUrl, ApiEndpoints.snapshots, {
+        'page': springPage,
+        'size': pageSize,
+      }).toString();
       final body = await _getWithRetry(uri);
       final json = jsonDecode(body) as Map<String, dynamic>;
       final items = (json['items'] as List<dynamic>?) ?? [];
@@ -183,11 +187,11 @@ class ApiClientService {
   }) async {
     try {
       final baseUrl = await _getBaseUrl();
-      final searchParam = (search != null && search.isNotEmpty)
-          ? '&search=${Uri.encodeQueryComponent(search)}'
-          : '';
-      final uri =
-          '$baseUrl/api/snapshots/$snapshotId/files?page=$page&size=$size$searchParam';
+      final uri = ApiEndpoints.uri(baseUrl, ApiEndpoints.snapshotFiles(snapshotId), {
+        'page': page,
+        'size': size,
+        if (search != null && search.isNotEmpty) 'search': search,
+      }).toString();
       final body = await _getWithRetry(uri);
       final json = jsonDecode(body) as Map<String, dynamic>;
       final items = (json['items'] as List<dynamic>?) ?? (json['files'] as List<dynamic>?) ?? [];
@@ -204,7 +208,7 @@ class ApiClientService {
   }
   Future<void> deleteSnapshot(String snapshotId) async {
     final baseUrl = await _getBaseUrl();
-    final uri = '$baseUrl/api/snapshots/$snapshotId';
+    final uri = ApiEndpoints.uri(baseUrl, ApiEndpoints.snapshot(snapshotId)).toString();
     final headers = await _getHeaders();
     final response = await http.delete(Uri.parse(uri), headers: headers)
         .timeout(_defaultTimeout);
@@ -215,8 +219,11 @@ class ApiClientService {
   Future<File> downloadFile(String snapshotId, String filePath, String destinationPath) async {
     try {
       final baseUrl = await _getBaseUrl();
-      final encodedPath = Uri.encodeQueryComponent(filePath);
-      final uri = '$baseUrl/api/snapshots/$snapshotId/files/download?path=$encodedPath';
+      final uri = ApiEndpoints.uri(
+        baseUrl,
+        '${ApiEndpoints.snapshotFiles(snapshotId)}/download',
+        {'path': filePath},
+      ).toString();
       final headers = await _getHeaders();
       final response = await http
           .get(Uri.parse(uri), headers: headers)
@@ -252,7 +259,7 @@ class ApiClientService {
             baseUrl.contains(':8080');
         baseUrl = '${isLocal ? 'http://' : 'https://'}$baseUrl';
       }
-      final uri = '$baseUrl/api/auth/qr/exchange';
+      final uri = ApiEndpoints.uri(baseUrl, '/api/auth/qr/exchange').toString();
       final headers = {
         'Content-Type': 'application/json; charset=utf-8',
         'User-Agent': 'KeeplyMobile/1.0',
@@ -294,7 +301,7 @@ class ApiClientService {
   }) async {
     try {
       final baseUrl = await _getBaseUrl();
-      final uri = '$baseUrl/api/devices/register';
+      final uri = ApiEndpoints.uri(baseUrl, ApiEndpoints.registerDevice).toString();
       final token = await _getToken();
       final response = await http
           .post(

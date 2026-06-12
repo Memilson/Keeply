@@ -107,6 +107,7 @@ public class BackupEngine {
                 AtomicInteger chunksCompressed = new AtomicInteger(0);
                 AtomicInteger chunksReused = new AtomicInteger(0);
                 AtomicLong totalOriginalSize = new AtomicLong(0);
+                AtomicLong processedOriginalSize = new AtomicLong(0);
                 AtomicLong bytesCompressed = new AtomicLong(0);
                 AtomicLong bytesUploaded = new AtomicLong(0);
                 AtomicLong cacheValidationNanos = new AtomicLong(0);
@@ -135,12 +136,15 @@ public class BackupEngine {
                 totalFiles.set(Math.toIntExact(preScanStats.files()));
                 log.info("event=backup.scan status=started");
                 long startProcessing = System.nanoTime();
-                emitProgress(fileProcessingPercent(0, preScanStats.files()),
-                        processingMessage(0, preScanStats.files(), null), sourceRoot);
+                emitProgress(processingPercent(0, preScanStats.totalBytes()),
+                        processingMessage(0, preScanStats.files(), null, 0, preScanStats.totalBytes()), sourceRoot);
                 FileScanner.ScanStats processingScanStats = FileScanner.walk(sourceRoot, file -> {
                         String relativePath = sourceRoot.relativize(file).toString().replace('\\', '/');
-                        emitProgress(fileProcessingPercent(processedEntries.get(), preScanStats.files()),
-                                processingMessage(processedEntries.get(), preScanStats.files(), relativePath), sourceRoot);
+                        long completedBytesBeforeFile = processedOriginalSize.get();
+                        emitProgress(processingPercent(completedBytesBeforeFile, preScanStats.totalBytes()),
+                                processingMessage(processedEntries.get(), preScanStats.files(), relativePath,
+                                        completedBytesBeforeFile, preScanStats.totalBytes()), sourceRoot);
+                        long size = 0;
                         try {
                             int currentProcessed = processedEntries.get() + 1;
                             if (currentProcessed % 1000 == 0) {
@@ -148,7 +152,7 @@ public class BackupEngine {
                                         currentProcessed, totalOriginalSize.get());
                             }
 
-                            long size = Files.size(file);
+                            size = Files.size(file);
                             long mtime = Files.getLastModifiedTime(file).toMillis();
                             totalOriginalSize.addAndGet(size);
 
@@ -171,6 +175,9 @@ public class BackupEngine {
                                 Map<String, CompressedCandidate> candidates = new LinkedHashMap<>();
                                 List<PendingChunk> pending = new ArrayList<>();
                                 String fileHash;
+                                AtomicLong currentFileBytesRead = new AtomicLong(0);
+                                AtomicLong lastProgressBytes = new AtomicLong(completedBytesBeforeFile);
+                                long sizeForProgress = size;
                                 try {
                                     fileHash = chunker.process(file, chunkData -> {
                                         String chunkHash = Sha256Hasher.hashBytes(chunkData.data());
@@ -198,6 +205,21 @@ public class BackupEngine {
                                             candidates.put(chunkHash, new CompressedCandidate(tempFile,
                                                     new ChunkMetadata(chunkHash, chunkData.originalSize(), compressedSize,
                                                             writeCodec.algorithm(), writeCodec.level())));
+                                        }
+                                    }, bytesRead -> {
+                                        long fileBytesRead = currentFileBytesRead.addAndGet(bytesRead);
+                                        long processedBytes = Math.min(preScanStats.totalBytes(),
+                                                completedBytesBeforeFile + fileBytesRead);
+                                        long previousProgressBytes = lastProgressBytes.get();
+                                        long progressStep = byteProgressStep(preScanStats.totalBytes());
+                                        if (processedBytes - previousProgressBytes >= progressStep
+                                                || fileBytesRead >= sizeForProgress) {
+                                            if (lastProgressBytes.compareAndSet(previousProgressBytes, processedBytes)) {
+                                                emitProgress(processingPercent(processedBytes, preScanStats.totalBytes()),
+                                                        processingMessage(processedEntries.get(), preScanStats.files(),
+                                                                relativePath, processedBytes, preScanStats.totalBytes()),
+                                                        sourceRoot);
+                                            }
                                         }
                                     });
                                 } catch (Exception e) {
@@ -277,8 +299,10 @@ public class BackupEngine {
                             }
                         } finally {
                             int processed = processedEntries.incrementAndGet();
-                            int percent = fileProcessingPercent(processed, preScanStats.files());
-                            emitProgress(percent, processingMessage(processed, preScanStats.files(), relativePath), sourceRoot);
+                            long processedBytes = processedOriginalSize.addAndGet(size);
+                            int percent = processingPercent(processedBytes, preScanStats.totalBytes());
+                            emitProgress(percent, processingMessage(processed, preScanStats.files(), relativePath,
+                                    processedBytes, preScanStats.totalBytes()), sourceRoot);
                         }
                     });
                 for (FileScanner.ScanFailure failure : processingScanStats.unreadableFailures()) {
@@ -455,20 +479,26 @@ public class BackupEngine {
         }
     }
 
-    private int fileProcessingPercent(int processedFiles, long expectedFiles) {
-        if (expectedFiles <= 0) {
+    private int processingPercent(long processedBytes, long expectedBytes) {
+        if (expectedBytes <= 0) {
             return PROCESSING_START_PERCENT;
         }
-        double ratio = Math.min(1.0, processedFiles / (double) expectedFiles);
+        double ratio = Math.min(1.0, processedBytes / (double) expectedBytes);
         int processingRange = PROCESSING_END_PERCENT - PROCESSING_START_PERCENT;
         return Math.max(PROCESSING_START_PERCENT,
                 Math.min(PROCESSING_END_PERCENT,
                         PROCESSING_START_PERCENT + (int) Math.floor(ratio * processingRange)));
     }
 
-    private String processingMessage(long processedFiles, long totalFiles, String currentFile) {
+    private long byteProgressStep(long totalBytes) {
+        return Math.max(4L * 1024L * 1024L, Math.max(1L, totalBytes / 100L));
+    }
+
+    private String processingMessage(long processedFiles, long totalFiles, String currentFile,
+                                     long processedBytes, long totalBytes) {
         String message = "Processando arquivos (" + formatProgressCount(processedFiles)
-                + " / " + formatProgressCount(totalFiles) + ")";
+                + " / " + formatProgressCount(totalFiles) + ")"
+                + " - " + formatBytes(processedBytes) + " / " + formatBytes(totalBytes);
         if (currentFile == null || currentFile.isBlank()) {
             return message;
         }
@@ -477,6 +507,17 @@ public class BackupEngine {
 
     private String formatProgressCount(long value) {
         return String.format(new java.util.Locale("pt", "BR"), "%,d", value).replace(',', '.');
+    }
+
+    private String formatBytes(long bytes) {
+        if (bytes < 1024L) {
+            return formatProgressCount(Math.max(0, bytes)) + " B";
+        }
+        if (bytes < 1024L * 1024L) {
+            return formatProgressCount(Math.max(1, Math.round(bytes / 1024.0))) + " KB";
+        }
+        double megabytes = bytes / 1024.0 / 1024.0;
+        return String.format(new java.util.Locale("pt", "BR"), "%.1f MB", megabytes);
     }
 
     private void emitProgress(int percent, String message, Path sourceRoot) {
