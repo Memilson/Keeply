@@ -13,4 +13,5 @@ public interface TransferSessionRepository extends JpaRepository<TransferSession
     Optional<TransferSession> findByIdAndUserIdAndDeviceId(UUID id, UUID userId, UUID deviceId);
     List<TransferSession> findByStatusAndExpiresAtBefore(TransferSessionStatus status, Instant expiresAt);
     void deleteBySnapshotId(UUID snapshotId);
+    void deleteByDeviceId(UUID deviceId);
 }

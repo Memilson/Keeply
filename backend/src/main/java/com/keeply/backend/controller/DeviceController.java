@@ -32,6 +32,11 @@ public class DeviceController {
         return devices.list(CurrentUser.get().userId());
     }
 
+    @DeleteMapping("/{deviceId}")
+    public void delete(@PathVariable UUID deviceId) {
+        devices.delete(CurrentUser.get().userId(), deviceId);
+    }
+
     @PatchMapping("/{deviceId}/heartbeat")
     public void heartbeat(@PathVariable UUID deviceId) {
         devices.heartbeat(CurrentUser.get().userId(), deviceId);
