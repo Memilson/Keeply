@@ -8,4 +8,5 @@ import java.util.UUID;
 
 public interface ProtectionPlanRepository extends JpaRepository<ProtectionPlan, UUID> {
     Optional<ProtectionPlan> findByDeviceId(UUID deviceId);
+    void deleteByDeviceId(UUID deviceId);
 }

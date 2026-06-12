@@ -7,6 +7,13 @@ export function deviceName(device: Pick<Device, "name" | "hostname">): string {
   return device.name || device.hostname || "Máquina";
 }
 
+export function isMobileDevice(device: Pick<Device, "name" | "hostname" | "osName">): boolean {
+  const probe = `${device.name ?? ""} ${device.hostname ?? ""} ${device.osName ?? ""}`.toLowerCase();
+  return ["android", "ios", "iphone", "ipad", "celular", "mobile", "phone"].some((term) =>
+    probe.includes(term),
+  );
+}
+
 export function isOnline(lastSeenAt?: string): boolean {
   if (!lastSeenAt) return false;
   const seen = new Date(lastSeenAt).getTime();

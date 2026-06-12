@@ -13,6 +13,7 @@ import {
   deviceName,
   getMachineStatus,
   inferSnapshotType,
+  isMobileDevice,
   planName,
   retentionLabel,
   scheduleLabel,
@@ -36,6 +37,7 @@ export default function MachinesPage() {
   const [selectedDeviceId, setSelectedDeviceId] = useState("");
   const [activeTab, setActiveTab] = useState<MachinePanelTab>("summary");
   const [loading, setLoading] = useState(true);
+  const [deletingDeviceId, setDeletingDeviceId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
@@ -115,7 +117,37 @@ export default function MachinesPage() {
     });
   }, [devices, snapshotsByDevice]);
 
-  const selectedMachine = machines.find((item) => item.device.id === selectedDeviceId) ?? null;
+  const visibleMachines = useMemo(
+    () => machines.filter((machine) => machine.latestSnapshot || isMobileDevice(machine.device)),
+    [machines],
+  );
+
+  const selectedMachine = visibleMachines.find((item) => item.device.id === selectedDeviceId) ?? null;
+
+  const handleDeleteDevice = useCallback(
+    async (deviceId: string) => {
+      const machine = machines.find((item) => item.device.id === deviceId);
+      if (!machine) return;
+
+      const confirmed = window.confirm(
+        `Excluir o dispositivo "${deviceName(machine.device)}"? Essa ação remove o dispositivo e o histórico de snapshots dele.`,
+      );
+      if (!confirmed) return;
+
+      setDeletingDeviceId(deviceId);
+      setError(null);
+      try {
+        await api(`/api/devices/${deviceId}`, { method: "DELETE" });
+        setSelectedDeviceId((current) => (current === deviceId ? "" : current));
+        await loadData();
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : "Falha ao excluir dispositivo.");
+      } finally {
+        setDeletingDeviceId(null);
+      }
+    },
+    [loadData, machines],
+  );
 
   return (
     <>
@@ -132,7 +164,7 @@ export default function MachinesPage() {
 
         {loading ? (
           <div className="p-6 text-sm text-slate-500">Carregando máquinas...</div>
-        ) : machines.length === 0 ? (
+        ) : visibleMachines.length === 0 ? (
           <div className="p-6 text-sm text-slate-500">Nenhuma máquina encontrada.</div>
         ) : (
           <div
@@ -143,7 +175,7 @@ export default function MachinesPage() {
             }
           >
             <DeviceList
-              machines={machines}
+              machines={visibleMachines}
               selectedId={selectedMachine?.device.id ?? ""}
               onSelect={(deviceId) => {
                 setSelectedDeviceId(deviceId);
@@ -161,6 +193,8 @@ export default function MachinesPage() {
                   key={`panel-${selectedMachine.device.id}`}
                   machine={selectedMachine}
                   activeTab={activeTab}
+                  deleting={deletingDeviceId === selectedMachine.device.id}
+                  onDelete={() => void handleDeleteDevice(selectedMachine.device.id)}
                   onTabChange={setActiveTab}
                   onClose={() => setSelectedDeviceId("")}
                 />
@@ -199,6 +233,7 @@ function DeviceList({
       <div className="h-[calc(100%-112px)] overflow-y-auto">
         {machines.map((machine) => {
           const selected = machine.device.id === selectedId;
+          const mobile = isMobileDevice(machine.device);
           return (
             <button
               key={machine.device.id}
@@ -212,7 +247,7 @@ function DeviceList({
               }}
             >
               <span className="text-xl text-[#7B61FF]">
-                <i className="bi bi-pc-display-horizontal" aria-hidden="true" />
+                <i className={`bi ${mobile ? "bi-phone" : "bi-pc-display-horizontal"}`} aria-hidden="true" />
               </span>
               <span className="min-w-0">
                 <span className="block truncate text-sm font-semibold text-slate-100">{deviceName(machine.device)}</span>
@@ -274,11 +309,15 @@ function ActionRail({
 function DetailPanel({
   machine,
   activeTab,
+  deleting,
+  onDelete,
   onTabChange,
   onClose,
 }: {
   machine: MachineViewModel | null;
   activeTab: MachinePanelTab;
+  deleting: boolean;
+  onDelete: () => void;
   onTabChange: (tab: MachinePanelTab) => void;
   onClose: () => void;
 }) {
@@ -312,6 +351,15 @@ function DetailPanel({
           </div>
 
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onDelete}
+              disabled={deleting}
+              className="rounded-lg border px-3 py-2 text-xs font-semibold text-[#FCA5A5] transition-colors duration-150 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-60"
+              style={{ borderColor: "rgba(248,113,113,0.25)" }}
+            >
+              {deleting ? "Excluindo..." : "Excluir dispositivo"}
+            </button>
             <button
               type="button"
               onClick={() => onTabChange("snapshots")}

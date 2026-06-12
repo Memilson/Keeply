@@ -25,4 +25,5 @@ public interface SnapshotRepository extends JpaRepository<Snapshot, UUID> {
     @Query("SELECT s FROM Snapshot s JOIN FETCH s.device WHERE s.id = :id AND s.device.user.id = :userId")
     Optional<Snapshot> findByIdAndDeviceUserId(@Param("id") UUID id, @Param("userId") UUID userId);
     boolean existsByDeviceIdAndStatusIn(UUID deviceId, java.util.Collection<SnapshotStatus> statuses);
+    List<Snapshot> findByDeviceIdOrderByCreatedAtDesc(UUID deviceId);
 }
