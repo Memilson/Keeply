@@ -1,6 +1,7 @@
 package com.keeply.agent;
 
 import com.keeply.agent.api.BackendClient;
+import com.keeply.agent.api.ApiEndpoints;
 import com.keeply.agent.auth.DeviceAuthStore;
 import com.keeply.agent.auth.DeviceIdentity;
 import com.keeply.agent.config.AgentConfigReader;
@@ -22,6 +23,7 @@ import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
+import javafx.scene.Group;
 import javafx.scene.Scene;
 import javafx.scene.Node;
 import javafx.scene.control.*;
@@ -155,7 +157,7 @@ public class KeeplyAgentApp extends Application {
         configWriter = new AgentConfigWriter(AgentPaths.resolveDefaultConfigPath());
 
         
-        String savedBackendUrl = "http://localhost:8080";
+        String savedBackendUrl = ApiEndpoints.DEFAULT_BASE_URL;
         try {
             Optional<AgentConfigReader.UiConfig> cfg = configReader.read();
             if (cfg.isPresent() && cfg.get().backendUrl() != null && !cfg.get().backendUrl().isBlank()) {
@@ -263,12 +265,7 @@ public class KeeplyAgentApp extends Application {
         loginHeader.setAlignment(Pos.CENTER);
         loginHeader.setPadding(new Insets(0, 0, 36, 0));
 
-        SVGPath sparkMark = new SVGPath();
-        sparkMark.setContent("M12 0C13 6.5 14.8 8.2 22 9.5C14.8 10.8 13 12.5 12 19C11 12.5 9.2 10.8 2 9.5C9.2 8.2 11 6.5 12 0Z");
-        sparkMark.setStyle("-fx-fill: #7B61FF;");
-        sparkMark.setScaleX(1.4); sparkMark.setScaleY(1.4);
-        StackPane markWrap = new StackPane(sparkMark);
-        markWrap.setPrefSize(34, 28); markWrap.setMinSize(34, 28);
+        Node markWrap = createKeeplyMark(34);
         Label wordmark = new Label("Keeply");
         wordmark.setStyle("-fx-font-size: 24px; -fx-font-weight: 800; -fx-text-fill: #FFFFFF;");
         HBox logoRow = new HBox(12);
@@ -1766,13 +1763,30 @@ public class KeeplyAgentApp extends Application {
     }
 
     private Node createKeeplySparkIcon() {
-        SVGPath icon = new SVGPath();
-        icon.setContent("M8 0l1.8 4.2L14 6l-4.2 1.8L8 12 6.2 7.8 2 6l4.2-1.8z");
-        icon.setStyle("-fx-fill: #5D4FFF;");
-        StackPane wrapper = new StackPane(icon);
-        wrapper.setPrefSize(18, 18);
-        wrapper.setMinSize(18, 18);
-        wrapper.setMaxSize(18, 18);
+        return createKeeplyMark(18);
+    }
+
+    private Node createKeeplyMark(double size) {
+        SVGPath primary = new SVGPath();
+        primary.setContent("M20 6 C22 19 24.5 23.5 41 26 C24.5 28.5 22 33 20 46 C18 33 15.5 28.5 -1 26 C15.5 23.5 18 19 20 6 Z");
+        primary.setTranslateX(2);
+        primary.setTranslateY(-2);
+
+        SVGPath spark = new SVGPath();
+        spark.setContent("M39 5 C39.7 9.5 40.8 10.6 45 11.3 C40.8 12 39.7 13.1 39 17.5 C38.3 13.1 37.2 12 33 11.3 C37.2 10.6 38.3 9.5 39 5 Z");
+
+        String fill = "-fx-fill: linear-gradient(from 6px 8px to 40px 46px, #9C8BFF 0%, #6C4DFF 100%);";
+        primary.setStyle(fill);
+        spark.setStyle(fill);
+
+        Group mark = new Group(primary, spark);
+        mark.setScaleX(size / 48.0);
+        mark.setScaleY(size / 48.0);
+
+        StackPane wrapper = new StackPane(mark);
+        wrapper.setPrefSize(size, size);
+        wrapper.setMinSize(size, size);
+        wrapper.setMaxSize(size, size);
         return wrapper;
     }
 

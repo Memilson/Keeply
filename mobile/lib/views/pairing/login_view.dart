@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../controllers/auth_controller.dart';
+import '../../widgets/keeply_mark.dart';
 
 class LoginView extends StatefulWidget {
   const LoginView({super.key});
@@ -84,10 +85,7 @@ class _LoginViewState extends State<LoginView> with SingleTickerProviderStateMix
                         Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            CustomPaint(
-                              size: const Size(26, 26),
-                              painter: SparkPainter(),
-                            ),
+                            const KeeplyMark(size: 28),
                             const SizedBox(width: 12),
                             const Text(
                               'Keeply',
@@ -280,24 +278,4 @@ class _LoginViewState extends State<LoginView> with SingleTickerProviderStateMix
       ],
     );
   }
-}
-class SparkPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = const Color(0xFF7B61FF)
-      ..style = PaintingStyle.fill;
-    final path = Path();
-    final w = size.width / 24;
-    final h = size.height / 24;
-    path.moveTo(12 * w, 0 * h);
-    path.cubicTo(13 * w, 6.5 * h, 14.8 * w, 8.2 * h, 22 * w, 9.5 * h);
-    path.cubicTo(14.8 * w, 10.8 * h, 13 * w, 12.5 * h, 12 * w, 19 * h);
-    path.cubicTo(11 * w, 12.5 * h, 9.2 * w, 10.8 * h, 2 * w, 9.5 * h);
-    path.cubicTo(9.2 * w, 8.2 * h, 11 * w, 6.5 * h, 12 * w, 0 * h);
-    path.close();
-    canvas.drawPath(path, paint);
-  }
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

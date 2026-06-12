@@ -165,7 +165,7 @@ Exemplo de `agent.yaml`:
 
 ```yaml
 backend:
-  url: http://localhost:8080
+  url: https://keeply.app.br
 
 auth:
   email: keeply@keeply.com
@@ -284,12 +284,16 @@ As credenciais do banco de dados e as chaves JWT não estão no repositório.
 3. Rode docker-compose -f infra/docker-compose.yml up -d para subir o banco (agora resiliente com healthchecks!).
 
 ### 2. Configurando o Aplicativo Mobile
-Os IPs estáticos e tokens de Firebase não sobem no GitHub.
-1. Acesse mobile/lib/core/constants/.
-2. Duplique o arquivo env_config.example.dart e renomeie-o para env_config.dart.
-3. Abra `env_config.dart` e altere a URL `http://SEU_IP:8080` para apontar para a máquina onde o seu Backend está rodando.
-   > **Aviso sobre Testes Locais:** Se o seu backend estiver rodando apenas na sua máquina local (sem um servidor na nuvem), você **deve** usar o seu IP local (ex: `192.168.x.x`) neste arquivo, e o celular precisará estar conectado na **mesma rede Wi-Fi** que o servidor para os backups e navegação funcionarem!
-4. Crie o arquivo `local.properties` em `mobile/android/local.properties` contendo o caminho do seu SDK do Android se você for rodar via linha de comando puro.
+O mobile usa `https://keeply.app.br` por padrão. Para desenvolvimento local, passe a URL do backend no build:
+
+```bash
+cd mobile
+flutter run --dart-define=KEEPLY_BACKEND_BASE_URL=http://10.0.2.2:8080
+```
+
+Use `10.0.2.2` no emulador Android. Em celular físico, use `http://IP_DA_SUA_MAQUINA_NA_REDE:8080`; `localhost` no celular aponta para o próprio aparelho.
+
+Crie o arquivo `local.properties` em `mobile/android/local.properties` contendo o caminho do seu SDK do Android se você for rodar via linha de comando puro.
 
 Feito isso, o projeto já pode ser testado normalmente:
 ```bash
@@ -360,7 +364,7 @@ Exemplo de `agent.yaml`:
 
 ```yaml
 backend:
-  url: http://localhost:8080
+  url: https://keeply.app.br
 
 auth:
   email: keeply@keeply.com
@@ -479,12 +483,16 @@ As credenciais do banco de dados e as chaves JWT não estão no repositório.
 3. Rode docker-compose -f infra/docker-compose.yml up -d para subir o banco (agora resiliente com healthchecks!).
 
 ### 2. Configurando o Aplicativo Mobile
-Os IPs estáticos e tokens de Firebase não sobem no GitHub.
-1. Acesse mobile/lib/core/constants/.
-2. Duplique o arquivo env_config.example.dart e renomeie-o para env_config.dart.
-3. Abra `env_config.dart` e altere a URL `http://SEU_IP:8080` para apontar para a máquina onde o seu Backend está rodando.
-   > **Aviso sobre Testes Locais:** Se o seu backend estiver rodando apenas na sua máquina local (sem um servidor na nuvem), você **deve** usar o seu IP local (ex: `192.168.x.x`) neste arquivo, e o celular precisará estar conectado na **mesma rede Wi-Fi** que o servidor para os backups e navegação funcionarem!
-4. Crie o arquivo `local.properties` em `mobile/android/local.properties` contendo o caminho do seu SDK do Android se você for rodar via linha de comando puro.
+O mobile usa `https://keeply.app.br` por padrão. Para desenvolvimento local, passe a URL do backend no build:
+
+```bash
+cd mobile
+flutter run --dart-define=KEEPLY_BACKEND_BASE_URL=http://10.0.2.2:8080
+```
+
+Use `10.0.2.2` no emulador Android. Em celular físico, use `http://IP_DA_SUA_MAQUINA_NA_REDE:8080`; `localhost` no celular aponta para o próprio aparelho.
+
+Crie o arquivo `local.properties` em `mobile/android/local.properties` contendo o caminho do seu SDK do Android se você for rodar via linha de comando puro.
 
 Feito isso, o projeto já pode ser testado normalmente:
 ```bash
@@ -508,7 +516,7 @@ Na tela de login do aplicativo no celular, você verá um campo chamado "Servido
 Por padrão, o celular tentará procurar um servidor na nuvem. Como estamos rodando localmente na sua casa, **você precisará descobrir o número de IP da sua máquina (IPv4)**
 
 Na tela de login do app, digite o IP do seu computador no campo Servidor:
-`http://SEU_IP:8080`
+`http://IP_DA_SUA_MAQUINA_NA_REDE:8080`
 
 > **Aviso:** Se você colocar `localhost` no celular, ele tentará se conectar a si mesmo e vai falhar! O celular precisa do número de IP exato do computador onde o Backend do Keeply está rodando.
 

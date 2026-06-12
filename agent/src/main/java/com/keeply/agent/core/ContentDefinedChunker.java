@@ -8,6 +8,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.util.Arrays;
+import java.util.function.LongConsumer;
 
 public class ContentDefinedChunker {
     private static final Logger log = LoggerFactory.getLogger(ContentDefinedChunker.class);
@@ -18,6 +19,11 @@ public class ContentDefinedChunker {
     private static final int CUT_MASK = AVG_SIZE - 1;
 
     public String process(Path file, ChunkConsumer consumer) {
+        return process(file, consumer, bytesRead -> {
+        });
+    }
+
+    public String process(Path file, ChunkConsumer consumer, LongConsumer progressListener) {
         log.debug("Iniciando chunking do arquivo: {}", file);
         try (InputStream in = Files.newInputStream(file)) {
             MessageDigest fileDigest = MessageDigest.getInstance("SHA-256");
@@ -30,6 +36,7 @@ public class ContentDefinedChunker {
             int bytesRead;
 
             while ((bytesRead = in.read(buffer)) != -1) {
+                progressListener.accept(bytesRead);
                 fileDigest.update(buffer, 0, bytesRead);
                 for (int i = 0; i < bytesRead; i++) {
                     int b = buffer[i] & 0xFF;

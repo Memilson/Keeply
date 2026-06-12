@@ -23,3 +23,17 @@ Diferente da busca tradicional que filtra apenas os nomes dos snapshots, a Busca
 - `flutter_secure_storage`: Armazenamento seguro de tokens e credenciais.
 - `file_picker`: Seleção de diretórios customizados para salvar downloads.
 - `permission_handler`: Gerenciamento de permissões do Android/iOS.
+
+## Backend
+
+O mobile usa `https://keeply.app.br` por padrão. Para desenvolvimento local, não use `localhost` em celular físico, porque ele aponta para o próprio aparelho.
+
+- Emulador Android: `http://10.0.2.2:8080`
+- Celular físico: `http://IP_DA_SUA_MAQUINA_NA_REDE:8080`
+- Produção: `https://keeply.app.br`
+
+Exemplo:
+
+```bash
+flutter run --dart-define=KEEPLY_BACKEND_BASE_URL=http://10.0.2.2:8080
+```

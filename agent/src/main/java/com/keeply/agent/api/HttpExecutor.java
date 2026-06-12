@@ -46,7 +46,7 @@ public final class HttpExecutor {
 
     HttpExecutor(String baseUrl, ObjectMapper mapper, Supplier<DeviceSession> sessionSupplier,
                  Runnable refreshSession) {
-        this.baseUrl = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
+        this.baseUrl = ApiEndpoints.normalizeBaseUrl(baseUrl);
         this.mapper = mapper;
         this.sessionSupplier = sessionSupplier;
         this.refreshSession = refreshSession;

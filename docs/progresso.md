@@ -94,4 +94,4 @@ Verifique o arquivo `~/keeply/device-auth.json`. Ele deve conter um hash Base64 
 - [ ] **Criptografia Client-Side:** Suporte a chaves de criptografia privadas do usuario.
 
 ---
-*Atualizado em 23/05/2026 por Gemini CLI Agent*
+*Atualizado em 23/05/2026 por Agent CLI Agent*

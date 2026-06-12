@@ -24,7 +24,7 @@ public final class FileScanner {
             ".docker",
             "Trash",
             ".local/share/Trash",
-            ".codex"
+            ".Agent"
     );
 
     private FileScanner() {
@@ -68,6 +68,7 @@ public final class FileScanner {
                             stats.unreadableFailures.add(ScanFailure.unreadableFile(file));
                             return FileVisitResult.CONTINUE;
                         }
+                        stats.totalBytes += attrs.size();
                         handler.accept(file);
                         stats.files++;
                     }
@@ -88,7 +89,7 @@ public final class FileScanner {
                     return FileVisitResult.CONTINUE;
                 }
             });
-            return new ScanStats(stats.files, stats.ignoredDirectories, List.copyOf(stats.unreadableFailures));
+            return new ScanStats(stats.files, stats.totalBytes, stats.ignoredDirectories, List.copyOf(stats.unreadableFailures));
         } catch (IOException e) {
             throw new IllegalStateException("Falha ao escanear pasta: " + root, e);
         }
@@ -141,7 +142,7 @@ public final class FileScanner {
         void accept(Path path) throws IOException;
     }
 
-    public record ScanStats(long files, long ignoredDirectories, List<ScanFailure> unreadableFailures) {
+    public record ScanStats(long files, long totalBytes, long ignoredDirectories, List<ScanFailure> unreadableFailures) {
         public long prunedDirectories() {
             return ignoredDirectories;
         }
@@ -166,6 +167,7 @@ public final class FileScanner {
 
     private static final class MutableStats {
         long files;
+        long totalBytes;
         long ignoredDirectories;
         List<ScanFailure> unreadableFailures = new ArrayList<>();
     }

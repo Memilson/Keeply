@@ -26,7 +26,7 @@ public final class AuthApiClient {
                 "hostname", hostname,
                 "osName", osName,
                 "agentVersion", agentVersion));
-        HttpResponse<String> response = executor.sendPublicJson("/api/auth/login-device", body, traceId);
+        HttpResponse<String> response = executor.sendPublicJson(ApiEndpoints.AUTH_LOGIN_DEVICE, body, traceId);
         return parseSession(response.body(), installationId);
     }
 
@@ -34,12 +34,12 @@ public final class AuthApiClient {
         String body = mapper.writeValueAsString(Map.of(
                 "refreshToken", session.refreshToken(),
                 "deviceInstallationId", session.deviceInstallationId()));
-        HttpResponse<String> response = executor.sendPublicJson("/api/auth/refresh", body, traceId);
+        HttpResponse<String> response = executor.sendPublicJson(ApiEndpoints.AUTH_REFRESH, body, traceId);
         return parseSession(response.body(), session.deviceInstallationId());
     }
 
     BackendClient.QrTokenResponse generateQrToken(String traceId) throws Exception {
-        HttpResponse<String> response = executor.get("/api/auth/qr", traceId);
+        HttpResponse<String> response = executor.get(ApiEndpoints.AUTH_QR, traceId);
         return mapper.readValue(response.body(), BackendClient.QrTokenResponse.class);
     }
 
