@@ -6,6 +6,8 @@ class RemoteFile {
   final String path;
   final DateTime? modifiedAt;
   final String? snapshotId;
+  final int totalFiles; // Adicionado para dashboard
+  
   RemoteFile({
     required this.id,
     required this.name,
@@ -14,6 +16,7 @@ class RemoteFile {
     required this.path,
     this.modifiedAt,
     this.snapshotId,
+    this.totalFiles = 0,
   });
   factory RemoteFile.fromSnapshotJson(Map<String, dynamic> json) {
     final id = json['id'] as String? ?? '';
@@ -25,6 +28,7 @@ class RemoteFile {
         ? DateTime.tryParse(json['startedAt'] as String)
         : null;
     final compressedSize = (json['totalCompressedSize'] as int?) ?? 0;
+    final tFiles = (json['totalFiles'] as int?) ?? 0;
     final date = completedAt ?? startedAt ?? DateTime.now();
     final formattedDate =
         '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
@@ -37,6 +41,7 @@ class RemoteFile {
       size: compressedSize,
       path: sourcePath,
       modifiedAt: completedAt ?? startedAt,
+      totalFiles: tFiles,
     );
   }
   factory RemoteFile.fromSnapshotFileJson(Map<String, dynamic> json) {

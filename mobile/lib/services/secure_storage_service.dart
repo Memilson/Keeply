@@ -160,4 +160,20 @@ class SecureStorageService {
       return null;
     }
   }
+
+  Future<void> saveDashboardCache(String json) async {
+    try {
+      await _storage.write(key: 'dashboard_metrics_cache', value: json);
+    } catch (e) {
+      throw Exception('Erro ao salvar cache do dashboard: $e');
+    }
+  }
+
+  Future<String?> getDashboardCache() async {
+    try {
+      return await _storage.read(key: 'dashboard_metrics_cache');
+    } catch (e) {
+      return null;
+    }
+  }
 }

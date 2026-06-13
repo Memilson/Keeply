@@ -50,8 +50,9 @@ class ApiEndpoints {
       '/api/transfer-sessions/$id/finish';
 
   static Uri uri(String baseUrl, String path, [Map<String, dynamic>? query]) {
-    final normalizedBase =
-        baseUrl.endsWith('/') ? baseUrl.substring(0, baseUrl.length - 1) : baseUrl;
+    final normalizedBase = baseUrl.endsWith('/')
+        ? baseUrl.substring(0, baseUrl.length - 1)
+        : baseUrl;
     final uri = Uri.parse('$normalizedBase$path');
     if (query == null || query.isEmpty) return uri;
     return uri.replace(
