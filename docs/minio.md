@@ -1,39 +1,102 @@
-# Arquitetura MinIO
+# MinIO / Object Storage
 
-## Escopo
+O Keeply usa MinIO como storage S3 compatível para armazenar chunks comprimidos e manifestos de snapshots.
 
-MinIO é o data plane dos objetos de backup/restore. O backend emite credenciais temporárias e o agente transfere dados direto no bucket.
+## Papel do MinIO
 
-## Modelo atual
+O PostgreSQL guarda metadados e índices. O MinIO guarda os objetos binários:
 
-- Control plane:
-  - `TransferCredentialBroker` abre/renova/fecha `transfer_sessions`.
-  - `MinioStsCredentialIssuer` emite credenciais temporárias com policy por sessão.
-- Data plane:
-  - Agente usa `DirectTransferStorage` para `put/get` direto no MinIO.
-  - Backend usa `MinioStorageService` para auditoria/promoção/limpeza.
+- chunks Zstandard (`.zst`);
+- manifestos de snapshots;
+- objetos temporários em staging durante sessões de upload.
 
-## Chaves de objeto (resumo)
+## Configuração local
 
-- Staging: `users/{userId}/transfer-sessions/{sessionId}/...`
-- Chunks finais: `users/{userId}/chunks/{aa}/{bb}/{hash}.zst`
-- Manifesto final: `users/{userId}/manifests/{snapshotId}.json.zst`
+No Compose local:
 
-## Gargalos e riscos atuais
+```yaml
+minio:
+  image: minio/minio:latest
+  command: server /data --console-address ":9001"
+```
 
-- Alto número de chamadas `exists`/`copy` por chunk no promote.
-- Limpezas de prefixo potencialmente caras em cancelamento/expiração.
-- Escopo de restore amplo (`users/{userId}/chunks/*`) para credencial temporária.
-- Persistência de `minio_access_key` em sessão sem revogação real imediata.
+Portas padrão:
 
-## Legados para remover
+| Serviço | URL |
+| --- | --- |
+| API S3 | `http://localhost:9000` |
+| Console | `http://localhost:9001` |
 
-- Segredos padrão fracos em exemplos/dev.
-- Campos de sessão de transferência que não agregam segurança real.
+Credenciais padrão de desenvolvimento:
 
-## Melhorias objetivas
+```text
+Usuário: keeply
+Senha: keeply123
+Bucket: keeply
+```
 
-1. Reduzir roundtrips por chunk no pipeline de promoção.
-2. Reforçar least-privilege e validade curta em credenciais temporárias.
-3. Revisar revogação efetiva e trilha de auditoria da sessão.
-4. Definir lifecycle policy para objetos órfãos de staging.
+Variáveis relevantes:
+
+```dotenv
+MINIO_ROOT_USER=keeply
+MINIO_ROOT_PASSWORD=keeply123
+KEEPLY_MINIO_ENDPOINT=http://localhost:9000
+KEEPLY_MINIO_ACCESS_KEY=keeply
+KEEPLY_MINIO_SECRET_KEY=keeply123
+KEEPLY_MINIO_BUCKET=keeply
+```
+
+## Organização dos objetos
+
+Estrutura esperada:
+
+```text
+users/{userId}/chunks/{aa}/{bb}/{hash}.zst
+users/{userId}/manifests/{snapshotId}.json.zst
+staging/{sessionId}/...
+```
+
+O particionamento `{aa}/{bb}` evita muitos objetos no mesmo prefixo.
+
+## Fluxo de upload
+
+```mermaid
+sequenceDiagram
+    participant Agent as Agente
+    participant API as Backend
+    participant S3 as MinIO
+
+    Agent->>API: iniciar snapshot
+    API-->>Agent: sessão + credenciais temporárias
+    Agent->>API: verificar chunks existentes
+    API-->>Agent: hashes já presentes
+    Agent->>S3: upload dos chunks ausentes no staging
+    Agent->>API: completar snapshot com manifesto
+    API->>S3: validar/promover objetos definitivos
+```
+
+## Fluxo de restore
+
+1. Cliente solicita sessão de restore.
+2. Backend valida posse do snapshot.
+3. Backend emite credenciais temporárias de leitura.
+4. Cliente lê manifesto e chunks necessários.
+5. Arquivo é reconstruído e validado por hash.
+
+## Produção
+
+Na produção, o Nginx fica na frente do MinIO. O endpoint público configurado no Compose é:
+
+```dotenv
+KEEPLY_MINIO_PUBLIC_ENDPOINT=https://keeply.app.br
+```
+
+Clientes S3 geralmente não aceitam endpoint com subpath arbitrário. Se alterar o proxy, valide upload, download, assinatura e renovação de credenciais antes de usar com dados reais.
+
+## Riscos e cuidados
+
+- Não exponha o console MinIO publicamente sem autenticação forte.
+- Não use credenciais `keeply/keeply123` fora de desenvolvimento.
+- Mantenha PostgreSQL e MinIO consistentes; remover objetos manualmente pode quebrar restores.
+- O projeto ainda precisa de rotina de limpeza de chunks órfãos.
+- Backups do próprio MinIO precisam ser planejados em produção.

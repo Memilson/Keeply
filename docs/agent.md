@@ -1,53 +1,153 @@
-# Arquitetura do Agente
+# Agente Keeply
 
-## Escopo
+O agente é o componente que roda na máquina protegida. Ele existe em dois modos:
 
-O agente (`agent/`) executa backup e restore, com UI JavaFX e modo daemon.
+- **UI JavaFX:** interface local para autenticação, status e execução manual.
+- **Daemon headless:** processo agendado para executar ciclos de backup sem interação do usuário.
 
-## Componentes principais
+## Responsabilidades
 
-- `KeeplyAgentApp`: entrada da UI.
-- `KeeplyAgentDaemonApp` + `BackupCycleRunner`: execução headless agendada.
-- `BackupEngine`: orquestra scan, chunking, deduplicação, upload e finalize.
-- `RestoreEngine`: restauração por manifesto + validação de hash.
-- `DirectTransferStorage`: acesso direto ao MinIO com credenciais temporárias.
-- `LocalDatabase` + `core/db`: cache local SQLite.
+- Ler a configuração local (`agent.yaml`).
+- Autenticar usuário/dispositivo no backend.
+- Sincronizar plano de proteção do dispositivo.
+- Fazer scan dos diretórios configurados.
+- Dividir arquivos em chunks por Content-Defined Chunking.
+- Calcular SHA-256 de arquivos e chunks.
+- Comprimir chunks com Zstandard.
+- Deduplicar chunks já conhecidos localmente e no backend.
+- Fazer upload direto para MinIO com credenciais temporárias.
+- Enviar manifesto ao backend e finalizar snapshot.
+- Restaurar arquivos a partir de manifesto + chunks.
 
-## Fluxo resumido
+## Principais classes
 
-1. Login/refresh no backend e abertura de sessão de transferência.
-2. Scan de arquivos e CDC (`ContentDefinedChunker`).
-3. Compressão Zstd, hash, deduplicação e upload no MinIO staging.
-4. Envio do manifesto e `completeSnapshot`.
-5. Polling até status final do snapshot.
+| Classe | Papel |
+| --- | --- |
+| `KeeplyAgentApp` | Entrada da interface JavaFX. |
+| `KeeplyAgentDaemonApp` | Entrada do modo daemon. |
+| `BackupCycleRunner` | Coordena execução recorrente do backup. |
+| `CronScheduler` | Calcula próximas execuções com cron UNIX. |
+| `BackupEngine` | Orquestra scan, chunking, compressão, deduplicação, upload e finalização. |
+| `RestoreEngine` | Reconstrói arquivos a partir de chunks e valida hashes. |
+| `ContentDefinedChunker` | Realiza chunking baseado no conteúdo. |
+| `ZstdChunkCodec` / `ZstdCompressor` | Compressão e descompressão Zstandard. |
+| `DirectTransferStorage` | Acesso direto ao MinIO usando credenciais temporárias. |
+| `LocalDatabase` e `core/db/*` | Cache local SQLite e estado de snapshots/chunks. |
+| `DeviceAuthStore` | Persistência local de autenticação do dispositivo. |
+| `ProtectionPlanSyncService` | Sincroniza plano de proteção definido no backend. |
 
-## Backend
+## Fluxo de backup
 
-O agente usa `https://keeply.app.br` por padrão. A URL pode ser sobrescrita por `backend.url` no YAML do agente, pela propriedade JVM `-Dkeeply.backend.url=...` ou pela variável `KEEPLY_BACKEND_URL`.
+```mermaid
+sequenceDiagram
+    participant Agent as Agente
+    participant API as Backend
+    participant DB as PostgreSQL
+    participant S3 as MinIO
 
-- Produção: `https://keeply.app.br`
-- Desenvolvimento local no mesmo computador: `http://localhost:8080`
-- Desenvolvimento local em outra máquina: `http://IP_DA_MAQUINA:8080`
+    Agent->>API: login ou refresh
+    API-->>Agent: JWT
+    Agent->>API: POST /api/snapshots/start
+    API->>DB: cria snapshot + transfer_session
+    API-->>Agent: snapshotId + credenciais MinIO temporárias
+    Agent->>Agent: scan + CDC + SHA-256 + Zstd
+    Agent->>API: POST /api/chunks/check
+    API-->>Agent: chunks já existentes
+    Agent->>S3: upload de chunks ausentes no staging
+    Agent->>API: POST /api/snapshots/{id}/complete com manifesto
+    API->>S3: promove/valida objetos
+    API->>DB: grava arquivos, chunks e status final
+```
 
-No desktop, `localhost` funciona quando o backend roda no mesmo host do agente. No mobile, prefira IP da máquina ou `10.0.2.2` no emulador Android.
+## Fluxo de restore
 
-## Gargalos atuais
+1. Usuário seleciona snapshot/arquivo.
+2. Agente ou frontend solicita sessão de restore.
+3. Backend emite credenciais temporárias read-only.
+4. Cliente lê manifesto e chunks necessários.
+5. `RestoreEngine` reconstrói o arquivo.
+6. Hash final é validado antes de considerar a restauração concluída.
 
-- Polling de auditoria por `listSnapshots` em loop.
-- Duas passagens em arquivos alterados no backup (hash e depois upload).
-- Lock em renovação de credencial em `DirectTransferStorage`.
-- Classe de UI concentrando responsabilidades demais.
+## Configuração
 
-## Legados para remover
+O agente procura `agent.yaml` nos locais padrão:
 
-- Compatibilidade V1/plaintext no `DeviceAuthStore` (após janela de migração).
-- Migração tardia de `chunks_json` no cache local.
-- `BackendClient` monolítico e overloads duplicados em listagem de arquivos.
-- Fallback ambíguo para `./agent.yaml` no CWD.
+| Sistema | Caminho |
+| --- | --- |
+| Linux | `~/.config/keeply/agent.yaml` |
+| Windows | `%APPDATA%\keeply\agent.yaml` |
+| Override | `--config <caminho>` |
 
-## Melhorias objetivas
+Exemplo:
 
-1. Desacoplar UI de orquestração operacional.
-2. Substituir polling por sinalização/push de status (ou backoff progressivo).
-3. Tornar restore atômico por arquivo (escrita temporária + rename).
-4. Aumentar testes de CDC, restore e fluxo completo de backup.
+```yaml
+backend:
+  url: http://localhost:8080
+
+auth:
+  email: keeply@keeply.com
+  password: keeply123
+  # token: "<jwt-opcional>"
+
+device:
+  name: workstation-main
+
+backup:
+  sources:
+    - /home/user/Documents
+
+schedule:
+  cron: "*/30 * * * *"
+  runOnStartup: false
+```
+
+## Dados locais
+
+| Tipo | Linux | Windows |
+| --- | --- | --- |
+| Configuração | `~/.config/keeply/` | `%APPDATA%\keeply\` |
+| Banco local | `~/.local/share/keeply/` | `%LOCALAPPDATA%\keeply\` |
+| Logs | `~/.local/state/keeply/` | `%LOCALAPPDATA%\keeply\` |
+| Runtime/PID | `/tmp/keeply/` | `%TEMP%\keeply\` |
+
+## Execução
+
+Interface:
+
+```bash
+./gradlew :agent:run
+```
+
+Daemon:
+
+```bash
+./gradlew :agent:runDaemon -PdaemonArgs="--config /caminho/agent.yaml"
+```
+
+Gerar scripts do daemon:
+
+```bash
+./gradlew :agent:daemonStartScripts
+```
+
+O launcher é gerado em:
+
+```text
+agent/build/daemon/bin/keeply-agent-daemon
+agent/build/daemon/bin/keeply-agent-daemon.bat
+```
+
+## Limitações atuais
+
+- O daemon depende de configuração local válida; não há instalador systemd/Task Scheduler versionado neste pacote.
+- A deduplicação depende da consistência entre cache local, backend e MinIO.
+- A restauração deve ser feita preferencialmente em diretório temporário antes de sobrescrever dados reais.
+- O agente ainda possui pontos de compatibilidade/migração local que podem ser removidos em uma versão futura.
+
+## Melhorias recomendadas
+
+- Serviço de instalação Linux/Windows versionado no repositório.
+- Backoff progressivo em polling de status.
+- Restore atômico por arquivo usando arquivo temporário + rename.
+- Testes de integração cobrindo backup completo, restore e falhas de rede.
+- Criptografia client-side antes do upload.
