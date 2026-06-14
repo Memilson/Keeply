@@ -1,532 +1,365 @@
-# Keeply Java 25 Starter
+# Keeply
 
-Starter kit do MVP de backup com agente Java e backend Spring Boot.
+Keeply é uma solução de backup em nuvem com agente desktop, API backend, painel web, landing page e aplicativo mobile. O projeto implementa backup por snapshots, deduplicação por chunks, compressão Zstandard, armazenamento S3 compatível via MinIO, restauração de arquivos e um assistente de IA integrado ao painel.
 
-## Arquitetura (atualizada)
+O repositório está organizado como um MVP técnico de produto SaaS. A parte de backup é engenharia de armazenamento; a funcionalidade de IA é o **Keeply I.A**, um assistente operacional que responde dúvidas sobre backups, máquinas, snapshots, restauração, segurança e diagnóstico dentro do painel web.
+
+## Visão rápida
 
 ```text
-Keeply Agent (JavaFX + Daemon) -> Backend Spring Boot -> PostgreSQL + MinIO
+Agente JavaFX/Daemon
+        |
+        | REST + JWT + credenciais temporárias MinIO
+        v
+Backend Spring Boot
+        |
+        +--> PostgreSQL: usuários, dispositivos, snapshots, arquivos, chunks e sessões
+        |
+        +--> MinIO: chunks comprimidos e manifestos
+        |
+        +--> OpenRouter: Keeply I.A
+        |
+        +--> Prometheus/Grafana: métricas locais
+
+Frontend Next.js / Mobile Flutter
+        |
+        +--> API REST do backend
 ```
 
-Fluxo principal:
+## Componentes
 
-1. O agente autentica no backend e abre uma `transfer_session`.
-2. O agente executa scan + chunking + compressÃ£o e envia objetos para staging no MinIO.
-3. O backend audita manifesto/chunks, promove para storage definitivo e finaliza o snapshot.
-4. No restore, o agente recebe credenciais temporÃ¡rias read-only e reconstrÃ³i os arquivos.
+| Diretório | Função |
+| --- | --- |
+| `backend/` | API REST em Spring Boot. Controla autenticação, dispositivos, snapshots, sessões de transferência, manifestos, downloads e chat de IA. |
+| `agent/` | Agente desktop em JavaFX e modo daemon. Executa scan, chunking, compressão, upload e restore. |
+| `frontend/` | Painel web em Next.js. Exibe dashboard, máquinas, backups, proteção, atividades e Keeply I.A. |
+| `landing/` | Site público/landing page em Next.js. |
+| `mobile/` | Aplicativo Flutter para consulta remota de backups, snapshots, arquivos e configurações. |
+| `infra/` | Docker Compose local e Compose de produção. |
+| `docs/` | Documentação técnica, produção, banco, MinIO, mobile, IA e entrega N2. |
+| `debug/` | Scripts de reset do ambiente local. |
 
-DocumentaÃ§Ã£o detalhada:
+## Stack principal
 
-- [Arquitetura do Agente](docs/agent.md)
-- [Arquitetura do Backend](docs/backend.md)
-- [Arquitetura do Banco](docs/database.md)
-- [Arquitetura MinIO](docs/minio.md)
+| Camada | Tecnologias |
+| --- | --- |
+| Backend | Java 25, Spring Boot 4.0.6, Spring Security, JPA, Flyway, JJWT, Caffeine, Micrometer/Prometheus |
+| Agente | Java 25, JavaFX 21, SQLite, MinIO SDK, Zstd JNI, cron-utils |
+| Frontend | Next.js 16, React 19, TypeScript, Tailwind CSS 4 |
+| Landing | Next.js 16, React 19, TypeScript, Tailwind CSS 4 |
+| Mobile | Flutter/Dart, Provider, HTTP, Secure Storage, File Picker, Permission Handler |
+| Infra | PostgreSQL 16, MinIO, Prometheus, Grafana, Nginx em produção |
+| IA | OpenRouter Chat Completions, modelo padrão `nvidia/nemotron-3-super-120b-a12b:free` |
 
-Resumo dos gargalos e legados atuais:
+## Funcionalidades implementadas
 
-- PromoÃ§Ã£o de chunks no backend com alto fan-out (`exists + copy + save` por chunk).
-- Polling de status de auditoria no agente (loop de `listSnapshots`).
-- Lacunas de constraints/Ã­ndices no schema (`transfer_sessions` sem FKs).
-- Compatibilidades legadas no agente (auth store V1/plaintext e migraÃ§Ã£o tardia de cache local).
-- Rate limit em memÃ³ria local (nÃ£o distribuÃ­do).
+### Backup e snapshots
 
-## EvoluÃ§Ã£o recomendada (concisa)
+- Registro/autenticação de usuário e dispositivo.
+- Plano de proteção por dispositivo.
+- Scan de diretórios configurados no agente.
+- Content-Defined Chunking com perfil atual de `1 MB / 4 MB / 8 MB`.
+- Hash SHA-256 por arquivo e por chunk.
+- Compressão Zstandard nível 3.
+- Deduplicação por hash de chunk por usuário.
+- Manifesto de snapshot em JSON comprimido.
+- Upload direto para MinIO com credenciais temporárias.
+- Sessões de transferência renováveis para backup e restore.
+- Auditoria/processamento do snapshot no backend.
+- Listagem paginada de arquivos por snapshot.
+- Download de arquivo, pasta ou seleção de arquivos.
 
-1. Hardening imediato: auth/rate-limit, escopo de credenciais MinIO, FKs/Ã­ndices crÃ­ticos.
-2. RemoÃ§Ã£o de legado: compatibilidade antiga no agente e APIs internas duplicadas.
-3. OtimizaÃ§Ã£o: pipeline de auditoria/promoÃ§Ã£o mais idempotente, menos roundtrips e melhor observabilidade.
+### Painel web
 
-Este pacote entrega a base inicial em Java 25:
+- Login e registro.
+- Dashboard com saúde do ambiente e atividade de backups.
+- Tela de máquinas/dispositivos.
+- Tela de backups e navegação por snapshot.
+- Tela de proteção com fontes, agendamento, retenção, validação e criptografia.
+- Tela de atividades.
+- Keeply I.A integrado ao painel.
 
-- Backend Spring Boot com JWT, usuÃ¡rios, dispositivos, snapshots, chunks e MinIO.
-- Agente JavaFX com telas mÃ­nimas e nÃºcleo de backup/restore.
-- Content-Defined Chunking simplificado.
-- SHA-256 por chunk e por arquivo.
-- CompressÃ£o Zstandard (Zstd), nÃ­vel 3.
-- Manifesto JSON.
-- Docker Compose para PostgreSQL, MinIO, backend e frontend.
+### Mobile
 
-## Rodando a infra
+- Login contra backend configurável.
+- Consulta de dispositivos, snapshots e arquivos.
+- Busca profunda de arquivos dentro de snapshots via backend.
+- Download/preview de arquivos conforme suporte do app.
+- Armazenamento seguro de sessão.
+
+### Observabilidade
+
+- Actuator health.
+- Endpoint Prometheus no backend.
+- Postgres Exporter no Compose local.
+- Grafana provisionado com datasource Prometheus no Compose local.
+
+### Keeply I.A
+
+O Keeply I.A é um chat operacional do painel web. Ele não executa backup, não altera dados e não consulta o estado real do ambiente por conta própria. O fluxo atual é:
+
+1. Usuário abre o botão **Keeply I.A** no painel web.
+2. O frontend envia `message` e até 8 mensagens de histórico para `POST /api/ai/chat`.
+3. O backend valida a requisição e chama o OpenRouter.
+4. O serviço usa um prompt de sistema focado em suporte a backups, snapshots, restauração e diagnóstico.
+5. O backend retorna `{ answer, model }`.
+6. O frontend exibe a resposta no chat.
+
+Detalhes específicos estão em [`docs/ia.md`](docs/ia.md) e o material para a atividade N2 está em [`docs/n2-atividade-final-ia.md`](docs/n2-atividade-final-ia.md).
+
+## Documentação
+
+- [`docs/agent.md`](docs/agent.md): agente desktop/daemon.
+- [`docs/backend.md`](docs/backend.md): API, serviços e segurança do backend.
+- [`docs/database.md`](docs/database.md): schema PostgreSQL e migrações.
+- [`docs/minio.md`](docs/minio.md): organização do object storage.
+- [`docs/mobile.md`](docs/mobile.md): arquitetura do aplicativo Flutter.
+- [`docs/ia.md`](docs/ia.md): funcionalidade de IA.
+- [`docs/curl.md`](docs/curl.md): chamadas úteis com `curl`.
+- [`docs/deploy-cloud.md`](docs/deploy-cloud.md): implantação em nuvem.
+- [`docs/production.md`](docs/production.md): Compose de produção.
+- [`docs/progresso.md`](docs/progresso.md): status atual, limitações e próximos passos.
+- [`docs/n2-atividade-final-ia.md`](docs/n2-atividade-final-ia.md): relatório objetivo para a entrega N2.
+- [`docs/roteiro-video-n2.md`](docs/roteiro-video-n2.md): roteiro prático para gravação do vídeo.
+
+## Requisitos locais
+
+- JDK 25 disponível no ambiente.
+- Docker e Docker Compose.
+- Node.js compatível com Next.js 16.
+- Flutter instalado, caso vá rodar o app mobile.
+- Chave OpenRouter se for testar o Keeply I.A.
+
+## Configuração de ambiente
+
+Copie o template:
+
+```bash
+cp .env.example .env
+```
+
+Preencha pelo menos:
+
+```dotenv
+POSTGRES_DB=keeply
+POSTGRES_USER=keeply
+POSTGRES_PASSWORD=keeply123
+SPRING_DATASOURCE_URL=jdbc:postgresql://localhost:5432/keeply
+SPRING_DATASOURCE_USERNAME=keeply
+SPRING_DATASOURCE_PASSWORD=keeply123
+
+KEEPLY_JWT_SECRET=troque-por-uma-chave-com-32-caracteres-ou-mais
+KEEPLY_MASTER_KEY=troque-por-uma-chave-hexadecimal-segura-com-64-caracteres
+
+MINIO_ROOT_USER=keeply
+MINIO_ROOT_PASSWORD=keeply123
+KEEPLY_MINIO_ENDPOINT=http://localhost:9000
+KEEPLY_MINIO_ACCESS_KEY=keeply
+KEEPLY_MINIO_SECRET_KEY=keeply123
+KEEPLY_MINIO_BUCKET=keeply
+
+KEEPLY_AI_BASE_URL=https://openrouter.ai/api/v1
+KEEPLY_AI_MODEL=nvidia/nemotron-3-super-120b-a12b:free
+KEEPLY_AI_API_KEY=sk-or-v1-sua-chave-openrouter
+KEEPLY_AI_TITLE=Keeply
+KEEPLY_AI_REFERER=http://localhost:3000
+```
+
+Sem `KEEPLY_AI_API_KEY`, o chat de IA retorna erro controlado informando que a IA não está configurada.
+
+## Rodando com Docker Compose local
 
 ```bash
 cd infra
-docker compose up -d
+docker compose --env-file ../.env up -d --build
 ```
 
-ServiÃ§os expostos:
+Serviços locais:
 
-- Frontend: `http://localhost:3000`
-- Backend: `http://localhost:8080`
-- MinIO API: `http://localhost:9000`
-- MinIO Console: `http://localhost:9001`
-- PostgreSQL: `localhost:5432`
+| Serviço | URL |
+| --- | --- |
+| Frontend | `http://localhost:3000` |
+| Backend | `http://localhost:8080` |
+| MinIO API | `http://localhost:9000` |
+| MinIO Console | `http://localhost:9001` |
+| PostgreSQL | `localhost:5432` |
+| Prometheus | `http://localhost:9090` |
+| Grafana | `http://localhost:3001` |
 
-Se alguma porta jÃ¡ estiver ocupada, vocÃª pode sobrescrever na hora de subir, por exemplo:
+Credenciais padrão de desenvolvimento, quando não sobrescritas:
+
+```text
+MinIO Console: keeply / keeply123
+PostgreSQL: keeply / keeply123
+Grafana: admin / admin
+```
+
+Para trocar portas sem editar o Compose:
 
 ```bash
-FRONTEND_PORT=3001 BACKEND_PORT=8081 docker compose up -d
+FRONTEND_PORT=3002 BACKEND_PORT=8081 docker compose --env-file ../.env up -d
 ```
 
-MinIO Console:
+## Rodando módulos manualmente
 
-```text
-http://localhost:9001
-user: keeply
-senha: keeply123
-```
-
-PostgreSQL:
-
-```text
-localhost:5432
-database: keeply
-user: keeply
-password: keeply123
-```
-
-## Rodando o backend
+Backend:
 
 ```bash
 ./gradlew :backend:bootRun
 ```
 
-Backend:
-
-```text
-http://localhost:8080
-```
-
-## Rodando o agente
+Agente com UI:
 
 ```bash
 ./gradlew :agent:run
 ```
 
-## Rodando o agente headless (daemon)
-
-ExecuÃ§Ã£o local com config explÃ­cita:
+Agente daemon/headless:
 
 ```bash
 ./gradlew :agent:runDaemon -PdaemonArgs="--config /caminho/agent.yaml"
 ```
 
-O daemon executa:
-
-1. Aguarda prÃ³ximo horÃ¡rio de `schedule.cron` por padrÃ£o.
-2. Opcional: backup imediato no startup com `schedule.runOnStartup: true`.
-3. Sem concorrÃªncia entre execuÃ§Ãµes (tick sobreposto Ã© ignorado e logado).
-4. A UI JavaFX mostra status/instruÃ§Ãµes e permite "tentar start local" manualmente (fallback para dev).
-5. O daemon segue ativo mesmo apÃ³s fechar a UI.
-
-## Corte Para Zstd
-
-A troca de GZIP para Zstd e do perfil CDC para `1 MB / 4 MB / 8 MB` e destrutiva. Snapshots, chunks,
-objetos MinIO e caches locais antigos nÃ£o podem ser restaurados nem auditados por esta versÃ£o.
-
-Antes do primeiro backup com Zstd:
-
-1. Pare agente/daemon e backend.
-2. Execute `./debug/reset_env.sh`; ele remove volumes PostgreSQL/MinIO e dados locais do agente.
-3. Suba o backend atualizado e registre ou autentique novamente o agente.
-4. Inicie um novo backup; apenas objetos `.zst` serao produzidos.
-
-## ConfiguraÃ§Ã£o do Backend (.env)
-
-O backend utiliza variÃ¡veis de ambiente para configuraÃ§Ã£o. VocÃª pode criar um arquivo `.env` na raiz do projeto (ou no diretÃ³rio `backend/`) baseando-se no `.env.example`:
+Frontend:
 
 ```bash
-cp .env.example .env
+cd frontend
+npm install
+npm run dev
 ```
 
-Principais variÃ¡veis:
-- `SPRING_DATASOURCE_URL`: URL de conexÃ£o com o PostgreSQL.
-- `KEEPLY_JWT_SECRET`: Chave secreta para assinatura dos tokens JWT.
-- `KEEPLY_MINIO_ENDPOINT`: URL da API do MinIO.
-- `KEEPLY_MINIO_ACCESS_KEY` / `KEEPLY_MINIO_SECRET_KEY`: Credenciais do MinIO.
-
-## Contrato de configuraÃ§Ã£o YAML
-
-O agente busca a configuraÃ§Ã£o nos seguintes locais padrÃµes:
-
-- **Linux:** `~/.config/keeply/agent.yaml`
-- **Windows:** `%APPDATA%\keeply\agent.yaml`
-- **Override:** `--config <path>`
-
-### LocalizaÃ§Ã£o de Logs e Dados (Agente)
-
-| Tipo | Linux | Windows |
-| :--- | :--- | :--- |
-| **ConfiguraÃ§Ã£o** | `~/.config/keeply/` | `%APPDATA%\keeply\` |
-| **Banco de Dados** | `~/.local/share/keeply/` | `%LOCALAPPDATA%\keeply\` |
-| **Logs** | `~/.local/state/keeply/` | `%LOCALAPPDATA%\keeply\` |
-| **PID/Runtime** | `/tmp/keeply/` | `%TEMP%\keeply\` |
-
-Exemplo de `agent.yaml`:
-
-```yaml
-backend:
-  url: https://keeply.app.br
-
-auth:
-  email: keeply@keeply.com
-  password: keeply123
-  # token: "<jwt-opcional>"
-
-device:
-  name: workstation-main
-
-backup:
-  sources:
-    - /home/user/Documents
-    - /home/user/Pictures
-
-schedule:
-  cron: "*/30 * * * *"
-  runOnStartup: false
-```
-
-Campos obrigatÃ³rios:
-
-- `backend.url`
-- `auth.token` ou `auth.email` + `auth.password`
-- `backup.sources` (lista nÃ£o vazia de diretÃ³rios existentes)
-- `schedule.cron` (formato cron UNIX com 5 campos)
-
-## Linux (systemd)
-
-Arquivos:
-
-- `scripts/linux/keeply-agent.service`
-- `scripts/linux/install-systemd.sh`
-- `scripts/linux/start-daemon.sh` (execuÃ§Ã£o manual em dev)
-
-InstalaÃ§Ã£o:
+Landing:
 
 ```bash
-./gradlew :agent:daemonStartScripts
-sudo scripts/linux/install-systemd.sh
+cd landing
+npm install
+npm run dev
 ```
 
-O launcher Ã© gerado em `agent/build/daemon/bin/keeply-agent-daemon` e deve ser publicado em `/opt/keeply/bin/keeply-agent-daemon`.
+Mobile:
 
-OperaÃ§Ã£o:
-
-```bash
-sudo systemctl enable --now keeply-agent
-sudo systemctl status keeply-agent
-journalctl -u keeply-agent -f
-```
-
-## Windows (Task Scheduler)
-
-Arquivo:
-
-- `scripts/windows/install-task.ps1`
-
-Criar/atualizar e iniciar:
-
-```powershell
-.\gradlew.bat :agent:daemonStartScripts
-powershell -ExecutionPolicy Bypass -File .\scripts\windows\install-task.ps1 `
-  -TaskName "KeeplyAgent" `
-  -KeeplyHome "C:\Keeply" `
-  -ConfigPath "$env:ProgramData\Keeply\agent.yaml" `
-  -LogPath "$env:ProgramData\Keeply\agent.log"
-```
-
-No Windows, publique `agent\build\daemon\bin\keeply-agent-daemon.bat` em `C:\Keeply\bin\keeply-agent-daemon.bat`.
-
-Consultar:
-
-```powershell
-schtasks /Query /TN KeeplyAgent /V /FO LIST
-```
-
-## Fluxo mÃ­nimo de teste
-
-1. Suba PostgreSQL e MinIO.
-2. Rode o backend.
-3. Rode o agente.
-4. FaÃ§a register/login pelo endpoint ou ajuste para criar usuÃ¡rio via React depois.
-5. Escolha uma pasta no agente.
-6. Execute backup.
-7. Restaure usando o snapshot gerado.
-
-## ObservaÃ§Ã£o
-
-Este Ã© um starter tÃ©cnico. Ainda faltam:
-
-- React frontend.
-- Testes automatizados.
-- RetenÃ§Ã£o automÃ¡tica completa.
-- Parser persistente do manifesto em `snapshot_files` e `file_chunks`.
-- Criptografia ponta a ponta.
-- Endurecimento de seguranÃ§a.
-
-## ?? Arquitetura Mobile (Artigo Técnico)
-
-O novo aplicativo companheiro **Keeply Mobile** atua como um controle remoto seguro para a sua nuvem de backups, construído com foco primário em estabilidade e segurança:
-
-1. **Arquitetura Pura (MVC)**: O app foi totalmente isolado em uma arquitetura declarativa usando Provider. O estado é gerenciado globalmente pelos *Controllers* (como FilesController e AuthController), mantendo as *Views* focadas apenas em renderização.
-2. **Deep Search (Busca Profunda)**: A busca do aplicativo não é uma busca local ingênua; ela se comunica com o backend, percorrendo os manifestos do banco de dados para encontrar arquivos perdidos *dentro* de múltiplos snapshots com altíssima performance.
-3. **Resiliência de Sessão**: Implementamos injeção de SecureStorage para reter o Token JWT, atrelado a um sistema interceptador (Interceptor) que fará o kick limpo do usuário se o servidor expirar a sessão, mantendo a integridade dos dados locais.
-
----
-
-## ??? Primeiros Passos para Novos Desenvolvedores (Clonando o Projeto)
-
-Ao clonar este repositório, você notará que ele está blindado. Siga os passos abaixo para compilar a aplicação na sua máquina:
-
-### 1. Configurando o Backend / Docker
-As credenciais do banco de dados e as chaves JWT não estão no repositório.
-1. Na raiz do projeto, duplique o arquivo .env.example e renomeie a cópia para .env.
-2. Preencha as chaves change-me com suas próprias senhas e secrets locais.
-3. Rode docker-compose -f infra/docker-compose.yml up -d para subir o banco (agora resiliente com healthchecks!).
-
-### 2. Configurando o Aplicativo Mobile
-O mobile usa `https://keeply.app.br` por padrão. Para desenvolvimento local, passe a URL do backend no build:
-
-```bash
-cd mobile
-flutter run --dart-define=KEEPLY_BACKEND_BASE_URL=http://10.0.2.2:8080
-```
-
-Use `10.0.2.2` no emulador Android. Em celular físico, use `http://IP_DA_SUA_MAQUINA_NA_REDE:8080`; `localhost` no celular aponta para o próprio aparelho.
-
-Crie o arquivo `local.properties` em `mobile/android/local.properties` contendo o caminho do seu SDK do Android se você for rodar via linha de comando puro.
-
-Feito isso, o projeto já pode ser testado normalmente:
-```bash
-```bash
-./gradlew :agent:run
-```
-
-## Rodando o agente headless (daemon)
-
-ExecuÃ§Ã£o local com config explÃ­cita:
-
-```bash
-./gradlew :agent:runDaemon -PdaemonArgs="--config /caminho/agent.yaml"
-```
-
-O daemon executa:
-
-1. Aguarda prÃ³ximo horÃ¡rio de `schedule.cron` por padrÃ£o.
-2. Opcional: backup imediato no startup com `schedule.runOnStartup: true`.
-3. Sem concorrÃªncia entre execuÃ§Ãµes (tick sobreposto Ã© ignorado e logado).
-4. A UI JavaFX mostra status/instruÃ§Ãµes e permite "tentar start local" manualmente (fallback para dev).
-5. O daemon segue ativo mesmo apÃ³s fechar a UI.
-
-## Corte Para Zstd
-
-A troca de GZIP para Zstd e do perfil CDC para `1 MB / 4 MB / 8 MB` e destrutiva. Snapshots, chunks,
-objetos MinIO e caches locais antigos nÃ£o podem ser restaurados nem auditados por esta versÃ£o.
-
-Antes do primeiro backup com Zstd:
-
-1. Pare agente/daemon e backend.
-2. Execute `./debug/reset_env.sh`; ele remove volumes PostgreSQL/MinIO e dados locais do agente.
-3. Suba o backend atualizado e registre ou autentique novamente o agente.
-4. Inicie um novo backup; apenas objetos `.zst` serao produzidos.
-
-## ConfiguraÃ§Ã£o do Backend (.env)
-
-O backend utiliza variÃ¡veis de ambiente para configuraÃ§Ã£o. VocÃª pode criar um arquivo `.env` na raiz do projeto (ou no diretÃ³rio `backend/`) baseando-se no `.env.example`:
-
-```bash
-cp .env.example .env
-```
-
-Principais variÃ¡veis:
-- `SPRING_DATASOURCE_URL`: URL de conexÃ£o com o PostgreSQL.
-- `KEEPLY_JWT_SECRET`: Chave secreta para assinatura dos tokens JWT.
-- `KEEPLY_MINIO_ENDPOINT`: URL da API do MinIO.
-- `KEEPLY_MINIO_ACCESS_KEY` / `KEEPLY_MINIO_SECRET_KEY`: Credenciais do MinIO.
-
-## Contrato de configuraÃ§Ã£o YAML
-
-O agente busca a configuraÃ§Ã£o nos seguintes locais padrÃµes:
-
-- **Linux:** `~/.config/keeply/agent.yaml`
-- **Windows:** `%APPDATA%\keeply\agent.yaml`
-- **Override:** `--config <path>`
-
-### LocalizaÃ§Ã£o de Logs e Dados (Agente)
-
-| Tipo | Linux | Windows |
-| :--- | :--- | :--- |
-| **ConfiguraÃ§Ã£o** | `~/.config/keeply/` | `%APPDATA%\keeply\` |
-| **Banco de Dados** | `~/.local/share/keeply/` | `%LOCALAPPDATA%\keeply\` |
-| **Logs** | `~/.local/state/keeply/` | `%LOCALAPPDATA%\keeply\` |
-| **PID/Runtime** | `/tmp/keeply/` | `%TEMP%\keeply\` |
-
-Exemplo de `agent.yaml`:
-
-```yaml
-backend:
-  url: https://keeply.app.br
-
-auth:
-  email: keeply@keeply.com
-  password: keeply123
-  # token: "<jwt-opcional>"
-
-device:
-  name: workstation-main
-
-backup:
-  sources:
-    - /home/user/Documents
-    - /home/user/Pictures
-
-schedule:
-  cron: "*/30 * * * *"
-  runOnStartup: false
-```
-
-Campos obrigatÃ³rios:
-
-- `backend.url`
-- `auth.token` ou `auth.email` + `auth.password`
-- `backup.sources` (lista nÃ£o vazia de diretÃ³rios existentes)
-- `schedule.cron` (formato cron UNIX com 5 campos)
-
-## Linux (systemd)
-
-Arquivos:
-
-- `scripts/linux/keeply-agent.service`
-- `scripts/linux/install-systemd.sh`
-- `scripts/linux/start-daemon.sh` (execuÃ§Ã£o manual em dev)
-
-InstalaÃ§Ã£o:
-
-```bash
-./gradlew :agent:daemonStartScripts
-sudo scripts/linux/install-systemd.sh
-```
-
-O launcher Ã© gerado em `agent/build/daemon/bin/keeply-agent-daemon` e deve ser publicado em `/opt/keeply/bin/keeply-agent-daemon`.
-
-OperaÃ§Ã£o:
-
-```bash
-sudo systemctl enable --now keeply-agent
-sudo systemctl status keeply-agent
-journalctl -u keeply-agent -f
-```
-
-## Windows (Task Scheduler)
-
-Arquivo:
-
-- `scripts/windows/install-task.ps1`
-
-Criar/atualizar e iniciar:
-
-```powershell
-.\gradlew.bat :agent:daemonStartScripts
-powershell -ExecutionPolicy Bypass -File .\scripts\windows\install-task.ps1 `
-  -TaskName "KeeplyAgent" `
-  -KeeplyHome "C:\Keeply" `
-  -ConfigPath "$env:ProgramData\Keeply\agent.yaml" `
-  -LogPath "$env:ProgramData\Keeply\agent.log"
-```
-
-No Windows, publique `agent\build\daemon\bin\keeply-agent-daemon.bat` em `C:\Keeply\bin\keeply-agent-daemon.bat`.
-
-Consultar:
-
-```powershell
-schtasks /Query /TN KeeplyAgent /V /FO LIST
-```
-
-## Fluxo mÃ­nimo de teste
-
-1. Suba PostgreSQL e MinIO.
-2. Rode o backend.
-3. Rode o agente.
-4. FaÃ§a register/login pelo endpoint ou ajuste para criar usuÃ¡rio via React depois.
-5. Escolha uma pasta no agente.
-6. Execute backup.
-7. Restaure usando o snapshot gerado.
-
-## ObservaÃ§Ã£o
-
-Este Ã© um starter tÃ©cnico. Ainda faltam:
-
-- React frontend.
-- Testes automatizados.
-- RetenÃ§Ã£o automÃ¡tica completa.
-- Parser persistente do manifesto em `snapshot_files` e `file_chunks`.
-- Criptografia ponta a ponta.
-- Endurecimento de seguranÃ§a.
-
-## ?? Arquitetura Mobile (Artigo Técnico)
-
-O novo aplicativo companheiro **Keeply Mobile** atua como um controle remoto seguro para a sua nuvem de backups, construído com foco primário em estabilidade e segurança:
-
-1. **Arquitetura Pura (MVC)**: O app foi totalmente isolado em uma arquitetura declarativa usando Provider. O estado é gerenciado globalmente pelos *Controllers* (como FilesController e AuthController), mantendo as *Views* focadas apenas em renderização.
-2. **Deep Search (Busca Profunda)**: A busca do aplicativo não é uma busca local ingênua; ela se comunica com o backend, percorrendo os manifestos do banco de dados para encontrar arquivos perdidos *dentro* de múltiplos snapshots com altíssima performance.
-3. **Resiliência de Sessão**: Implementamos injeção de SecureStorage para reter o Token JWT, atrelado a um sistema interceptador (Interceptor) que fará o kick limpo do usuário se o servidor expirar a sessão, mantendo a integridade dos dados locais.
-
----
-
-## ??? Primeiros Passos para Novos Desenvolvedores (Clonando o Projeto)
-
-Ao clonar este repositório, você notará que ele está blindado. Siga os passos abaixo para compilar a aplicação na sua máquina:
-
-### 1. Configurando o Backend / Docker
-As credenciais do banco de dados e as chaves JWT não estão no repositório.
-1. Na raiz do projeto, duplique o arquivo .env.example e renomeie a cópia para .env.
-2. Preencha as chaves change-me com suas próprias senhas e secrets locais.
-3. Rode docker-compose -f infra/docker-compose.yml up -d para subir o banco (agora resiliente com healthchecks!).
-
-### 2. Configurando o Aplicativo Mobile
-O mobile usa `https://keeply.app.br` por padrão. Para desenvolvimento local, passe a URL do backend no build:
-
-```bash
-cd mobile
-flutter run --dart-define=KEEPLY_BACKEND_BASE_URL=http://10.0.2.2:8080
-```
-
-Use `10.0.2.2` no emulador Android. Em celular físico, use `http://IP_DA_SUA_MAQUINA_NA_REDE:8080`; `localhost` no celular aponta para o próprio aparelho.
-
-Crie o arquivo `local.properties` em `mobile/android/local.properties` contendo o caminho do seu SDK do Android se você for rodar via linha de comando puro.
-
-Feito isso, o projeto já pode ser testado normalmente:
 ```bash
 cd mobile
 flutter pub get
-flutter run
+flutter run --dart-define=KEEPLY_BACKEND_BASE_URL=http://10.0.2.2:8080
 ```
 
-## Como Usar o Aplicativo Mobile (Keeply)
+Use `10.0.2.2` no emulador Android. Em celular físico, use o IP da máquina que executa o backend, por exemplo `http://192.168.1.50:8080`.
 
-O aplicativo Mobile é o controle remoto dos seus backups. Para que qualquer pessoa consiga utilizá-lo, o ambiente principal precisa estar rodando.
+## Configuração do agente
 
-### 1. Requisitos para Uso
-Para acessar o app, você precisará:
-- Ter criado uma conta com **E-mail e Senha** previamente (pelo Agent de computador).
-- O seu computador principal deve estar com o **Backend (Spring Boot) rodando**.
-- O computador principal e o celular Android devem estar conectados **na mesma rede Wi-Fi** (para que o celular encontre o computador).
+O agente procura `agent.yaml` nos locais padrão:
 
-### 2. A Questão do IP (Importante!)
-Na tela de login do aplicativo no celular, você verá um campo chamado "Servidor".
-Por padrão, o celular tentará procurar um servidor na nuvem. Como estamos rodando localmente na sua casa, **você precisará descobrir o número de IP da sua máquina (IPv4)**
+| Sistema | Configuração | Dados locais | Logs |
+| --- | --- | --- | --- |
+| Linux | `~/.config/keeply/agent.yaml` | `~/.local/share/keeply/` | `~/.local/state/keeply/` |
+| Windows | `%APPDATA%\keeply\agent.yaml` | `%LOCALAPPDATA%\keeply\` | `%LOCALAPPDATA%\keeply\` |
 
-Na tela de login do app, digite o IP do seu computador no campo Servidor:
-`http://IP_DA_SUA_MAQUINA_NA_REDE:8080`
+Também é possível passar o caminho explicitamente:
 
-> **Aviso:** Se você colocar `localhost` no celular, ele tentará se conectar a si mesmo e vai falhar! O celular precisa do número de IP exato do computador onde o Backend do Keeply está rodando.
-
-### 3. Build e Instalação
-Se você for o desenvolvedor e quiser compilar um novo APK:
 ```bash
-# Entre no diretório mobile
-cd mobile
-
-# Gere o pacote Release APK
-flutter build apk --release
+./gradlew :agent:runDaemon -PdaemonArgs="--config ./agent.yaml"
 ```
-O APK gerado ficará disponível em `mobile\build\app\outputs\flutter-apk\app-release.apk` e pode ser enviado para qualquer aparelho Android.
+
+Exemplo mínimo:
+
+```yaml
+backend:
+  url: http://localhost:8080
+
+auth:
+  email: keeply@keeply.com
+  password: keeply123
+  # token: "<jwt-opcional>"
+
+device:
+  name: workstation-main
+
+backup:
+  sources:
+    - /home/user/Documents
+    - /home/user/Pictures
+
+schedule:
+  cron: "*/30 * * * *"
+  runOnStartup: false
+```
+
+Campos obrigatórios:
+
+- `backend.url`
+- `auth.token` ou `auth.email` + `auth.password`
+- `backup.sources` com ao menos um diretório existente
+- `schedule.cron` com cron UNIX de 5 campos
+
+## Fluxo mínimo de demonstração
+
+1. Subir PostgreSQL, MinIO, backend e frontend.
+2. Registrar um usuário.
+3. Entrar no painel web.
+4. Abrir o Keeply I.A e fazer uma pergunta sobre restauração ou saúde dos backups.
+5. Rodar o agente e executar um backup de uma pasta pequena.
+6. Conferir snapshot no painel.
+7. Navegar pelos arquivos do snapshot.
+8. Baixar/restaurar um arquivo.
+
+Para a atividade N2, o vídeo deve priorizar a etapa 4, porque é a funcionalidade de IA exigida.
+
+## Corte destrutivo para Zstd
+
+A versão atual usa Zstandard nível 3 e CDC com perfil `1 MB / 4 MB / 8 MB`. Snapshots antigos criados com GZIP não são compatíveis com esta versão.
+
+Antes do primeiro backup com Zstd em ambiente local antigo:
+
+```bash
+./debug/reset_env.sh
+```
+
+No Windows:
+
+```powershell
+.\debug\reset_env.ps1
+```
+
+Esses scripts removem volumes/dados locais de desenvolvimento. Não execute em ambiente com dados reais.
+
+## Produção
+
+A produção usa `infra/docker-compose.prod.yml` com Nginx na frente:
+
+- `https://keeply.app.br/`: landing.
+- `https://keeply.app.br/prod`: painel web.
+- `https://keeply.app.br/api`: backend.
+- `https://keeply.app.br/minio`: proxy S3/MinIO conforme configuração atual do Compose.
+
+Leia [`docs/production.md`](docs/production.md) antes de publicar. Não use senhas de desenvolvimento em produção.
+
+## Limitações conhecidas
+
+- A IA atual é um chat assistivo; não possui RAG nem acesso automático ao estado real do painel.
+- Criptografia ponta a ponta dos dados de backup ainda não está completa.
+- Retenção automática e limpeza de chunks órfãos ainda precisam de rotina dedicada.
+- Algumas rotas de download/restauração dependem da consistência entre banco, manifesto e objetos MinIO.
+- O Compose local expõe serviços apenas em `127.0.0.1` por segurança; celular físico precisa de backend acessível na rede.
+
+## Comandos úteis
+
+```bash
+# Ver logs locais
+cd infra
+docker compose logs -f backend
+
+docker compose logs -f frontend
+
+docker compose logs -f minio
+
+# Health do backend
+curl -fsS http://localhost:8080/actuator/health
+
+# Prometheus do backend
+curl -fsS http://localhost:8080/actuator/prometheus
+
+# Derrubar ambiente local
+cd infra
+docker compose down
+```

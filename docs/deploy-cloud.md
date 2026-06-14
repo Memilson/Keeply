@@ -1,243 +1,165 @@
-# Plano de Deploy Cloud do Keeply
+# Deploy em nuvem
 
-## Resumo
+Este documento descreve uma implantação prática do Keeply em uma VM Linux usando Docker Compose. Para produção formal, leia também `docs/production.md`.
 
-O deploy de produção deve rodar em um único VPS com Docker Compose, Nginx containerizado e Cloudflare na frente dos domínios públicos.
-
-O Nginx será o único serviço exposto nas portas `80` e `443`. Frontend, backend, MinIO e Postgres ficam em rede Docker interna. O Postgres não precisa de DNS público para a aplicação funcionar: frontend e agente falam com o backend, e o backend grava no banco.
-
-Prometheus roda no mesmo host e na mesma rede Docker, mas com a UI publicada apenas em `127.0.0.1:${PROMETHEUS_PORT:-9090}` para inspeção local, túnel SSH ou acesso operacional controlado.
-Grafana segue a mesma estratégia e fica publicado apenas em `127.0.0.1:${GRAFANA_PORT:-3001}` em produção.
-
-## DNS
-
-Configuração desejada:
-
-| DNS | Destino | Cloudflare | Uso |
-| --- | --- | --- | --- |
-| `keeply.app.br` | IP do VPS | Proxy ligado | Frontend |
-| `backend.keeply.app.br` | IP do VPS | Proxy ligado | API Spring Boot |
-| `minio.keeply.app.br` | IP do VPS | DNS-only | MinIO S3 API |
-| `db.keeply.app.br` | reservado | DNS-only ou não criado | Sem exposição pública |
-
-`minio.keeply.app.br` deve ficar em DNS-only para evitar limites e timeouts do proxy Cloudflare em uploads S3 de backup.
-
-## Arquitetura Docker
-
-Criar um compose de produção, por exemplo `infra/docker-compose.prod.yml`, com estes serviços:
-
-- `nginx`: publica `80:80` e `443:443`.
-- `nginx-exporter`: coleta métricas do Nginx por endpoint interno `nginx:8081/nginx_status`.
-- `frontend`: expõe apenas `3000` na rede Docker.
-- `backend`: expõe apenas `8080` na rede Docker.
-- `minio`: expõe apenas `9000` na rede Docker; console `9001` não público.
-- `postgres`: expõe apenas `5432` na rede Docker.
-- `postgres-exporter`: expõe métricas do banco para o Prometheus dentro da rede Docker.
-- `prometheus`: scrappeia `backend`, `postgres-exporter` e `nginx-exporter` por hostname interno.
-- `grafana`: consome o Prometheus internamente e publica a UI só em loopback.
-
-O fluxo de dados fica:
+## Arquitetura recomendada
 
 ```text
-Browser -> https://keeply.app.br -> nginx -> frontend:3000
-Frontend -> https://backend.keeply.app.br -> nginx -> backend:8080
-Agente -> https://backend.keeply.app.br -> nginx -> backend:8080
-Agente -> https://minio.keeply.app.br -> nginx -> minio:9000
-Backend -> postgres:5432
-Backend -> minio:9000
-Prometheus -> backend:8080/actuator/prometheus
-Prometheus -> postgres-exporter:9187
-Prometheus -> nginx-exporter:9113
-Grafana -> prometheus:9090
+Internet
+  |
+  v
+Nginx / TLS
+  |
+  +--> landing Next.js
+  +--> frontend Next.js
+  +--> backend Spring Boot
+            |
+            +--> PostgreSQL
+            +--> MinIO
+            +--> OpenRouter para Keeply I.A
 ```
 
-## Observabilidade
+## Requisitos da VM
 
-Arquivos centrais desta v1:
+Mínimo para demonstração:
 
-- `infra/docker-compose.yml`: stack local com Prometheus e Grafana configurados inline no próprio compose.
-- `infra/docker-compose.prod.yml`: stack de produção com Nginx, Prometheus e Grafana configurados inline no próprio compose.
-- `infra/nginx/certs/`: diretório reservado apenas para certificados de produção.
+- 2 vCPU.
+- 4 GB RAM.
+- 40 GB SSD.
+- Ubuntu Server LTS ou Debian estável.
+- Docker Engine e Docker Compose plugin.
+- Domínio apontando para o IP público.
+- Certificado TLS.
 
-Escopo fechado da v1:
+Para uso real, aumente disco e memória conforme retenção de backups.
 
-- `backend`: incluído via `GET /actuator/prometheus`.
-- `postgres`: incluído via `postgres-exporter`.
-- `nginx`: incluído apenas na produção containerizada, via `nginx-exporter`.
-- `minio`: adiado nesta v1. A imagem atual não entrou no scrape até validar endpoint/exporter estável sem ampliar superfície de exposição.
+## Preparação do servidor
 
-## Nginx
+```bash
+sudo apt update
+sudo apt install -y ca-certificates curl gnupg git ufw
 
-Configurar virtual hosts:
+sudo install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
+  | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+sudo chmod a+r /etc/apt/keyrings/docker.gpg
 
-- `keeply.app.br` proxy para `http://frontend:3000`.
-- `backend.keeply.app.br` proxy para `http://backend:8080`.
-- `minio.keeply.app.br` proxy para `http://minio:9000`.
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+  $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
+  | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
 
-Headers comuns:
-
-```nginx
-proxy_set_header Host $host;
-proxy_set_header X-Real-IP $remote_addr;
-proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-proxy_set_header X-Forwarded-Proto $scheme;
+sudo apt update
+sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+sudo usermod -aG docker $USER
 ```
 
-Para MinIO:
-
-```nginx
-client_max_body_size 0;
-proxy_request_buffering off;
-proxy_buffering off;
-proxy_read_timeout 3600s;
-proxy_send_timeout 3600s;
-```
-
-## TLS
-
-Usar Cloudflare com SSL/TLS em `Full (strict)`.
-
-Como `minio.keeply.app.br` ficará DNS-only, o VPS precisa ter certificado público válido para esse domínio. A opção recomendada é emitir Let's Encrypt via DNS-01 usando token da Cloudflare.
-
-Não commitar tokens Cloudflare, chaves privadas ou certificados no repositório.
-
-## Variáveis de Produção
-
-Criar um `.env.prod` fora do repositório ou em local seguro no servidor.
-
-Exemplo sem secrets reais:
-
-```dotenv
-POSTGRES_DB=keeply
-POSTGRES_USER=keeply
-POSTGRES_PASSWORD=<senha-forte>
-GRAFANA_ADMIN_USER=<usuario-admin>
-GRAFANA_ADMIN_PASSWORD=<senha-admin-forte>
-
-MINIO_ROOT_USER=<usuario-forte>
-MINIO_ROOT_PASSWORD=<senha-forte>
-KEEPLY_MINIO_BUCKET=keeply
-
-SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/keeply
-SPRING_DATASOURCE_USERNAME=keeply
-SPRING_DATASOURCE_PASSWORD=<senha-forte>
-
-KEEPLY_MINIO_ENDPOINT=http://minio:9000
-KEEPLY_MINIO_PUBLIC_ENDPOINT=https://minio.keeply.app.br
-KEEPLY_MINIO_ACCESS_KEY=<usuario-forte>
-KEEPLY_MINIO_SECRET_KEY=<senha-forte>
-
-KEEPLY_JWT_SECRET=<secret-32+-chars>
-KEEPLY_MASTER_KEY=<hex-64-chars>
-KEEPLY_TRUST_PROXY_HEADERS=true
-KEEPLY_CORS_ALLOWED_ORIGIN_PATTERNS=https://keeply.app.br
-
-NEXT_PUBLIC_API_BASE=https://backend.keeply.app.br
-```
-
-## Ajustes Necessários no App
-
-Backend:
-
-- Tornar CORS configurável por env.
-- Permitir `https://keeply.app.br` em produção.
-- Confiar nos headers do Nginx para IP real quando `KEEPLY_TRUST_PROXY_HEADERS=true`.
-- Usar `KEEPLY_MINIO_ENDPOINT=http://minio:9000` internamente.
-- Usar `KEEPLY_MINIO_PUBLIC_ENDPOINT=https://minio.keeply.app.br` nas credenciais temporárias.
-- Expor `GET /actuator/prometheus` sem JWT apenas para scrape interno pela rede Docker.
-
-Frontend:
-
-- Buildar com `NEXT_PUBLIC_API_BASE=https://backend.keeply.app.br`.
-- Evitar textos hardcoded com `http://localhost:8080` em telas de produção.
-
-Postgres:
-
-- Não publicar porta `5432` no host.
-- Manter acesso somente via rede Docker pelo hostname `postgres`.
-
-MinIO:
-
-- Publicar apenas a API S3 em `minio.keeply.app.br`.
-- Não expor o console na internet.
-- Acessar console/admin por SSH tunnel ou `docker exec` quando necessário.
+Faça logout/login após adicionar o usuário ao grupo `docker`.
 
 ## Firewall
 
-Liberar publicamente:
-
-- `80/tcp`
-- `443/tcp`
-
-Não liberar publicamente:
-
-- `3000/tcp`
-- `8080/tcp`
-- `5432/tcp`
-- `9000/tcp`
-- `9001/tcp`
-- `9090/tcp` em interface pública
-- `3000/tcp` do Grafana em interface pública
-- `9187/tcp`
-- `9113/tcp`
-
-O acesso externo a MinIO deve passar por `443` via Nginx, não pela porta `9000` direta.
-`/actuator/prometheus` também não deve ganhar rota pública no Nginx.
-
-## Checklist de Validação
-
-Validar compose:
-
 ```bash
-docker compose -f infra/docker-compose.yml config
-docker compose -f infra/docker-compose.prod.yml config
+sudo ufw allow OpenSSH
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
+sudo ufw enable
+sudo ufw status
 ```
 
-Subir produção:
+Não exponha PostgreSQL, MinIO Console, Prometheus ou Grafana diretamente na Internet.
+
+## Deploy do projeto
 
 ```bash
-docker compose -f infra/docker-compose.prod.yml --env-file /caminho/seguro/.env.prod up -d --build
+git clone <url-do-repositorio> keeply
+cd keeply
+sudo mkdir -p /opt/keeply
+sudo cp .env.example /opt/keeply/.env.prod
+sudo nano /opt/keeply/.env.prod
 ```
 
-Health checks:
+Preencha as variáveis reais, principalmente:
+
+- `POSTGRES_PASSWORD`
+- `MINIO_ROOT_PASSWORD`
+- `KEEPLY_JWT_SECRET`
+- `KEEPLY_MASTER_KEY`
+- `KEEPLY_ALLOWED_ORIGINS`
+- `NEXT_PUBLIC_API_BASE`
+- `KEEPLY_AI_API_KEY`, caso o Keeply I.A vá ser usado
+
+Suba:
 
 ```bash
-curl -fsSL https://backend.keeply.app.br/actuator/health
-curl -fsSL https://minio.keeply.app.br/minio/health/live
-curl -fsSL http://127.0.0.1:9090/-/healthy
-curl -fsSL http://127.0.0.1:3000/api/health
+docker compose -f infra/docker-compose.prod.yml --env-file /opt/keeply/.env.prod up -d --build
 ```
 
-Validação de targets:
+## DNS
+
+Crie registro `A`:
+
+```text
+keeply.app.br -> IP_DA_VM
+```
+
+Aguarde propagação antes de emitir TLS.
+
+## TLS
+
+O Compose espera:
+
+```text
+infra/nginx/certs/fullchain.pem
+infra/nginx/certs/privkey.pem
+```
+
+Pode usar Certbot no host e copiar/sincronizar os arquivos para esse caminho, ou ajustar o volume do Compose para apontar para o diretório real do certificado.
+
+## Validação
 
 ```bash
-curl -fsSL http://127.0.0.1:9090/api/v1/targets
-curl -fsSL http://127.0.0.1:9090/api/v1/query --data-urlencode 'query=up'
+curl -I https://keeply.app.br/
+curl -I https://keeply.app.br/prod
+curl -fsS https://keeply.app.br/api/actuator/health
 ```
 
-Critérios de aceite:
+Teste funcional:
 
-- `https://keeply.app.br` abre o frontend.
-- Login/register chamam `https://backend.keeply.app.br` sem erro de CORS.
-- Backend retorna health `UP`.
-- `https://backend.keeply.app.br/actuator/prometheus` não deve estar publicado externamente.
-- O target `backend` aparece como `UP` no Prometheus.
-- O target `postgres-exporter` aparece como `UP` no Prometheus.
-- Em produção containerizada, o target `nginx-exporter` aparece como `UP`.
-- O Grafana abre em loopback e já enxerga o datasource `Prometheus` sem configuração manual.
-- Agente autentica no backend público.
-- Agente recebe endpoint MinIO público como `https://minio.keeply.app.br`.
-- Backup envia chunks para MinIO.
-- Backend grava metadados no Postgres interno.
-- Restore/download lê objetos do MinIO.
-- `IP_DO_VPS:5432`, `:9000`, `:9001`, `:9090`, `:9187`, `:9113`, `:8080`, `:3000` do frontend e `:3000` ou porta definida do Grafana não respondem publicamente.
+1. Criar usuário.
+2. Login no painel.
+3. Abrir Keeply I.A.
+4. Registrar agente apontando para `https://keeply.app.br`.
+5. Executar backup pequeno.
+6. Conferir snapshot.
+7. Baixar arquivo de teste.
 
-## Decisões Fechadas
+## Atualização
 
-- Um VPS Docker com um IP público.
-- Nginx rodando como container.
-- Cloudflare proxy para frontend e backend.
-- MinIO em DNS-only.
-- Postgres privado, sem exposição pública.
-- `db.keeply.app.br` reservado para uso futuro, mas sem abrir porta.
-- Console MinIO fora da internet nesta primeira versão.
+```bash
+cd keeply
+git pull
+
+docker compose -f infra/docker-compose.prod.yml --env-file /opt/keeply/.env.prod build
+
+docker compose -f infra/docker-compose.prod.yml --env-file /opt/keeply/.env.prod up -d
+```
+
+## Backup da infraestrutura
+
+Backup mínimo:
+
+- volume do PostgreSQL;
+- volume do MinIO;
+- `/opt/keeply/.env.prod`;
+- certificados TLS;
+- versão/tag do código implantado.
+
+Sem backup do PostgreSQL e MinIO juntos, a restauração do produto pode ficar inconsistente.
+
+## Limitações desta abordagem
+
+- Compose em VM única não é alta disponibilidade.
+- Rate limit do backend é local em memória.
+- MinIO em volume local precisa de política clara de backup.
+- Escala horizontal exige storage, banco e sessão/rate limit mais bem planejados.
+- A IA depende da disponibilidade do provedor externo configurado.
