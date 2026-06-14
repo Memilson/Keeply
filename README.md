@@ -36,7 +36,7 @@ Frontend Next.js / Mobile Flutter
 | `landing/` | Site público/landing page em Next.js. |
 | `mobile/` | Aplicativo Flutter para consulta remota de backups, snapshots, arquivos e configurações. |
 | `infra/` | Docker Compose local e Compose de produção. |
-| `docs/` | Documentação técnica, produção, banco, MinIO, mobile, IA e entrega N2. |
+| `docs/` | Documentação técnica, produção, banco, MinIO, mobile, IA. |
 | `debug/` | Scripts de reset do ambiente local. |
 
 ## Stack principal
@@ -105,7 +105,7 @@ O Keeply I.A é um chat operacional do painel web. Ele não executa backup, não
 5. O backend retorna `{ answer, model }`.
 6. O frontend exibe a resposta no chat.
 
-Detalhes específicos estão em [`docs/ia.md`](docs/ia.md) e o material para a atividade N2 está em [`docs/n2-atividade-final-ia.md`](docs/n2-atividade-final-ia.md).
+Detalhes específicos estão em [`docs/ia.md`](docs/ia.md)
 
 ## Documentação
 
@@ -119,8 +119,6 @@ Detalhes específicos estão em [`docs/ia.md`](docs/ia.md) e o material para a a
 - [`docs/deploy-cloud.md`](docs/deploy-cloud.md): implantação em nuvem.
 - [`docs/production.md`](docs/production.md): Compose de produção.
 - [`docs/progresso.md`](docs/progresso.md): status atual, limitações e próximos passos.
-- [`docs/n2-atividade-final-ia.md`](docs/n2-atividade-final-ia.md): relatório objetivo para a entrega N2.
-- [`docs/roteiro-video-n2.md`](docs/roteiro-video-n2.md): roteiro prático para gravação do vídeo.
 
 ## Requisitos locais
 
@@ -302,8 +300,6 @@ Campos obrigatórios:
 6. Conferir snapshot no painel.
 7. Navegar pelos arquivos do snapshot.
 8. Baixar/restaurar um arquivo.
-
-Para a atividade N2, o vídeo deve priorizar a etapa 4, porque é a funcionalidade de IA exigida.
 
 ## Corte destrutivo para Zstd
 
