@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
+import '../models/ai_chat.dart';
 import '../models/remote_file.dart';
 import 'secure_storage_service.dart';
 import '../core/constants/api_endpoints.dart';
@@ -281,6 +282,57 @@ class ApiClientService {
     }
   }
 
+  Future<AiChatResponse> chatWithAi({
+    required String message,
+    List<AiChatMessage> history = const [],
+  }) async {
+    final trimmed = message.trim();
+    if (trimmed.isEmpty) {
+      throw ApiException('Mensagem é obrigatória', statusCode: 0);
+    }
+    try {
+      final baseUrl = await _getBaseUrl();
+      final uri = ApiEndpoints.uri(baseUrl, ApiEndpoints.aiChat).toString();
+      final headers = await _getHeaders();
+      final sanitizedHistory = history
+          .where((item) => item.content.trim().isNotEmpty)
+          .toList()
+          .reversed
+          .take(8)
+          .toList()
+          .reversed
+          .toList();
+      final response = await http
+          .post(
+            Uri.parse(uri),
+            headers: headers,
+            body: jsonEncode({
+              'message': trimmed,
+              'history': sanitizedHistory.map((item) => item.toJson()).toList(),
+            }),
+          )
+          .timeout(const Duration(seconds: 60));
+      if (response.statusCode != 200) {
+        _handleError(response.statusCode, response.body, uri);
+      }
+      final json = jsonDecode(response.body) as Map<String, dynamic>;
+      return AiChatResponse.fromJson(json);
+    } on SocketException {
+      throw NetworkException('Sem conexão de rede durante consulta à I.A.');
+    } on TimeoutException {
+      throw ApiException(
+        'A consulta à I.A expirou. Tente novamente.',
+        statusCode: 0,
+      );
+    } on TokenExpiredException {
+      rethrow;
+    } on ApiException {
+      rethrow;
+    } catch (e) {
+      throw ApiException('Erro ao consultar a I.A: $e', statusCode: 0);
+    }
+  }
+
   Future<String> exchangeQrToken({
     required String qrToken,
     required String host,
@@ -398,34 +450,31 @@ class ApiException implements Exception {
 }
 
 class TokenExpiredException extends ApiException {
-  TokenExpiredException(String message) : super(message, statusCode: 401);
+  TokenExpiredException(super.message) : super(statusCode: 401);
   @override
   String toString() => 'TokenExpiredException: $message';
 }
 
 class ResourceNotFoundException extends ApiException {
-  ResourceNotFoundException(String message, {required int statusCode})
-    : super(message, statusCode: statusCode);
+  ResourceNotFoundException(super.message, {required super.statusCode});
   @override
   String toString() => 'ResourceNotFoundException: $message';
 }
 
 class RateLimitException extends ApiException {
-  RateLimitException(String message, {required int statusCode})
-    : super(message, statusCode: statusCode);
+  RateLimitException(super.message, {required super.statusCode});
   @override
   String toString() => 'RateLimitException: $message';
 }
 
 class ServerException extends ApiException {
-  ServerException(String message, {required int statusCode})
-    : super(message, statusCode: statusCode);
+  ServerException(super.message, {required super.statusCode});
   @override
   String toString() => 'ServerException: $message';
 }
 
 class NetworkException extends ApiException {
-  NetworkException(String message) : super(message, statusCode: 0);
+  NetworkException(super.message) : super(statusCode: 0);
   @override
   String toString() => 'NetworkException: $message';
 }

@@ -34,6 +34,69 @@ public class AiChatService {
             Para restauração, oriente a abrir o snapshot desejado, revisar os arquivos/pastas e baixar/restaurar para um local seguro antes de substituir dados existentes.
             """;
 
+    private static final String PRODUCT_MAP = """
+            Mapa do produto Keeply para orientar o usuário:
+
+            Web - Dashboard:
+            - Caminho: Dashboard ou /dashboard.
+            - Mostra visão geral com dispositivos ativos/offline, backups das últimas 24 horas, jobs em execução, falhas, taxa de sucesso, atividade dos últimos dias, snapshots recentes e maiores consumidores de armazenamento.
+            - Use quando o usuário perguntar por saúde geral, resumo, falhas recentes, taxa de sucesso ou volume protegido.
+
+            Web - Máquinas:
+            - Caminho: Dashboard > Máquinas ou /dashboard/machines.
+            - Lista todos os dispositivos, sistema operacional, origem principal e último backup.
+            - Ao selecionar uma máquina, há abas de resumo, plano e snapshots.
+            - Use quando o usuário quiser conferir uma máquina offline, ver último backup de um dispositivo, abrir detalhes da máquina ou navegar para snapshots de uma máquina.
+
+            Web - Atividades:
+            - Caminho: Dashboard > Atividades ou /dashboard/activities.
+            - Mostra linha do tempo de snapshots e permite filtrar por Todos, Backup, Em andamento e Erros.
+            - Use quando o usuário quiser investigar erros, acompanhar backup em execução ou auditar eventos recentes.
+
+            Web - Proteção:
+            - Caminho: Dashboard > Proteção ou /dashboard/protection.
+            - Configura o plano de backup por dispositivo: pastas de origem, proteção contínua CDP, validação pós-backup, horário diário, retenção por dias ou manter todos os snapshots.
+            - Use quando o usuário quiser adicionar/remover pasta protegida, mudar agendamento, ativar validação, configurar retenção ou revisar política de backup.
+
+            Web - Explorar snapshot:
+            - Caminho: Dashboard > Máquinas > selecionar máquina > Snapshots > abrir snapshot, ou /dashboard/backups/{id}.
+            - Permite navegar em pastas do snapshot, ver histórico relacionado, selecionar arquivos/pastas e baixar ZIP do snapshot inteiro ou somente itens selecionados.
+            - Use quando o usuário quiser restaurar, baixar, verificar arquivos dentro de um snapshot ou comparar snapshots da mesma origem.
+
+            Mobile - Histórico:
+            - Aba: Histórico.
+            - Mostra snapshots/backups, permite buscar arquivos nos backups, faz busca profunda quando a consulta tem pelo menos 3 caracteres, abre detalhes do snapshot e permite excluir backup.
+            - Use quando o usuário estiver no celular e quiser localizar um arquivo, abrir snapshot, consultar backups salvos ou operar em modo offline com últimos dados em cache.
+
+            Mobile - Detalhes do snapshot:
+            - Tela aberta a partir da aba Histórico.
+            - Lista arquivos do snapshot, permite pesquisar dentro do snapshot e baixar arquivos.
+            - Use quando o usuário quiser recuperar um arquivo específico no celular.
+
+            Mobile - I.A:
+            - Aba: I.A.
+            - Chat do Keeply I.A conectado ao backend por /api/ai/chat. Usa o token do usuário e a URL pareada do backend.
+            - Use quando o usuário perguntar como conversar com o assistente ou onde pedir orientação no app.
+
+            Mobile - Configurações:
+            - Aba: Configurações.
+            - Mostra conta, opção de desconectar conta, pasta para salvar downloads e sair do aplicativo.
+            - Use quando o usuário quiser trocar pasta de download, desconectar o dispositivo, encerrar sessão ou revisar conta.
+
+            Login e pareamento:
+            - Web usa login com e-mail e senha.
+            - Mobile usa pareamento/login para salvar token JWT e URL do backend.
+            - Se houver erro de sessão expirada, oriente entrar novamente ou repetir pareamento.
+
+            Regras de orientação:
+            - Quando a pessoa disser "no celular", "mobile" ou "app", responda usando primeiro as abas Mobile.
+            - Quando a pessoa disser "no painel", "web", "dashboard" ou "navegador", responda usando primeiro as rotas Web.
+            - Para falhas de backup, direcione para Dashboard para visão geral e Atividades para filtro Erros; se envolver uma máquina específica, direcione para Máquinas.
+            - Para restauração, direcione para Explorar snapshot no web ou Detalhes do snapshot no mobile.
+            - Para alterar o que é protegido, direcione para Proteção no web; no mobile, explique que a configuração do plano fica no painel web.
+            - Não invente nomes de máquinas, IDs, snapshots, arquivos ou status. Se precisar desses dados, diga onde o usuário deve conferir.
+            """;
+
     private final ObjectMapper mapper;
     private final HttpClient http;
     private final String apiKey;
@@ -111,6 +174,7 @@ public class AiChatService {
     private List<Map<String, String>> buildMessages(AiDtos.ChatRequest request) {
         List<Map<String, String>> messages = new ArrayList<>();
         messages.add(Map.of("role", "system", "content", SYSTEM_PROMPT));
+        messages.add(Map.of("role", "system", "content", PRODUCT_MAP));
 
         if (request.history() != null) {
             for (AiDtos.ChatMessage item : request.history()) {
