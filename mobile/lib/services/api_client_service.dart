@@ -243,7 +243,7 @@ class ApiClientService {
       final uri = ApiEndpoints.uri(
         baseUrl,
         ApiEndpoints.snapshotNodes(snapshotId),
-        {'dir': dir},
+        {if (dir.isNotEmpty) 'prefix': dir},
       ).toString();
       final body = await _getWithRetry(uri);
       final json = jsonDecode(body) as Map<String, dynamic>;
