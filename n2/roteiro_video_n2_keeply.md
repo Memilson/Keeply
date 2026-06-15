@@ -14,26 +14,28 @@ Neste vídeo vou demonstrar a funcionalidade de Inteligência Artificial impleme
 
 Mostrar no navegador:
 
-1. Dashboard do Keeply.
-2. Menu Máquinas.
-3. Seleção de uma máquina.
-4. Aba Snapshots.
+1. Dashboard do Keeply (Visão geral).
+2. Menu Máquinas — lista de dispositivos.
+3. Seleção de uma máquina — painel com Resumo, botões Snapshots e Plano.
+4. Botão Snapshots — lista de pontos de backup com botão Explorar.
+5. Explorador de snapshot — navegação de pastas, seleção e download de arquivos.
 
 Falar:
 
-No painel web o usuário consegue visualizar as máquinas registradas, acessar os snapshots de cada máquina e baixar snapshots, pastas ou arquivos. A restauração do snapshot é executada pelo Keeply Agente registrado no dispositivo.
+No painel web o usuário consegue visualizar as máquinas registradas, acessar os snapshots de cada máquina e navegar os arquivos pelo explorador de snapshot. É possível baixar o snapshot inteiro ou selecionar arquivos e pastas específicas para baixar. A restauração do snapshot no disco é executada pelo Keeply Agente registrado no dispositivo.
 
 ## 3. Mostrar o mobile
 
 Mostrar no emulador:
 
 1. Aplicativo Keeply aberto.
-2. Aba Keeply I.A.
-3. Campo de pergunta.
+2. Aba Histórico (lista de snapshots).
+3. Aba Keeply I.A.
+4. Campo de pergunta.
 
 Falar:
 
-No aplicativo mobile o usuário consegue consultar informações, ver dashboards ou snapshots e baixar arquivos. A restauração de snapshots não acontece pelo mobile; ela é feita pelo Keeply Agente.
+No aplicativo mobile o usuário consegue consultar snapshots e backups na aba Histórico e baixar arquivos. O mobile não tem Dashboard e não executa restauração de snapshots. A restauração é feita pelo Keeply Agente instalado no dispositivo.
 
 ## 4. Entrada de dados
 

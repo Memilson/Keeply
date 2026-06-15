@@ -221,7 +221,7 @@ public class AiChatService {
                 throw new IllegalStateException("Falha ao consultar o modelo de I.A. HTTP " + response.statusCode());
             }
 
-            CleanedAnswer cleaned = cleanAnswer(extractAnswer(response.body()));
+            CleanedAnswer cleaned = cleanAnswer(extractAnswer(response.body()), request.message());
             return new AiDtos.ChatResponse(cleaned.answer(), model, cleaned.reasoning());
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
@@ -261,10 +261,13 @@ public class AiChatService {
         return content.asText();
     }
 
-    private CleanedAnswer cleanAnswer(String raw) {
+    private CleanedAnswer cleanAnswer(String raw, String userMessage) {
         String answer = raw == null ? "" : raw.trim();
         String lower = answer.toLowerCase();
         boolean leaked = looksLikeReasoning(lower);
+        if (leaked && startsLikeReasoning(lower)) {
+            return new CleanedAnswer(fallbackAnswer(userMessage), "");
+        }
         int finalMarker = firstMarker(answer, "Final response:", "Resposta final:", "Final:");
         if (finalMarker >= 0) {
             answer = answer.substring(finalMarker).replaceFirst("(?is)^(Final response:|Resposta final:|Final:)\\s*", "").trim();
@@ -285,19 +288,34 @@ public class AiChatService {
         if (answer.isBlank()) {
             answer = "Não consegui gerar uma resposta final limpa. Tente perguntar de novo com mais contexto.";
         }
-        return new CleanedAnswer(answer, leaked ? reasoningSummary(lower) : "");
+        return new CleanedAnswer(answer, "");
     }
 
     private boolean looksLikeReasoning(String lower) {
         return lower.contains("the user")
                 || lower.contains("i should")
+                || lower.contains("i need")
                 || lower.contains("we need")
+                || lower.contains("let me")
+                || lower.contains("according to")
+                || lower.contains("first,")
+                || lower.contains("okay,")
                 || lower.contains("looking at the query")
                 || lower.contains("possible steps")
                 || lower.contains("final response:")
                 || lower.contains("revised:")
                 || lower.contains("the instructions say")
                 || lower.contains("i don't have access");
+    }
+
+    private boolean startsLikeReasoning(String lower) {
+        return lower.startsWith("okay")
+                || lower.startsWith("first")
+                || lower.startsWith("the user")
+                || lower.startsWith("i need")
+                || lower.startsWith("i should")
+                || lower.startsWith("let me")
+                || lower.startsWith("according to");
     }
 
     private String stripAfterReasoning(String answer) {
@@ -331,14 +349,18 @@ public class AiChatService {
                 .trim();
     }
 
-    private String reasoningSummary(String lower) {
-        if (lower.contains("i don't have access") || lower.contains("não tenho acesso")) {
-            return "A I.A identificou que não tem acesso direto ao estado atual do painel e escolheu orientar onde verificar no Keeply.";
+    private String fallbackAnswer(String userMessage) {
+        String message = userMessage == null ? "" : userMessage.toLowerCase();
+        if (message.contains("restaur")) {
+            return "A restauração de snapshot é feita pelo Keeply Agente.\nNo web, abra Máquinas, selecione a máquina e escolha o snapshot.\nO agente executa a restauração no dispositivo, podendo salvar em uma pasta diferente.";
         }
-        if (lower.contains("without more info") || lower.contains("more context") || lower.contains("clarification")) {
-            return "A I.A percebeu que faltam detalhes para agir com segurança e preferiu pedir contexto antes de assumir um cenário.";
+        if (message.contains("backup")) {
+            return "O backup é executado pelo Keeply Agente instalado no dispositivo.\nNo web, use Máquinas para ver dispositivos e Snapshots para consultar os pontos de backup.\nNo mobile, consulte snapshots e baixe arquivos.";
         }
-        return "A I.A analisou a pergunta, aplicou as regras do Keeply e separou a orientação final sem inventar dados do painel.";
+        if (message.contains("mobile") || message.contains("celular")) {
+            return "No mobile você consulta snapshots/backups e baixa arquivos.\nPara navegar, abra Histórico, escolha o dispositivo, depois selecione o snapshot.\nRestauração e execução de backup ficam no Keeply Agente.";
+        }
+        return "No web você vê máquinas, snapshots, pontos de backup e baixa arquivos.\nNo mobile você consulta snapshots e baixa arquivos.\nBackup e restauração real são executados pelo Keeply Agente.";
     }
 
     private int firstMarker(String answer, String... markers) {

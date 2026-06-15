@@ -6,8 +6,9 @@ class RemoteFile {
   final String path;
   final DateTime? modifiedAt;
   final String? snapshotId;
+  final String? deviceId;
   final int totalFiles; // Adicionado para dashboard
-  
+
   RemoteFile({
     required this.id,
     required this.name,
@@ -16,6 +17,7 @@ class RemoteFile {
     required this.path,
     this.modifiedAt,
     this.snapshotId,
+    this.deviceId,
     this.totalFiles = 0,
   });
   factory RemoteFile.fromSnapshotJson(Map<String, dynamic> json) {
@@ -36,6 +38,7 @@ class RemoteFile {
     return RemoteFile(
       id: id,
       snapshotId: id,
+      deviceId: json['deviceId'] as String?,
       name: displayName,
       mimeType: 'application/x-keeply-snapshot',
       size: compressedSize,
@@ -49,7 +52,7 @@ class RemoteFile {
     final fileName = _lastSegment(path);
     final ext = fileName.contains('.') ? fileName.split('.').last : '';
     return RemoteFile(
-      id: path, 
+      id: path,
       name: fileName,
       mimeType: _mimeFromExt(ext),
       size: (json['size'] as int?) ?? 0,
@@ -69,6 +72,8 @@ class RemoteFile {
       modifiedAt: json['modifiedAt'] != null
           ? DateTime.tryParse(json['modifiedAt'] as String)
           : null,
+      deviceId: json['deviceId'] as String?,
+      totalFiles: (json['totalFiles'] as int?) ?? 0,
     );
   }
   Map<String, dynamic> toJson() => {
@@ -79,12 +84,15 @@ class RemoteFile {
     'path': path,
     'modifiedAt': modifiedAt?.toIso8601String(),
     'snapshotId': snapshotId,
+    'deviceId': deviceId,
+    'totalFiles': totalFiles,
   };
   static String _lastSegment(String path) {
     if (path.isEmpty) return 'Arquivo';
     final segments = path.replaceAll('\\', '/').split('/');
     return segments.where((s) => s.isNotEmpty).lastOrNull ?? path;
   }
+
   static String _mimeFromExt(String ext) {
     switch (ext.toLowerCase()) {
       case 'pdf':
