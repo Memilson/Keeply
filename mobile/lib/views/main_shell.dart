@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'ai/ai_assistant_view.dart';
+import 'dashboard/dashboard_view.dart';
 import 'files/files_list_view.dart';
 import 'settings/settings_view.dart';
 
@@ -13,6 +14,7 @@ class MainShell extends StatefulWidget {
 class _MainShellState extends State<MainShell> {
   int _currentIndex = 0;
   final List<Widget> _screens = [
+    const DashboardView(),
     const FilesListView(),
     const AiAssistantView(),
     const SettingsView(),
@@ -85,7 +87,11 @@ class _MainShellState extends State<MainShell> {
             type: BottomNavigationBarType.fixed,
             items: const [
               BottomNavigationBarItem(
-                icon: Icon(Icons.history),
+                icon: Icon(Icons.dashboard),
+                label: 'Dashboard',
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.folder),
                 label: 'Histórico',
               ),
               BottomNavigationBarItem(

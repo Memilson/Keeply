@@ -53,14 +53,17 @@ public class AiChatService {
 
             Web - Máquinas:
             - Caminho: Máquinas ou /dashboard/machines. Item "Máquinas" na sidebar esquerda.
-            - Lista "Todos os dispositivos" com colunas: Tipo (ícone Linux/Android/Windows), Nome, Origem (pasta raiz) e Último Backup.
-            - Dispositivos Linux aparecem com ícone de computador. Dispositivos Android mostram "Android" abaixo do nome.
-            - Ao clicar em uma máquina, abre painel lateral com três abas:
-              - Aba "Resumo": último backup, último contato, armazenamento usado, total de snapshots.
-              - Aba "Plano": mostra e permite editar o plano de backup (origem, CDP, validação, horário, retenção, criptografia).
-              - Aba "Snapshots": lista pontos de backup daquela máquina com data, caminho de origem, tipo e status.
-            - Na aba Snapshots, o botão "Explorar" abre o snapshot para navegar arquivos.
-            - Use quando o usuário quiser ver máquinas cadastradas, verificar último backup, acessar snapshots de um dispositivo específico ou ir para o explorador de arquivos.
+            - Lista "Todos os dispositivos" com colunas: Tipo (ícone), Nome (com OS abaixo), Origem (pasta raiz) e Último Backup.
+            - Dispositivos Linux aparecem com ícone de computador e "Linux" abaixo do nome. Dispositivos Android mostram "Android" abaixo do nome.
+            - Status offline/online aparece como badge ("Offline") no painel de detalhes, não na lista.
+            - Ao clicar em uma máquina, abre painel lateral direito com:
+              - Header: nome, badge de status (ex: "Offline"), OS, ID do dispositivo.
+              - Dois botões no topo direito do painel: "Snapshots" e "Plano".
+              - Visão padrão (sem clicar nenhum botão): seção "Resumo" com 4 cards — Último Backup, Último Contato, Armazenado (ex: 697 MB) e Snapshots (contagem).
+              - Botão "Snapshots": lista os pontos de backup da máquina. Cada item mostra data/hora, caminho de origem, badge azul "Completo" (tipo) e badge verde "Concluído" (status), e botão "Explorar".
+              - Botão "Plano": mostra o plano de backup configurado para aquela máquina (mesmo conteúdo de Proteção).
+            - Na visão Snapshots, o botão "Explorar" abre o explorador de arquivos do snapshot.
+            - Use quando o usuário quiser ver máquinas cadastradas, verificar último backup, status offline, acessar snapshots de um dispositivo específico ou abrir o explorador de arquivos.
 
             Web - Atividades:
             - Caminho: Atividades ou /dashboard/activities. Item "Atividades" na sidebar esquerda.
@@ -85,12 +88,15 @@ public class AiChatService {
             - Use quando o usuário quiser revisar ou alterar o plano de backup, ativar CDP, mudar horário, adicionar pasta ou configurar retenção.
 
             Web - Explorar snapshot:
-            - Caminho: Máquinas > selecionar máquina > aba Snapshots > botão Explorar, ou /dashboard/backups/{id}.
-            - Permite navegar pastas e arquivos dentro do snapshot com breadcrumb de navegação.
-            - Sidebar esquerda mostra snapshots relacionados (mesma origem) para comparar pontos de backup.
-            - Header mostra: nome da máquina, status, tipo, data, total de arquivos e tamanho comprimido.
-            - Ações disponíveis: "Download snapshot" (baixa o snapshot inteiro) e "Download selecionados" (baixa apenas itens marcados com checkbox).
-            - Use quando o usuário quiser navegar arquivos de um backup, baixar um arquivo ou pasta específica, ou comparar snapshots da mesma origem.
+            - Caminho: Máquinas > selecionar máquina > botão Snapshots > Explorar, ou /dashboard/backups/{id}.
+            - Link "Voltar para máquinas" no topo esquerdo para retornar à lista de máquinas.
+            - Sidebar esquerda chamada "HISTÓRICO / Snapshots": lista snapshots da mesma origem para navegar entre pontos de backup.
+            - Header central: nome da máquina, badges "Concluído" (verde) e "Completo" (azul), caminho de origem, data/hora, total de arquivos e tamanho (ex: 191 arquivos · 54 MB).
+            - Botões no topo direito: "Baixar snapshot" (baixa o snapshot inteiro) e "Baixar selecionados (N)" em verde (baixa apenas itens marcados, o número atualiza conforme seleção).
+            - Breadcrumb de navegação logo abaixo do header — mostra o caminho atual dentro do snapshot (ex: /home/angelo/Imagens).
+            - Tabela de arquivos com colunas: NOME (checkbox + ícone de pasta/arquivo + nome), TAMANHO (pastas mostram "Pasta", arquivos mostram tamanho real) e MODIFICADO.
+            - Clicar em uma pasta navega dentro dela e atualiza o breadcrumb.
+            - Use quando o usuário quiser navegar arquivos de um backup, selecionar e baixar arquivos ou pastas específicas, ver quantos arquivos tem o snapshot ou comparar pontos de backup da mesma origem.
 
             Keeply Agente:
             - O Keeply Agente é quem executa backups no dispositivo conforme o plano configurado em Proteção.

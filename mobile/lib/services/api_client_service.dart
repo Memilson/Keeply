@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 import '../models/ai_chat.dart';
 import '../models/remote_file.dart';
+import '../models/snapshot_node.dart';
 import 'secure_storage_service.dart';
 import '../core/constants/api_endpoints.dart';
 import '../core/constants/app_constants.dart';
@@ -228,6 +229,35 @@ class ApiClientService {
     } catch (e) {
       throw ApiException(
         'Erro ao listar arquivos do snapshot: $e',
+        statusCode: 0,
+      );
+    }
+  }
+
+  Future<List<SnapshotNode>> listSnapshotNodes({
+    required String snapshotId,
+    String dir = '',
+  }) async {
+    try {
+      final baseUrl = await _getBaseUrl();
+      final uri = ApiEndpoints.uri(
+        baseUrl,
+        ApiEndpoints.snapshotNodes(snapshotId),
+        {'dir': dir},
+      ).toString();
+      final body = await _getWithRetry(uri);
+      final json = jsonDecode(body) as Map<String, dynamic>;
+      final items = (json['items'] as List<dynamic>?) ?? [];
+      return items
+          .map((e) => SnapshotNode.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } on TokenExpiredException {
+      rethrow;
+    } on ApiException {
+      rethrow;
+    } catch (e) {
+      throw ApiException(
+        'Erro ao listar pastas do snapshot: $e',
         statusCode: 0,
       );
     }
