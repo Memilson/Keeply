@@ -14,27 +14,27 @@ const machineStatusMeta: Record<
 > = {
   online: {
     label: "Online",
-    color: "#4ADE80",
-    background: "rgba(34,197,94,0.12)",
-    border: "rgba(74,222,128,0.24)",
+    color: "#15803D",
+    background: "#DCFCE7",
+    border: "#86EFAC",
   },
   offline: {
     label: "Offline",
-    color: "#94A3B8",
-    background: "rgba(148,163,184,0.12)",
-    border: "rgba(148,163,184,0.18)",
+    color: "#374151",
+    background: "#F3F4F6",
+    border: "#D1D5DB",
   },
   error: {
     label: "Com erro",
-    color: "#F87171",
-    background: "rgba(239,68,68,0.12)",
-    border: "rgba(248,113,113,0.26)",
+    color: "#B91C1C",
+    background: "#FEE2E2",
+    border: "#FCA5A5",
   },
   "no-plan": {
     label: "Sem plano",
-    color: "#FBBF24",
-    background: "rgba(245,158,11,0.14)",
-    border: "rgba(251,191,36,0.24)",
+    color: "#92400E",
+    background: "#FEF3C7",
+    border: "#FCD34D",
   },
 };
 
@@ -44,33 +44,33 @@ const snapshotStatusMeta: Record<
 > = {
   COMPLETED: {
     label: "Concluído",
-    color: "#4ADE80",
-    background: "rgba(34,197,94,0.12)",
-    border: "rgba(74,222,128,0.24)",
+    color: "#15803D",
+    background: "#DCFCE7",
+    border: "#86EFAC",
   },
   RUNNING: {
     label: "Em execução",
-    color: "#A78BFA",
-    background: "rgba(167,139,250,0.14)",
-    border: "rgba(167,139,250,0.22)",
+    color: "#5B21B6",
+    background: "#EDE9FF",
+    border: "#C4B5FD",
   },
   IN_PROGRESS: {
     label: "Em execução",
-    color: "#A78BFA",
-    background: "rgba(167,139,250,0.14)",
-    border: "rgba(167,139,250,0.22)",
+    color: "#5B21B6",
+    background: "#EDE9FF",
+    border: "#C4B5FD",
   },
   PROCESSING: {
     label: "Processando",
-    color: "#C4B5FD",
-    background: "rgba(196,181,253,0.14)",
-    border: "rgba(196,181,253,0.22)",
+    color: "#6D28D9",
+    background: "#F5F3FF",
+    border: "#DDD6FE",
   },
   FAILED: {
     label: "Falhou",
-    color: "#F87171",
-    background: "rgba(239,68,68,0.12)",
-    border: "rgba(248,113,113,0.26)",
+    color: "#B91C1C",
+    background: "#FEE2E2",
+    border: "#FCA5A5",
   },
 };
 
@@ -80,15 +80,15 @@ const snapshotKindMeta: Record<
 > = {
   COMPLETO: {
     label: "Completo",
-    color: "#93C5FD",
-    background: "rgba(59,130,246,0.16)",
-    border: "rgba(147,197,253,0.22)",
+    color: "#1D4ED8",
+    background: "#DBEAFE",
+    border: "#93C5FD",
   },
   INCREMENTAL: {
     label: "Incremental",
-    color: "#FBBF24",
-    background: "rgba(245,158,11,0.16)",
-    border: "rgba(251,191,36,0.22)",
+    color: "#92400E",
+    background: "#FEF3C7",
+    border: "#FCD34D",
   },
 };
 
@@ -105,8 +105,8 @@ export function Surface({
     <section
       className={`rounded-[24px] border ${padded ? "p-5 md:p-6" : ""} ${className}`}
       style={{
-        background: "linear-gradient(180deg, rgba(15,23,42,0.86), rgba(7,10,24,0.96))",
-        borderColor: "rgba(148,163,184,0.16)",
+        background: "#FFFFFF",
+        borderColor: "#E5E7EB",
       }}
     >
       {children}
@@ -129,10 +129,10 @@ export function SectionHeading({
     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
       <div className="min-w-0">
         {eyebrow ? (
-          <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-500">{eyebrow}</p>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-gray-400">{eyebrow}</p>
         ) : null}
-        <h2 className="mt-1 text-xl font-semibold tracking-tight text-slate-50">{title}</h2>
-        {description ? <p className="mt-2 max-w-2xl text-sm text-slate-400">{description}</p> : null}
+        <h2 className="mt-1 text-xl font-semibold tracking-tight text-gray-900">{title}</h2>
+        {description ? <p className="mt-2 max-w-2xl text-sm text-gray-500">{description}</p> : null}
       </div>
       {action}
     </div>
@@ -192,8 +192,8 @@ export function MachineGlyph({ osName, selected = false }: { osName?: string; se
     <div
       className="relative flex h-14 w-14 items-center justify-center rounded-2xl border"
       style={{
-        background: selected ? "rgba(30,41,59,0.95)" : "rgba(15,23,42,0.82)",
-        borderColor: selected ? "rgba(167,139,250,0.36)" : "rgba(148,163,184,0.18)",
+        background: selected ? "#EDE9FF" : "#F9FAFB",
+        borderColor: selected ? "rgba(123,97,255,0.3)" : "#E5E7EB",
       }}
     >
       {showLinux ? (
@@ -201,7 +201,7 @@ export function MachineGlyph({ osName, selected = false }: { osName?: string; se
       ) : showWindows ? (
         <Image src="/Windows 11.svg" alt="Windows" width={24} height={24} />
       ) : (
-        <svg viewBox="0 0 24 24" fill="none" stroke="#CBD5E1" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className="h-6 w-6">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className="h-6 w-6">
           <rect x="3" y="4" width="18" height="12" rx="2" />
           <path d="M8 20h8" />
           <path d="M12 16v4" />
@@ -213,10 +213,10 @@ export function MachineGlyph({ osName, selected = false }: { osName?: string; se
 
 export function MetadataStat({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
-    <div className="rounded-2xl border px-4 py-3" style={{ borderColor: "rgba(148,163,184,0.12)", background: "rgba(2,6,23,0.42)" }}>
-      <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-slate-500">{label}</p>
-      <p className="mt-2 text-sm font-semibold text-slate-100">{value}</p>
-      {hint ? <p className="mt-1 text-xs text-slate-500">{hint}</p> : null}
+    <div className="rounded-2xl border px-4 py-3" style={{ borderColor: "#E5E7EB", background: "#F9FAFB" }}>
+      <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-gray-400">{label}</p>
+      <p className="mt-2 text-sm font-semibold text-gray-900">{value}</p>
+      {hint ? <p className="mt-1 text-xs text-gray-400">{hint}</p> : null}
     </div>
   );
 }
@@ -251,10 +251,10 @@ export function MachineCard({
           onSelect();
         }
       }}
-      className="w-full rounded-[24px] border p-5 text-left transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#A78BFA]"
+      className="w-full rounded-[24px] border p-5 text-left transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#7B61FF]/30"
       style={{
-        background: selected ? "rgba(15,23,42,0.94)" : "rgba(7,10,24,0.92)",
-        borderColor: selected ? "rgba(167,139,250,0.34)" : "rgba(148,163,184,0.14)",
+        background: selected ? "#F5F3FF" : "#FFFFFF",
+        borderColor: selected ? "rgba(123,97,255,0.3)" : "#E5E7EB",
       }}
     >
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -262,11 +262,11 @@ export function MachineCard({
           <MachineGlyph osName={device.osName} selected={selected} />
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <h3 className="text-lg font-semibold tracking-tight text-slate-50">{deviceName(device)}</h3>
+              <h3 className="text-lg font-semibold tracking-tight text-gray-900">{deviceName(device)}</h3>
               <MachineStatusPill status={status} />
             </div>
-            <p className="mt-1 text-sm text-slate-400">{device.osName || "Sistema operacional não informado"}</p>
-            <p className="mt-1 text-xs text-slate-500">{device.id}</p>
+            <p className="mt-1 text-sm text-gray-500">{device.osName || "Sistema operacional não informado"}</p>
+            <p className="mt-1 text-xs text-gray-400">{device.id}</p>
           </div>
         </div>
 
@@ -274,16 +274,16 @@ export function MachineCard({
           <Link
             href="/dashboard/machines"
             onClick={(event) => event.stopPropagation()}
-            className="inline-flex items-center justify-center rounded-full border px-3 py-2 text-xs font-semibold text-slate-200 transition-colors duration-200 hover:bg-white/5"
-            style={{ borderColor: "rgba(148,163,184,0.18)" }}
+            className="inline-flex items-center justify-center rounded-full border px-3 py-2 text-xs font-semibold text-gray-600 transition-colors duration-200 hover:bg-gray-100"
+            style={{ borderColor: "#E5E7EB" }}
           >
             Ver backups
           </Link>
           <Link
             href={`/dashboard/protection?device=${encodeURIComponent(device.id)}`}
             onClick={(event) => event.stopPropagation()}
-            className="inline-flex items-center justify-center rounded-full px-3 py-2 text-xs font-semibold text-slate-950 transition-colors duration-200 hover:opacity-90"
-            style={{ background: "#4ADE80" }}
+            className="inline-flex items-center justify-center rounded-full px-3 py-2 text-xs font-semibold text-white transition-colors duration-200 hover:opacity-90"
+            style={{ background: "#059669" }}
           >
             Plano
           </Link>
@@ -322,7 +322,7 @@ export function PlanSummary({ plan, planLoading }: { plan: DevicePlan | null; pl
   }
   if (!plan) {
     return (
-      <div className="rounded-2xl border px-4 py-4 text-sm text-slate-400" style={{ borderColor: "rgba(148,163,184,0.14)", background: "rgba(2,6,23,0.42)" }}>
+      <div className="rounded-2xl border px-4 py-4 text-sm text-gray-500" style={{ borderColor: "#E5E7EB", background: "#F9FAFB" }}>
         Nenhum plano configurado para esta máquina.
       </div>
     );
@@ -359,15 +359,15 @@ export function SnapshotTimelineItem({
   action?: ReactNode;
 }) {
   return (
-    <div className="relative rounded-2xl border px-4 py-4" style={{ borderColor: active ? "rgba(167,139,250,0.32)" : "rgba(148,163,184,0.14)", background: active ? "rgba(30,41,59,0.62)" : "rgba(2,6,23,0.42)" }}>
+    <div className="relative rounded-2xl border px-4 py-4" style={{ borderColor: active ? "rgba(123,97,255,0.3)" : "#E5E7EB", background: active ? "#F5F3FF" : "#F9FAFB" }}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <SnapshotKindPill type={type} />
             <SnapshotStatusPill status={snapshot.status} />
           </div>
-          <p className="mt-3 text-sm font-semibold text-slate-100">{formatDateTime(snapshot.startedAt)}</p>
-          <p className="mt-1 text-xs text-slate-500">{snapshot.sourcePath}</p>
+          <p className="mt-3 text-sm font-semibold text-gray-900">{formatDateTime(snapshot.startedAt)}</p>
+          <p className="mt-1 text-xs text-gray-400">{snapshot.sourcePath}</p>
         </div>
         {action}
       </div>
@@ -386,8 +386,8 @@ export function DeviceIdentity({ device }: { device: Device }) {
     <div className="flex min-w-0 items-center gap-3">
       <MachineGlyph osName={device.osName} />
       <div className="min-w-0">
-        <p className="truncate text-sm font-semibold text-slate-100">{deviceName(device)}</p>
-        <p className="truncate text-xs text-slate-500">
+        <p className="truncate text-sm font-semibold text-gray-900">{deviceName(device)}</p>
+        <p className="truncate text-xs text-gray-400">
           {device.osName || "SO não informado"} · {isOnline(device.lastSeenAt) ? "Online" : "Offline"}
         </p>
       </div>
