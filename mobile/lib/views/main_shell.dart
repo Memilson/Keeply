@@ -24,7 +24,7 @@ class _MainShellState extends State<MainShell> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF0D0C22),
+        backgroundColor: const Color(0xFF1E293B),
         title: const Text(
           'Sair do Keeply',
           style: TextStyle(color: Colors.white),
@@ -62,13 +62,13 @@ class _MainShellState extends State<MainShell> {
       canPop: false,
       onPopInvokedWithResult: _handlePop,
       child: Scaffold(
-        backgroundColor: const Color(0xFF08071A),
+        backgroundColor: const Color(0xFF0F172A),
         body: IndexedStack(index: _currentIndex, children: _screens),
         bottomNavigationBar: Container(
           decoration: BoxDecoration(
             border: Border(
               top: BorderSide(
-                color: const Color(0xFF7B61FF).withValues(alpha: 0.3),
+                color: const Color(0xFF7B61FF).withValues(alpha: 0.15),
                 width: 1,
               ),
             ),
@@ -80,7 +80,7 @@ class _MainShellState extends State<MainShell> {
                 _currentIndex = index;
               });
             },
-            backgroundColor: const Color(0xFF08071A),
+            backgroundColor: const Color(0xFF0F172A),
             selectedItemColor: const Color(0xFF7B61FF),
             unselectedItemColor: const Color(0xFF4A5A7A),
             showUnselectedLabels: true,

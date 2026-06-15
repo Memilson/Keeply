@@ -207,8 +207,8 @@ export default function BackupDetailPage({ params }: { params: Promise<{ id: str
     <>
       <Topbar title="Explorar snapshot" />
       <div className="min-h-0 flex-1 overflow-hidden">
-        <div className="border-b px-4 py-3 md:px-6" style={{ borderColor: "rgba(148,163,184,0.1)" }}>
-          <Link href="/dashboard/machines" className="text-sm font-semibold text-[#A78BFA] transition-colors duration-200 hover:text-[#C4B5FD]">
+        <div className="border-b px-4 py-3 md:px-6" style={{ borderColor: "#E5E7EB" }}>
+          <Link href="/dashboard/machines" className="text-sm font-semibold text-[#7B61FF] transition-colors duration-200 hover:text-[#6046F0]">
             Voltar para máquinas
           </Link>
         </div>
@@ -220,31 +220,31 @@ export default function BackupDetailPage({ params }: { params: Promise<{ id: str
         </div>
 
         <div className="grid h-[calc(100%-49px)] min-h-0 xl:grid-cols-[280px_minmax(0,1fr)]">
-          <aside className="min-h-0 overflow-y-auto border-r px-4 py-4 md:px-6" style={{ borderColor: "rgba(148,163,184,0.12)" }}>
+          <aside className="min-h-0 overflow-y-auto border-r px-4 py-4 md:px-6" style={{ borderColor: "#E5E7EB" }}>
             <div className="mb-4">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Histórico</p>
-              <h2 className="mt-1 text-base font-semibold text-slate-50">Snapshots</h2>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-400">Histórico</p>
+              <h2 className="mt-1 text-base font-semibold text-gray-900">Snapshots</h2>
             </div>
 
             <div className="space-y-2">
               {relatedSnapshots.length === 0 ? (
-                <p className="text-sm text-slate-500">Nenhum snapshot relacionado encontrado.</p>
+                <p className="text-sm text-gray-400">Nenhum snapshot relacionado encontrado.</p>
               ) : (
                 relatedSnapshots.map((item) => (
                   <Link
                     key={item.id}
                     href={`/dashboard/backups/${item.id}${currentPath ? `?dir=${encodeURIComponent(currentPath)}` : ""}`}
-                    className="block rounded-lg border px-3 py-3 transition-colors duration-150 hover:bg-white/5"
+                    className="block rounded-lg border px-3 py-3 transition-colors duration-150 hover:bg-gray-50"
                     style={{
-                      borderColor: item.id === id ? "rgba(167,139,250,0.38)" : "rgba(148,163,184,0.12)",
-                      background: item.id === id ? "rgba(123,97,255,0.12)" : "transparent",
+                      borderColor: item.id === id ? "rgba(123,97,255,0.4)" : "#E5E7EB",
+                      background: item.id === id ? "rgba(123,97,255,0.06)" : "transparent",
                     }}
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <span className="text-sm font-semibold text-slate-100">{formatDateTime(item.startedAt)}</span>
+                      <span className="text-sm font-semibold text-gray-900">{formatDateTime(item.startedAt)}</span>
                       <SnapshotStatusPill status={item.status} />
                     </div>
-                    <p className="mt-1 truncate text-xs text-slate-500">{item.sourcePath}</p>
+                    <p className="mt-1 truncate text-xs text-gray-400">{item.sourcePath}</p>
                   </Link>
                 ))
               )}
@@ -252,17 +252,17 @@ export default function BackupDetailPage({ params }: { params: Promise<{ id: str
           </aside>
 
           <main className="min-h-0 overflow-y-auto px-4 py-4 md:px-6">
-            <section className="overflow-hidden rounded-lg border" style={{ borderColor: "rgba(148,163,184,0.14)", background: "rgba(15,23,42,0.58)" }}>
-              <div className="flex flex-col gap-4 border-b px-5 py-4 lg:flex-row lg:items-start lg:justify-between" style={{ borderColor: "rgba(148,163,184,0.12)" }}>
+            <section className="overflow-hidden rounded-lg border" style={{ borderColor: "#E5E7EB", background: "#FFFFFF" }}>
+              <div className="flex flex-col gap-4 border-b px-5 py-4 lg:flex-row lg:items-start lg:justify-between" style={{ borderColor: "#E5E7EB", background: "#F9FAFB" }}>
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="text-lg font-semibold text-slate-50">{device ? deviceName(device) : "Dispositivo"}</h2>
+                    <h2 className="text-lg font-semibold text-gray-900">{device ? deviceName(device) : "Dispositivo"}</h2>
                     {snapshot ? <SnapshotStatusPill status={snapshot.status} /> : null}
                     {snapshot ? <SnapshotKindPill type={inferSnapshotType(allSnapshots, snapshot)} /> : null}
                   </div>
-                  <p className="mt-1 truncate text-sm text-slate-400">{snapshot?.sourcePath ?? "Origem não informada"}</p>
+                  <p className="mt-1 truncate text-sm text-gray-500">{snapshot?.sourcePath ?? "Origem não informada"}</p>
                   {snapshot ? (
-                    <p className="mt-2 text-xs text-slate-500">
+                    <p className="mt-2 text-xs text-gray-400">
                       {formatDateTime(snapshot.startedAt)} · {snapshot.totalFiles ?? 0} arquivos · {formatBytes(snapshot.totalCompressedSize ?? 0)}
                     </p>
                   ) : null}
@@ -273,8 +273,8 @@ export default function BackupDetailPage({ params }: { params: Promise<{ id: str
                     type="button"
                     onClick={downloadSnapshot}
                     disabled={!snapshot || snapshot.status !== "COMPLETED" || downloading}
-                    className="inline-flex items-center rounded-lg border px-3 py-2 text-xs font-semibold text-slate-200 transition-colors duration-200 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50"
-                    style={{ borderColor: "rgba(148,163,184,0.18)" }}
+                    className="inline-flex items-center rounded-lg border px-3 py-2 text-xs font-semibold text-gray-600 transition-colors duration-200 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
+                    style={{ borderColor: "#E5E7EB" }}
                   >
                     Baixar snapshot
                   </button>
@@ -282,38 +282,38 @@ export default function BackupDetailPage({ params }: { params: Promise<{ id: str
                     type="button"
                     onClick={downloadSelected}
                     disabled={!canDownloadSelected}
-                    className="inline-flex items-center rounded-lg px-3 py-2 text-xs font-semibold text-slate-950 transition-colors duration-200 disabled:cursor-not-allowed disabled:opacity-50"
-                    style={{ background: "#4ADE80" }}
+                    className="inline-flex items-center rounded-lg px-3 py-2 text-xs font-semibold text-white transition-colors duration-200 disabled:cursor-not-allowed disabled:opacity-50"
+                    style={{ background: "#7B61FF" }}
                   >
                     {downloading ? "Preparando..." : `Baixar selecionados (${selectedCount})`}
                   </button>
                 </div>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2 border-b px-5 py-3" style={{ borderColor: "rgba(148,163,184,0.1)" }}>
+              <div className="flex flex-wrap items-center gap-2 border-b px-5 py-3" style={{ borderColor: "#E5E7EB" }}>
                 {breadcrumbItems.map((item, index) => (
                   <button
                     key={`${item.label}-${item.path}`}
                     type="button"
                     onClick={() => navigateToDirectory(item.path)}
-                    className="inline-flex items-center rounded-lg border px-2.5 py-1.5 text-xs font-semibold text-slate-200 transition-colors duration-200 hover:bg-white/5"
-                    style={{ borderColor: "rgba(148,163,184,0.16)" }}
+                    className="inline-flex items-center rounded-lg border px-2.5 py-1.5 text-xs font-semibold text-gray-600 transition-colors duration-200 hover:bg-gray-100"
+                    style={{ borderColor: "#E5E7EB" }}
                   >
-                    {index > 0 ? <span className="mr-2 text-slate-500">/</span> : null}
+                    {index > 0 ? <span className="mr-2 text-gray-400">/</span> : null}
                     {item.label || "/"}
                   </button>
                 ))}
               </div>
 
               {snapshot?.status !== "COMPLETED" ? (
-                <p className="px-5 py-8 text-sm text-slate-500">Arquivos disponíveis apenas para snapshots concluídos.</p>
+                <p className="px-5 py-8 text-sm text-gray-400">Arquivos disponíveis apenas para snapshots concluídos.</p>
               ) : loadingDirectory && !currentEntries.length ? (
-                <p className="px-5 py-8 text-sm text-slate-500">Carregando diretório...</p>
+                <p className="px-5 py-8 text-sm text-gray-400">Carregando diretório...</p>
               ) : currentEntries.length === 0 ? (
-                <p className="px-5 py-8 text-sm text-slate-500">Nenhum arquivo encontrado neste caminho.</p>
+                <p className="px-5 py-8 text-sm text-gray-400">Nenhum arquivo encontrado neste caminho.</p>
               ) : (
                 <div>
-                  <div className="grid grid-cols-[minmax(0,1fr)_110px_150px] gap-3 border-b px-5 py-3 text-[11px] font-medium uppercase tracking-[0.14em] text-slate-500" style={{ borderColor: "rgba(148,163,184,0.12)", background: "rgba(2,6,23,0.34)" }}>
+                  <div className="grid grid-cols-[minmax(0,1fr)_110px_150px] gap-3 border-b px-5 py-3 text-[11px] font-medium uppercase tracking-[0.14em] text-gray-500" style={{ borderColor: "#E5E7EB", background: "#F9FAFB" }}>
                     <span>Nome</span>
                     <span className="text-right">Tamanho</span>
                     <span className="text-right">Modificado</span>
@@ -324,8 +324,8 @@ export default function BackupDetailPage({ params }: { params: Promise<{ id: str
                       return (
                         <div
                           key={entry.path}
-                          className="grid grid-cols-[minmax(0,1fr)_110px_150px] gap-3 border-b px-5 py-3 transition-colors duration-200 last:border-b-0 hover:bg-white/5"
-                          style={{ borderColor: "rgba(148,163,184,0.08)" }}
+                          className="grid grid-cols-[minmax(0,1fr)_110px_150px] gap-3 border-b px-5 py-3 transition-colors duration-200 last:border-b-0 hover:bg-gray-50"
+                          style={{ borderColor: "#F3F4F6" }}
                         >
                           <div className="flex min-w-0 items-center gap-3">
                             <input
@@ -333,14 +333,14 @@ export default function BackupDetailPage({ params }: { params: Promise<{ id: str
                               checked={isChecked}
                               onChange={(event) => handleSelectionChange(entry.path, event.target.checked)}
                               className="h-4 w-4 shrink-0"
-                              style={{ accentColor: "#4ADE80" }}
+                              style={{ accentColor: "#7B61FF" }}
                               aria-label={`Selecionar ${entry.path}`}
                             />
                             {entry.directory ? (
                               <button
                                 type="button"
                                 onClick={() => navigateToDirectory(entry.path)}
-                                className="flex min-w-0 items-center gap-3 text-left text-sm font-semibold text-slate-100"
+                                className="flex min-w-0 items-center gap-3 text-left text-sm font-semibold text-gray-900"
                               >
                                 <FolderIcon />
                                 <span className="truncate">{entry.name}</span>
@@ -348,14 +348,14 @@ export default function BackupDetailPage({ params }: { params: Promise<{ id: str
                             ) : (
                               <>
                                 <FileIcon />
-                                <span className="truncate text-sm text-slate-200">{entry.name}</span>
+                                <span className="truncate text-sm text-gray-700">{entry.name}</span>
                               </>
                             )}
                           </div>
-                          <div className="text-right text-sm text-slate-400">
+                          <div className="text-right text-sm text-gray-500">
                             {entry.directory ? "Pasta" : formatBytes(entry.size ?? 0)}
                           </div>
-                          <div className="text-right text-sm text-slate-500">
+                          <div className="text-right text-sm text-gray-400">
                             {formatDateTime(entry.lastModified ?? undefined)}
                           </div>
                         </div>
@@ -374,9 +374,9 @@ export default function BackupDetailPage({ params }: { params: Promise<{ id: str
 
 function Banner({ children, tone }: { children: ReactNode; tone: "info" | "warn" | "error" }) {
   const toneMap = {
-    info: { border: "rgba(167,139,250,0.24)", background: "rgba(76,29,149,0.18)", color: "#C4B5FD" },
-    warn: { border: "rgba(251,191,36,0.24)", background: "rgba(120,53,15,0.18)", color: "#FBBF24" },
-    error: { border: "rgba(248,113,113,0.24)", background: "rgba(127,29,29,0.18)", color: "#F87171" },
+    info: { border: "rgba(123,97,255,0.3)", background: "#F5F3FF", color: "#7B61FF" },
+    warn: { border: "#FCD34D", background: "#FFFBEB", color: "#D97706" },
+    error: { border: "#FECACA", background: "#FEF2F2", color: "#DC2626" },
   } as const;
   const theme = toneMap[tone];
   return (
@@ -388,7 +388,7 @@ function Banner({ children, tone }: { children: ReactNode; tone: "info" | "warn"
 
 function FolderIcon() {
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="#FBBF24" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 shrink-0">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#D97706" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 shrink-0">
       <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
     </svg>
   );
@@ -396,7 +396,7 @@ function FolderIcon() {
 
 function FileIcon() {
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 shrink-0">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 shrink-0">
       <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
       <path d="M14 2v6h6" />
     </svg>

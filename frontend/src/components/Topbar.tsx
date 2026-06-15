@@ -32,28 +32,26 @@ export function Topbar({ title, subtitle, action }: Props) {
     <header
       className="sticky top-0 z-20 flex min-h-[58px] items-center justify-between px-6"
       style={{
-        background: "rgba(8,7,26,0.85)",
-        backdropFilter: "blur(12px)",
-        WebkitBackdropFilter: "blur(12px)",
-        borderBottom: "1px solid rgba(255,255,255,0.06)",
+        background: "#FFFFFF",
+        borderBottom: "1px solid #E5E7EB",
       }}
     >
       <div className="flex items-center gap-2">
-        <span className="text-[11px] font-semibold text-slate-600">Keeply</span>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="h-3 w-3 text-slate-700">
+        <span className="text-[11px] font-semibold text-gray-400">Keeply</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="h-3 w-3 text-gray-300">
           <polyline points="9 18 15 12 9 6" />
         </svg>
         {title && (
-          <h1 className="text-[13px] font-semibold text-slate-300">{title}</h1>
+          <h1 className="text-[13px] font-semibold text-gray-800">{title}</h1>
         )}
         {subtitle && (
-          <span className="ml-1 text-[11px] text-slate-600">{subtitle}</span>
+          <span className="ml-1 text-[11px] text-gray-400">{subtitle}</span>
         )}
       </div>
 
       <div className="flex items-center gap-4">
         {time && (
-          <span className="text-[11px] tabular-nums font-medium text-slate-600">
+          <span className="text-[11px] tabular-nums font-medium text-gray-400">
             {time}
           </span>
         )}

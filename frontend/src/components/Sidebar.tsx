@@ -99,8 +99,8 @@ export function Sidebar() {
       style={{
         width: W,
         minWidth: W,
-        background: "#07061A",
-        borderRight: "1px solid rgba(255,255,255,0.06)",
+        background: "#1B2541",
+        borderRight: "1px solid rgba(255,255,255,0.09)",
         transition: "width 220ms cubic-bezier(0.4,0,0.2,1), min-width 220ms cubic-bezier(0.4,0,0.2,1)",
       }}
       aria-label="Sidebar"
@@ -108,7 +108,7 @@ export function Sidebar() {
       {/* Logo */}
       <div
         className="flex items-center gap-2.5 px-3.5"
-        style={{ height: 58, borderBottom: "1px solid rgba(255,255,255,0.05)" }}
+        style={{ height: 58, borderBottom: "1px solid rgba(255,255,255,0.09)" }}
       >
         <div className="shrink-0 flex items-center justify-center">
           <KeeplyMark size={24} />
@@ -116,7 +116,7 @@ export function Sidebar() {
         {!collapsed && (
           <span
             className="truncate text-[14px] font-bold tracking-tight"
-            style={{ color: "#E0DEFF" }}
+            style={{ color: "#E2E8F0" }}
           >
             Keeply
           </span>
@@ -139,20 +139,20 @@ export function Sidebar() {
               aria-current={active ? "page" : undefined}
               className="relative flex items-center gap-2.5 rounded-lg px-2.5 py-2.5 text-[13px] font-medium outline-none transition-colors duration-150"
               style={{
-                color: active ? "#C4B5FD" : "#4B5563",
+                color: active ? "#C4B5FD" : "#94A3B8",
                 background: active
-                  ? "linear-gradient(90deg, rgba(123,97,255,0.14), rgba(123,97,255,0.06))"
+                  ? "linear-gradient(90deg, rgba(123,97,255,0.18), rgba(123,97,255,0.08))"
                   : "transparent",
               }}
               onMouseEnter={(e) => {
                 if (!active) {
-                  (e.currentTarget as HTMLElement).style.color = "#94A3B8";
-                  (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.04)";
+                  (e.currentTarget as HTMLElement).style.color = "#E2E8F0";
+                  (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.07)";
                 }
               }}
               onMouseLeave={(e) => {
                 if (!active) {
-                  (e.currentTarget as HTMLElement).style.color = "#4B5563";
+                  (e.currentTarget as HTMLElement).style.color = "#94A3B8";
                   (e.currentTarget as HTMLElement).style.background = "transparent";
                 }
               }}
@@ -200,13 +200,13 @@ export function Sidebar() {
           type="button"
           onClick={() => setCollapsed((v) => !v)}
           className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-[12px] font-medium transition-colors duration-150 cursor-pointer"
-          style={{ color: "#374151" }}
+          style={{ color: "#94A3B8" }}
           onMouseEnter={(e) => {
-            (e.currentTarget as HTMLElement).style.color = "#6B7280";
-            (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.04)";
+            (e.currentTarget as HTMLElement).style.color = "#E2E8F0";
+            (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.07)";
           }}
           onMouseLeave={(e) => {
-            (e.currentTarget as HTMLElement).style.color = "#374151";
+            (e.currentTarget as HTMLElement).style.color = "#94A3B8";
             (e.currentTarget as HTMLElement).style.background = "transparent";
           }}
           aria-label={collapsed ? "Expandir menu" : "Recolher menu"}
@@ -235,7 +235,7 @@ export function Sidebar() {
               <p className="truncate text-[12px] font-semibold leading-tight" style={{ color: "#D1D5DB" }}>
                 {user.name.split("@")[0]}
               </p>
-              <p className="truncate text-[10px] leading-tight mt-0.5" style={{ color: "#374151" }}>
+              <p className="truncate text-[10px] leading-tight mt-0.5" style={{ color: "#94A3B8" }}>
                 {user.role}
               </p>
             </div>

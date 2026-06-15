@@ -53,13 +53,13 @@ export default function ActivitiesPage() {
       <Topbar title="Atividades" />
       <div className="p-6">
         <div
-          className="rounded-xl border bg-[#100F1E] overflow-hidden"
-          style={{ borderColor: "rgba(255,255,255,0.08)" }}
+          className="rounded-xl border bg-white overflow-hidden"
+          style={{ borderColor: "#E5E7EB" }}
         >
           {/* Filter pills */}
           <div
             className="flex flex-wrap items-center gap-2 px-5 py-4"
-            style={{ borderBottom: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.02)" }}
+            style={{ borderBottom: "1px solid #E5E7EB", background: "#F9FAFB" }}
           >
             {(["ALL", "BACKUP", "RUNNING", "ERRORS"] as ActivityFilter[]).map((f) => {
               const labels: Record<ActivityFilter, string> = {
@@ -99,7 +99,7 @@ export default function ActivitiesPage() {
                       key={s.id}
                       className="px-5 py-4"
                       style={{
-                        borderTop: idx > 0 ? "1px solid rgba(255,255,255,0.04)" : undefined,
+                        borderTop: idx > 0 ? "1px solid #F3F4F6" : undefined,
                       }}
                     >
                       <div className="flex items-start gap-3">
@@ -114,17 +114,17 @@ export default function ActivitiesPage() {
                             </span>
                             <span
                               className="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide"
-                              style={{ background: "rgba(123,97,255,0.15)", color: "#A78BFA" }}
+                              style={{ background: "rgba(123,97,255,0.10)", color: "#7B61FF" }}
                             >
                               Backup
                             </span>
                           </div>
-                          <p className="mt-1 text-sm text-slate-400">
-                            <span className="font-medium text-white">{devName}</span>
+                          <p className="mt-1 text-sm text-gray-500">
+                            <span className="font-medium text-gray-900">{devName}</span>
                             {" "}&rarr;{" "}
-                            <span className="font-mono text-xs text-slate-500">{s.sourcePath}</span>
+                            <span className="font-mono text-xs text-gray-400">{s.sourcePath}</span>
                           </p>
-                          <p className="mt-1 text-xs text-slate-600">
+                          <p className="mt-1 text-xs text-gray-400">
                             {formatDateTime(s.startedAt)}
                             {" · "}
                             <span className="font-mono">{s.id}</span>
@@ -150,8 +150,8 @@ function FilterPill({ label, active, onClick }: { label: string; active: boolean
       className="rounded-lg border px-4 py-1.5 text-xs font-bold transition-colors duration-200 cursor-pointer"
       style={
         active
-          ? { background: "rgba(123,97,255,0.15)", borderColor: "rgba(123,97,255,0.35)", color: "#A78BFA" }
-          : { background: "transparent", borderColor: "rgba(255,255,255,0.1)", color: "#64748B" }
+          ? { background: "rgba(123,97,255,0.12)", borderColor: "rgba(123,97,255,0.35)", color: "#7B61FF" }
+          : { background: "transparent", borderColor: "#E5E7EB", color: "#6B7280" }
       }
     >
       {label}
@@ -160,7 +160,7 @@ function FilterPill({ label, active, onClick }: { label: string; active: boolean
 }
 
 function statusView(status: SnapshotStatus): { label: string; dot: string; textColor: string } {
-  if (status === "COMPLETED") return { label: "Completado", dot: "#10B981", textColor: "#10B981" };
-  if (status === "FAILED") return { label: "Erro", dot: "#EF4444", textColor: "#EF4444" };
-  return { label: "Em andamento", dot: "#F59E0B", textColor: "#F59E0B" };
+  if (status === "COMPLETED") return { label: "Completado", dot: "#059669", textColor: "#059669" };
+  if (status === "FAILED") return { label: "Erro", dot: "#DC2626", textColor: "#DC2626" };
+  return { label: "Em andamento", dot: "#D97706", textColor: "#D97706" };
 }

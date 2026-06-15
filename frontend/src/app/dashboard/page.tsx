@@ -12,14 +12,14 @@ import { Topbar } from "@/components/Topbar";
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /* ─────────────────────────── TOKENS ────────────────────────────── */
-const BG       = "#08071A";
-const SURFACE  = "#0C0B1C";
-const BORDER   = "rgba(255,255,255,0.07)";
+const BG       = "#F4F5F7";
+const SURFACE  = "#FFFFFF";
+const BORDER   = "#E5E7EB";
 const PURPLE   = "#7B61FF";
-const PURPLE_L = "#A78BFA";
-const GREEN    = "#10B981";
-const AMBER    = "#F59E0B";
-const RED      = "#EF4444";
+const PURPLE_L = "#6046F0";
+const GREEN    = "#059669";
+const AMBER    = "#D97706";
+const RED      = "#DC2626";
 
 /* ─────────────────────────── SKELETON ──────────────────────────── */
 function Bone({
@@ -32,7 +32,7 @@ function Bone({
   return (
     <div
       className={`animate-pulse rounded-lg ${className}`}
-      style={{ background: "rgba(255,255,255,0.055)", ...style }}
+      style={{ background: "#E9EAEC", ...style }}
     />
   );
 }
@@ -117,13 +117,13 @@ export default function DashboardOverview() {
         {error && (
           <div
             className="flex items-start gap-3 rounded-2xl border px-5 py-3.5 text-sm"
-            style={{ background: "rgba(239,68,68,0.07)", borderColor: "rgba(239,68,68,0.2)" }}
+            style={{ background: "#FEF2F2", borderColor: "#FECACA" }}
             role="alert"
           >
             <svg viewBox="0 0 24 24" fill="none" stroke={RED} strokeWidth="2" strokeLinecap="round" className="h-4 w-4 mt-0.5 shrink-0">
               <circle cx="12" cy="12" r="9" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
             </svg>
-            <p className="text-[#EF4444]">{error} <span className="text-slate-600">(backend em {API_BASE} está online?)</span></p>
+            <p className="text-[#DC2626]">{error} <span className="text-gray-400">(backend em {API_BASE} está online?)</span></p>
           </div>
         )}
 
@@ -196,7 +196,7 @@ function KpiCard({
       />
 
       <div className="relative flex items-start justify-between">
-        <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-600">{label}</p>
+        <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-gray-400">{label}</p>
         <div
           className="grid h-8 w-8 shrink-0 place-items-center rounded-xl transition-transform duration-200 group-hover:scale-110"
           style={{ background: `${color}14`, color }}
@@ -213,10 +213,10 @@ function KpiCard({
           </>
         ) : (
           <>
-            <p className="text-[2rem] font-black leading-none tracking-tight text-white tabular-nums">
+            <p className="text-[2rem] font-black leading-none tracking-tight text-gray-900 tabular-nums">
               {value}
             </p>
-            <p className="mt-1.5 text-[11px] text-slate-600">{sub}</p>
+            <p className="mt-1.5 text-[11px] text-gray-400">{sub}</p>
           </>
         )}
       </div>
@@ -293,7 +293,7 @@ function DonutSection({
               <circle
                 cx={SIZE / 2} cy={SIZE / 2} r={R}
                 fill="none"
-                stroke="rgba(255,255,255,0.04)"
+                stroke="#F3F4F6"
                 strokeWidth={SW}
               />
               {hasData && arcs.map((arc) => (
@@ -313,12 +313,12 @@ function DonutSection({
             </svg>
             <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
               <span
-                className="text-[1.8rem] font-black tabular-nums text-white leading-none"
+                className="text-[1.8rem] font-black tabular-nums text-gray-900 leading-none"
                 style={{ textShadow: `0 0 20px ${PURPLE}60` }}
               >
                 {rate}%
               </span>
-              <span className="mt-0.5 text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+              <span className="mt-0.5 text-[10px] font-semibold uppercase tracking-widest text-gray-400">
                 saúde
               </span>
             </div>
@@ -331,8 +331,8 @@ function DonutSection({
                   className="h-2.5 w-2.5 shrink-0 rounded-full"
                   style={{ background: seg.color, boxShadow: `0 0 5px ${seg.color}70` }}
                 />
-                <span className="flex-1 text-[12px] text-slate-500 truncate">{seg.label}</span>
-                <span className="text-[13px] font-bold tabular-nums text-white">{seg.value}</span>
+                <span className="flex-1 text-[12px] text-gray-500 truncate">{seg.label}</span>
+                <span className="text-[13px] font-bold tabular-nums text-gray-900">{seg.value}</span>
               </div>
             ))}
           </div>
@@ -362,7 +362,7 @@ function ActivitySection({
         {/* Y-axis */}
         <div className="flex flex-col justify-between items-end pb-6 shrink-0 w-5">
           {guides.map((v, i) => (
-            <span key={`${v}${i}`} className="text-[9px] tabular-nums leading-none" style={{ color: "#374151" }}>
+            <span key={`${v}${i}`} className="text-[9px] tabular-nums leading-none" style={{ color: "#9CA3AF" }}>
               {v}
             </span>
           ))}
@@ -373,7 +373,7 @@ function ActivitySection({
           {/* Horizontal grid lines */}
           <div className="absolute inset-0 bottom-6 flex flex-col justify-between pointer-events-none">
             {guides.map((_, i) => (
-              <div key={i} style={{ borderTop: "1px solid rgba(255,255,255,0.035)" }} />
+              <div key={i} style={{ borderTop: "1px solid #F3F4F6" }} />
             ))}
           </div>
 
@@ -414,7 +414,7 @@ function ActivitySection({
                         />
                       </div>
                     </div>
-                    <span className="text-[9px] whitespace-nowrap" style={{ color: "#374151" }}>
+                    <span className="text-[9px] whitespace-nowrap" style={{ color: "#9CA3AF" }}>
                       {item.label}
                     </span>
                   </div>
@@ -443,7 +443,7 @@ function SnapshotsSection({
           href="/dashboard/machines"
           className="text-[11px] font-semibold transition-colors duration-200 focus:outline-none"
           style={{ color: PURPLE_L }}
-          onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = "#fff"; }}
+          onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = PURPLE; }}
           onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = PURPLE_L; }}
         >
           Ver em máquinas →
@@ -454,7 +454,7 @@ function SnapshotsSection({
       {loading ? (
         <div className="px-5 py-4">
           {/* skeleton header */}
-          <div className="flex gap-4 pb-3 mb-1" style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+          <div className="flex gap-4 pb-3 mb-1" style={{ borderBottom: "1px solid #E5E7EB" }}>
             {[100, 120, 80, 60, 90, 40].map((w, i) => (
               <Bone key={i} className="h-2.5" style={{ width: w }} />
             ))}
@@ -465,7 +465,7 @@ function SnapshotsSection({
               key={i}
               className="flex items-center gap-4 py-3"
               style={{
-                borderTop: "1px solid rgba(255,255,255,0.04)",
+                borderTop: "1px solid #F3F4F6",
                 opacity: 1 - i * 0.16,
               }}
             >
@@ -489,12 +489,12 @@ function SnapshotsSection({
         <div className="overflow-x-auto">
           <table className="w-full min-w-[600px]">
             <thead>
-              <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+              <tr style={{ borderBottom: "1px solid #E5E7EB" }}>
                 {["Máquina", "Caminho", "Status", "Tamanho", "Iniciado", ""].map((h) => (
                   <th
                     key={h}
                     className="px-5 py-3 text-left text-[10px] font-bold uppercase tracking-[0.1em]"
-                    style={{ color: "#374151", background: "rgba(255,255,255,0.02)" }}
+                    style={{ color: "#6B7280", background: "#F9FAFB" }}
                   >
                     {h}
                   </th>
@@ -508,7 +508,7 @@ function SnapshotsSection({
                 return (
                   <tr
                     key={snap.id}
-                    style={{ borderTop: "1px solid rgba(255,255,255,0.035)" }}
+                    style={{ borderTop: "1px solid #F3F4F6" }}
                     onMouseEnter={(e) => {
                       (e.currentTarget as HTMLElement).style.background = "rgba(123,97,255,0.04)";
                     }}
@@ -527,13 +527,13 @@ function SnapshotsSection({
                         >
                           {name.slice(0, 2).toUpperCase()}
                         </span>
-                        <span className="text-[12px] font-semibold text-white">{name}</span>
+                        <span className="text-[12px] font-semibold text-gray-900">{name}</span>
                       </div>
                     </td>
                     <td className="px-5 py-3">
                       <span
                         className="block max-w-[180px] truncate font-mono text-[11px]"
-                        style={{ color: "#4B5563" }}
+                        style={{ color: "#6B7280" }}
                         title={snap.sourcePath}
                       >
                         {snap.sourcePath}
@@ -542,10 +542,10 @@ function SnapshotsSection({
                     <td className="px-5 py-3">
                       <Pill status={snap.status} />
                     </td>
-                    <td className="px-5 py-3 text-[11px] tabular-nums" style={{ color: "#4B5563" }}>
+                    <td className="px-5 py-3 text-[11px] tabular-nums" style={{ color: "#6B7280" }}>
                       {formatBytes(snap.totalCompressedSize ?? 0)}
                     </td>
-                    <td className="px-5 py-3 text-[11px]" style={{ color: "#4B5563" }}>
+                    <td className="px-5 py-3 text-[11px]" style={{ color: "#6B7280" }}>
                       {formatDateTime(snap.startedAt)}
                     </td>
                     <td className="px-5 py-3 text-right">
@@ -553,7 +553,7 @@ function SnapshotsSection({
                         href="/dashboard/machines"
                         className="text-[11px] font-bold transition-colors duration-150"
                         style={{ color: PURPLE_L }}
-                        onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = "#fff"; }}
+                        onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = PURPLE; }}
                         onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = PURPLE_L; }}
                         aria-label={`Abrir snapshot de ${name}`}
                       >
@@ -575,9 +575,9 @@ function SnapshotsSection({
    TOP DEVICES
 ═══════════════════════════════════════════════════════════════════ */
 const RANK_COLORS = [
-  { bg: "rgba(250,189,50,0.15)", text: "#FBBF24" },
-  { bg: "rgba(148,163,184,0.12)", text: "#94A3B8" },
-  { bg: "rgba(180,110,70,0.12)", text: "#B46E46" },
+  { bg: "#FEF9C3", text: "#A16207" },
+  { bg: "#F1F5F9", text: "#64748B" },
+  { bg: "#FEF3C7", text: "#92400E" },
 ];
 
 function TopSection({
@@ -616,7 +616,7 @@ function TopSection({
         <div className="space-y-4">
           {items.map((item, i) => {
             const pct = Math.max((item.size / max) * 100, 5);
-            const rank = RANK_COLORS[i] ?? { bg: "rgba(255,255,255,0.05)", text: "#4B5563" };
+            const rank = RANK_COLORS[i] ?? { bg: "#F3F4F6", text: "#6B7280" };
             return (
               <div key={item.id}>
                 <div className="flex items-center justify-between mb-1.5">
@@ -627,15 +627,15 @@ function TopSection({
                     >
                       {i + 1}
                     </span>
-                    <span className="truncate text-[12px] font-medium text-white">{item.name}</span>
+                    <span className="truncate text-[12px] font-medium text-gray-900">{item.name}</span>
                   </div>
-                  <span className="ml-3 shrink-0 text-[11px] tabular-nums" style={{ color: "#4B5563" }}>
+                  <span className="ml-3 shrink-0 text-[11px] tabular-nums" style={{ color: "#6B7280" }}>
                     {formatBytes(item.size)}
                   </span>
                 </div>
                 <div
                   className="h-1.5 overflow-hidden rounded-full"
-                  style={{ background: "rgba(255,255,255,0.05)" }}
+                  style={{ background: "#E5E7EB" }}
                   role="progressbar"
                   aria-valuenow={Math.round(pct)}
                   aria-valuemin={0}
@@ -679,11 +679,11 @@ function SectionCard({
     >
       <div
         className="flex items-center justify-between px-5 py-4 shrink-0"
-        style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}
+        style={{ borderBottom: "1px solid #E5E7EB" }}
       >
         <div>
-          <h2 className="text-[13px] font-semibold text-white">{title}</h2>
-          <p className="mt-0.5 text-[11px]" style={{ color: "#374151" }}>{subtitle}</p>
+          <h2 className="text-[13px] font-semibold text-gray-900">{title}</h2>
+          <p className="mt-0.5 text-[11px] text-gray-400">{subtitle}</p>
         </div>
         {action}
       </div>
@@ -702,8 +702,8 @@ function EmptyState({ icon, title, sub }: { icon: React.ReactNode; title: string
         {icon}
       </div>
       <div className="text-center">
-        <p className="text-sm font-semibold text-white">{title}</p>
-        <p className="mt-0.5 text-[12px]" style={{ color: "#374151" }}>{sub}</p>
+        <p className="text-sm font-semibold text-gray-900">{title}</p>
+        <p className="mt-0.5 text-[12px] text-gray-400">{sub}</p>
       </div>
     </div>
   );

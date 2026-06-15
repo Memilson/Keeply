@@ -49,7 +49,7 @@ class KeeplyApp extends StatelessWidget {
         brightness: Brightness.dark,
         scaffoldBackgroundColor: const Color(0xFF0F172A),
         colorScheme: const ColorScheme.dark(
-          primary: Color(0xFF3B82F6),
+          primary: Color(0xFF7B61FF),
           secondary: Color(0xFF06B6D4),
           surface: Color(0xFF1E293B),
         ),

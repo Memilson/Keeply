@@ -135,8 +135,8 @@ export default function ProtectionPage() {
     );
   }
 
-  const inputCls = "rounded-lg border bg-[#0D0C1A] px-3 py-2 text-sm text-slate-300 focus:outline-none focus:ring-2 focus:ring-[#7B61FF] transition-shadow";
-  const inputStyle = { borderColor: "rgba(255,255,255,0.1)" };
+  const inputCls = "rounded-lg border bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#7B61FF]/30 transition-shadow";
+  const inputStyle = { borderColor: "#E5E7EB" };
 
   return (
     <>
@@ -144,8 +144,8 @@ export default function ProtectionPage() {
       <div className="p-6">
         {error && (
           <div
-            className="mb-4 rounded-xl border px-4 py-3 text-sm text-[#EF4444]"
-            style={{ background: "rgba(239,68,68,0.08)", borderColor: "rgba(239,68,68,0.2)" }}
+            className="mb-4 rounded-xl border px-4 py-3 text-sm text-[#DC2626]"
+            style={{ background: "#FEF2F2", borderColor: "#FECACA" }}
           >
             {error}
           </div>
@@ -155,25 +155,25 @@ export default function ProtectionPage() {
           <div className="px-6 py-10 text-sm text-slate-500">Nenhum dispositivo registrado.</div>
         ) : (
           <div
-            className="rounded-xl border bg-[#100F1E] overflow-hidden max-w-2xl mx-auto"
-            style={{ borderColor: "rgba(255,255,255,0.08)" }}
+            className="rounded-xl border bg-white overflow-hidden max-w-2xl mx-auto"
+            style={{ borderColor: "#E5E7EB" }}
           >
             {/* Header */}
             <div
               className="flex items-center justify-between px-6 py-5"
-              style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}
+              style={{ borderBottom: "1px solid #E5E7EB", background: "#F9FAFB" }}
             >
               <div className="flex items-center gap-3">
                 <span
                   className="grid h-9 w-9 place-items-center rounded-xl"
-                  style={{ background: "rgba(123,97,255,0.15)" }}
+                  style={{ background: "rgba(123,97,255,0.10)" }}
                 >
                   <svg viewBox="0 0 24 24" fill="none" stroke="#7B61FF" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
                     <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
                     <path d="m9 12 2 2 4-4" />
                   </svg>
                 </span>
-                <h2 className="text-base font-bold text-white">Plano de Backup</h2>
+                <h2 className="text-base font-bold text-gray-900">Plano de Backup</h2>
               </div>
               <div className="flex items-center gap-3">
                 {devices.length > 1 && (
@@ -232,17 +232,17 @@ export default function ProtectionPage() {
                   <div
                     key={src}
                     className="flex items-center justify-between rounded-lg px-3 py-2.5"
-                    style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)" }}
+                    style={{ background: "#F9FAFB", border: "1px solid #E5E7EB" }}
                   >
                     <div className="flex items-center gap-2.5 min-w-0">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="#F59E0B" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 shrink-0">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="#D97706" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 shrink-0">
                         <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
                       </svg>
-                      <span className="text-sm font-mono text-slate-300 truncate">{src}</span>
+                      <span className="text-sm font-mono text-gray-700 truncate">{src}</span>
                     </div>
                     <button
                       onClick={() => patch({ sources: (draft?.sources ?? []).filter((s) => s !== src), planType: "CUSTOM" })}
-                      className="text-slate-500 hover:text-[#EF4444] transition-colors duration-200 cursor-pointer text-lg leading-none ml-2"
+                      className="text-gray-400 hover:text-[#DC2626] transition-colors duration-200 cursor-pointer text-lg leading-none ml-2"
                     >
                       ×
                     </button>
@@ -309,11 +309,11 @@ export default function ProtectionPage() {
             {/* Encryption */}
             <div
               className="flex items-center justify-between px-6 py-5"
-              style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}
+              style={{ borderTop: "1px solid #F3F4F6" }}
             >
               <div>
-                <p className="text-sm font-medium text-white">Criptografia</p>
-                <p className="text-xs text-slate-500 mt-0.5">AES-256 · SHA-256</p>
+                <p className="text-sm font-medium text-gray-900">Criptografia</p>
+                <p className="text-xs text-gray-400 mt-0.5">AES-256 · SHA-256</p>
               </div>
               <Toggle value={!!draft?.encryptionEnabled} onChange={(v) => patch({ encryptionEnabled: v })} />
             </div>
@@ -321,19 +321,19 @@ export default function ProtectionPage() {
             {/* Device info */}
             <div
               className="px-6 py-5"
-              style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}
+              style={{ borderTop: "1px solid #F3F4F6" }}
             >
-              <p className="mb-3 text-xs font-bold uppercase tracking-widest text-slate-500">
+              <p className="mb-3 text-xs font-bold uppercase tracking-widest text-gray-400">
                 Informações do dispositivo
               </p>
               <div className="space-y-2 text-sm">
                 <div className="flex gap-3">
-                  <span className="text-slate-600 shrink-0" style={{ minWidth: 120 }}>ID do dispositivo</span>
-                  <span className="text-slate-400 font-mono text-xs break-all">{selected.id}</span>
+                  <span className="text-gray-400 shrink-0" style={{ minWidth: 120 }}>ID do dispositivo</span>
+                  <span className="text-gray-700 font-mono text-xs break-all">{selected.id}</span>
                 </div>
                 <div className="flex gap-3">
-                  <span className="text-slate-600 shrink-0" style={{ minWidth: 120 }}>Servidor</span>
-                  <span className="text-slate-400 font-mono text-xs">http://localhost:8080</span>
+                  <span className="text-gray-400 shrink-0" style={{ minWidth: 120 }}>Servidor</span>
+                  <span className="text-gray-700 font-mono text-xs">http://localhost:8080</span>
                 </div>
               </div>
             </div>
@@ -341,15 +341,15 @@ export default function ProtectionPage() {
             {/* Footer */}
             <div
               className="flex justify-end gap-2 px-6 py-4"
-              style={{ borderTop: "1px solid rgba(255,255,255,0.06)", background: "rgba(255,255,255,0.02)" }}
+              style={{ borderTop: "1px solid #F3F4F6", background: "#F9FAFB" }}
             >
               <button
                 onClick={() => {
                   if (!selected) return;
                   setDrafts((prev) => { const next = { ...prev }; delete next[selected.id]; return next; });
                 }}
-                className="rounded-lg border px-4 py-2 text-sm text-slate-400 hover:text-slate-300 transition-colors duration-200 cursor-pointer"
-                style={{ borderColor: "rgba(255,255,255,0.1)" }}
+                className="rounded-lg border px-4 py-2 text-sm text-gray-500 hover:text-gray-700 transition-colors duration-200 cursor-pointer"
+                style={{ borderColor: "#E5E7EB" }}
               >
                 Cancelar
               </button>
@@ -398,9 +398,9 @@ function SectionRow({ title, right, children }: { title: string; right?: string;
   return (
     <div
       className="flex items-center justify-between px-6 py-4"
-      style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}
+      style={{ borderTop: "1px solid #F3F4F6" }}
     >
-      <p className="text-sm font-medium text-white">{title}</p>
+      <p className="text-sm font-medium text-gray-900">{title}</p>
       <div className="flex items-center gap-3">
         {right && <span className="text-xs text-slate-500">{right}</span>}
         {children}
@@ -413,11 +413,11 @@ function LineRow({ title, description, children }: { title: string; description?
   return (
     <div
       className="flex items-center justify-between px-6 py-4"
-      style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}
+      style={{ borderTop: "1px solid #F3F4F6" }}
     >
       <div>
-        <p className="text-sm font-medium text-white">{title}</p>
-        {description && <p className="text-xs text-slate-500 mt-0.5">{description}</p>}
+        <p className="text-sm font-medium text-gray-900">{title}</p>
+        {description && <p className="text-xs text-gray-400 mt-0.5">{description}</p>}
       </div>
       <div className="flex items-center gap-3 ml-4 shrink-0">{children}</div>
     </div>
@@ -430,7 +430,7 @@ function Toggle({ value, onChange, disabled = false }: { value: boolean; onChang
       onClick={() => !disabled && onChange(!value)}
       disabled={disabled}
       className="relative inline-flex h-7 w-12 items-center rounded-full transition-colors duration-200 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
-      style={{ background: value ? "#7B61FF" : "rgba(255,255,255,0.12)" }}
+      style={{ background: value ? "#7B61FF" : "#D1D5DB" }}
       aria-pressed={value}
     >
       <span

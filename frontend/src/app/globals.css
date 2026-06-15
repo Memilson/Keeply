@@ -1,23 +1,25 @@
 @import "tailwindcss";
 
 :root {
-  --background: #F8F7FD;
-  --foreground: #18163A;
+  --background: #F4F5F7;
+  --foreground: #111827;
   --kp-primary: #7B61FF;
   --kp-primary-dark: #6046F0;
   --kp-primary-tint: #EDE9FF;
-  --kp-navy: #181640;
-  --kp-ink: #18163A;
-  --kp-muted: #6B6993;
-  --kp-border: #E4E1F0;
-  --kp-border-soft: #F0EEF8;
-  --kp-bg: #F8F7FD;
+  --kp-navy: #1B2541;
+  --kp-ink: #111827;
+  --kp-muted: #6B7280;
+  --kp-border: #E5E7EB;
+  --kp-border-soft: #F3F4F6;
+  --kp-bg: #F4F5F7;
   --kp-card: #FFFFFF;
-  --kp-success: #10B981;
-  --kp-warn: #F59E0B;
-  --kp-danger: #EF4444;
-  --kp-radius: 16px;
-  --kp-shadow: 0 10px 30px rgba(24, 22, 58, 0.06);
+  --kp-success: #059669;
+  --kp-warn: #D97706;
+  --kp-danger: #DC2626;
+  --kp-radius: 12px;
+  --kp-shadow: 0 1px 3px rgba(0, 0, 0, 0.07), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --kp-sidebar: #1B2541;
+  --kp-table-header: #F9FAFB;
   /* legacy aliases para não quebrar classes existentes */
   --keeply-50: #F5F3FF;
   --keeply-100: #EDE9FF;
