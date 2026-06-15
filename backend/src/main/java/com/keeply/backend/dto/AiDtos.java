@@ -21,6 +21,7 @@ public final class AiDtos {
 
     public record ChatResponse(
             String answer,
-            String model
+            String model,
+            String reasoning
     ) {}
 }

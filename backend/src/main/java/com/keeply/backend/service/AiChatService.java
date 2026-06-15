@@ -159,8 +159,8 @@ public class AiChatService {
                 throw new IllegalStateException("Falha ao consultar o modelo de I.A. HTTP " + response.statusCode());
             }
 
-            String answer = cleanAnswer(extractAnswer(response.body()));
-            return new AiDtos.ChatResponse(answer, model);
+            CleanedAnswer cleaned = cleanAnswer(extractAnswer(response.body()));
+            return new AiDtos.ChatResponse(cleaned.answer(), model, cleaned.reasoning());
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("Consulta de I.A interrompida", ex);
@@ -199,21 +199,73 @@ public class AiChatService {
         return content.asText();
     }
 
-    private String cleanAnswer(String raw) {
+    private CleanedAnswer cleanAnswer(String raw) {
         String answer = raw == null ? "" : raw.trim();
         String lower = answer.toLowerCase();
-        if (lower.startsWith("okay,") || lower.startsWith("let me") || lower.startsWith("we need") || lower.contains("the user wants")) {
-            int marker = firstMarker(answer,
-                    "Para restaurar",
-                    "Para fazer",
-                    "No Keeply",
-                    "Siga estes passos",
-                    "Você pode");
-            if (marker > 0) {
-                answer = answer.substring(marker).trim();
+        boolean leaked = looksLikeReasoning(lower);
+        int finalMarker = firstMarker(answer, "Final response:", "Resposta final:", "Final:");
+        if (finalMarker >= 0) {
+            answer = answer.substring(finalMarker).replaceFirst("(?is)^(Final response:|Resposta final:|Final:)\\s*", "").trim();
+        } else {
+            int revisedMarker = firstMarker(answer, "Revised:", "Revisado:");
+            if (revisedMarker >= 0) {
+                answer = answer.substring(revisedMarker).replaceFirst("(?is)^(Revised:|Revisado:)\\s*", "").trim();
+            } else if (leaked) {
+                int marker = firstMarker(answer, "Para restaurar", "Para fazer", "No Keeply", "Siga estes passos", "Você pode", "Abra o Keeply", "Acesse o Keeply");
+                if (marker > 0) {
+                    answer = answer.substring(marker).trim();
+                }
             }
         }
-        return answer;
+        answer = stripAfterReasoning(answer).trim();
+        answer = stripWrappingQuotes(answer);
+        if (answer.isBlank()) {
+            answer = "Não consegui gerar uma resposta final limpa. Tente perguntar de novo com mais contexto.";
+        }
+        return new CleanedAnswer(answer, leaked ? reasoningSummary(lower) : "");
+    }
+
+    private boolean looksLikeReasoning(String lower) {
+        return lower.contains("the user")
+                || lower.contains("i should")
+                || lower.contains("we need")
+                || lower.contains("looking at the query")
+                || lower.contains("possible steps")
+                || lower.contains("final response:")
+                || lower.contains("revised:")
+                || lower.contains("the instructions say")
+                || lower.contains("i don't have access");
+    }
+
+    private String stripAfterReasoning(String answer) {
+        int marker = firstMarker(answer,
+                "\n\nThat's",
+                "\n\nThe user",
+                "\n\nThe instructions",
+                "\n\nSince ",
+                "\n\nLooking at",
+                "\n\nPossible steps",
+                "\n\nCheck if",
+                "\n\nWait,");
+        return marker > 0 ? answer.substring(0, marker) : answer;
+    }
+
+    private String stripWrappingQuotes(String value) {
+        String cleaned = value.trim();
+        while ((cleaned.startsWith("\"") && cleaned.endsWith("\"")) || (cleaned.startsWith("'") && cleaned.endsWith("'"))) {
+            cleaned = cleaned.substring(1, cleaned.length() - 1).trim();
+        }
+        return cleaned;
+    }
+
+    private String reasoningSummary(String lower) {
+        if (lower.contains("i don't have access") || lower.contains("não tenho acesso")) {
+            return "A I.A identificou que não tem acesso direto ao estado atual do painel e escolheu orientar onde verificar no Keeply.";
+        }
+        if (lower.contains("without more info") || lower.contains("more context") || lower.contains("clarification")) {
+            return "A I.A percebeu que faltam detalhes para agir com segurança e preferiu pedir contexto antes de assumir um cenário.";
+        }
+        return "A I.A analisou a pergunta, aplicou as regras do Keeply e separou a orientação final sem inventar dados do painel.";
     }
 
     private int firstMarker(String answer, String... markers) {
@@ -234,4 +286,6 @@ public class AiChatService {
         }
         return cleaned;
     }
+
+    private record CleanedAnswer(String answer, String reasoning) {}
 }
