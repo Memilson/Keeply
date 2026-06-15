@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'ai/ai_assistant_view.dart';
 import 'files/files_list_view.dart';
 import 'settings/settings_view.dart';
 
@@ -11,8 +12,12 @@ class MainShell extends StatefulWidget {
 
 class _MainShellState extends State<MainShell> {
   int _currentIndex = 0;
-  final List<Widget> _screens = [const FilesListView(), const SettingsView()];
-  Future<void> _handlePop(bool didPop) async {
+  final List<Widget> _screens = [
+    const FilesListView(),
+    const AiAssistantView(),
+    const SettingsView(),
+  ];
+  Future<void> _handlePop(bool didPop, Object? result) async {
     if (didPop) return;
     final confirmed = await showDialog<bool>(
       context: context,
@@ -53,7 +58,7 @@ class _MainShellState extends State<MainShell> {
   Widget build(BuildContext context) {
     return PopScope(
       canPop: false,
-      onPopInvoked: _handlePop,
+      onPopInvokedWithResult: _handlePop,
       child: Scaffold(
         backgroundColor: const Color(0xFF08071A),
         body: IndexedStack(index: _currentIndex, children: _screens),
@@ -82,6 +87,10 @@ class _MainShellState extends State<MainShell> {
               BottomNavigationBarItem(
                 icon: Icon(Icons.history),
                 label: 'Histórico',
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.auto_awesome),
+                label: 'I.A',
               ),
               BottomNavigationBarItem(
                 icon: Icon(Icons.settings),
