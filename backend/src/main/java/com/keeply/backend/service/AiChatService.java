@@ -40,81 +40,116 @@ public class AiChatService {
     private static final String PRODUCT_MAP = """
             Mapa do produto Keeply para orientar o usuário:
 
-            Web - Dashboard:
-            - Caminho: Dashboard ou /dashboard.
-            - Use apenas se o usuário perguntar por resumo geral do painel web.
+            Web - Dashboard (Visão geral):
+            - Caminho: Visão geral ou /dashboard. Item "Visão geral" na sidebar esquerda.
+            - Widgets visíveis: "Dispositivos Ativos" (conta online e offline), "Backups 24h", "Em Execução" (jobs ativos agora), "Falhas" (com taxa de sucesso).
+            - Seção "Saúde do ambiente": gráfico donut com distribuição por Máquinas, Backups 24h, Executando e Falhas — mostra percentual de saúde geral.
+            - Seção "Atividade de backups": gráfico de linha dos snapshots nos últimos 7 dias.
+            - Seção "Snapshots recentes": tabela com colunas Máquina, Caminho, Status, Tamanho e Iniciado — exibe as últimas execuções do ambiente com link direto para explorar o snapshot.
+            - Seção "Top por volume": ranking de dispositivos por armazenamento total usado.
+            - Keeply I.A está no botão no canto superior direito da topbar, não na sidebar.
+            - Use apenas se o usuário pedir resumo geral do painel, saúde do ambiente ou atividade recente de backups.
             - Não diga que o mobile tem Dashboard.
 
             Web - Máquinas:
-            - Caminho: Dashboard > Máquinas ou /dashboard/machines.
-            - Lista todos os dispositivos, sistema operacional, origem principal e último backup.
-            - Ao selecionar uma máquina, há abas de resumo, plano e snapshots.
-            - A aba Snapshots mostra os pontos de backup feitos para aquela máquina.
-            - Na web o usuário consegue ver todas as máquinas, snapshots, pontos de backup e arquivos disponíveis para download.
-            - Use quando o usuário quiser ver máquinas, backups feitos, snapshots, arquivos ou downloads.
+            - Caminho: Máquinas ou /dashboard/machines. Item "Máquinas" na sidebar esquerda.
+            - Lista "Todos os dispositivos" com colunas: Tipo (ícone Linux/Android/Windows), Nome, Origem (pasta raiz) e Último Backup.
+            - Dispositivos Linux aparecem com ícone de computador. Dispositivos Android mostram "Android" abaixo do nome.
+            - Ao clicar em uma máquina, abre painel lateral com três abas:
+              - Aba "Resumo": último backup, último contato, armazenamento usado, total de snapshots.
+              - Aba "Plano": mostra e permite editar o plano de backup (origem, CDP, validação, horário, retenção, criptografia).
+              - Aba "Snapshots": lista pontos de backup daquela máquina com data, caminho de origem, tipo e status.
+            - Na aba Snapshots, o botão "Explorar" abre o snapshot para navegar arquivos.
+            - Use quando o usuário quiser ver máquinas cadastradas, verificar último backup, acessar snapshots de um dispositivo específico ou ir para o explorador de arquivos.
 
             Web - Atividades:
-            - Caminho: Dashboard > Atividades ou /dashboard/activities.
-            - Mostra linha do tempo de snapshots e permite filtrar por Todos, Backup, Em andamento e Erros.
-            - Use quando o usuário quiser investigar erros, acompanhar backup em execução ou auditar eventos recentes.
+            - Caminho: Atividades ou /dashboard/activities. Item "Atividades" na sidebar esquerda.
+            - Mostra linha do tempo de snapshots em ordem cronológica reversa.
+            - Filtros disponíveis (botões no topo): "Todos", "Backup", "Em andamento", "Erros".
+            - Cada item exibe: status com ponto colorido (verde = Completado, vermelho = Falha, amarelo = Em andamento), badge "BACKUP", nome da máquina, caminho de origem, data/hora e ID do snapshot.
+            - Use quando o usuário quiser investigar falhas, acompanhar backup em execução, ver histórico de eventos ou auditar execuções recentes.
 
             Web - Proteção:
-            - Caminho: Dashboard > Proteção ou /dashboard/protection.
-            - Configura o plano de backup por dispositivo: pastas de origem, proteção contínua CDP, validação pós-backup, horário diário, retenção por dias ou manter todos os snapshots.
-            - A execução real do backup depende do Keeply Agente no dispositivo.
-            - Use quando o usuário quiser revisar ou alterar o plano de backup no painel web.
+            - Caminho: Proteção ou /dashboard/protection. Item "Proteção" na sidebar esquerda.
+            - Tela "Plano de Backup" com seletor de dispositivo no topo (dropdown) e toggle para ativar/desativar o plano.
+            - Campos configuráveis:
+              - "O que fazer backup": lista de pastas de origem com botão "+ Adicionar" — o usuário digita o caminho e adiciona.
+              - "Proteção contínua (CDP)": toggle — backup incremental em tempo real.
+              - "Validação pós-backup": toggle — verifica integridade após cada snapshot.
+              - "Agendamento": campo de horário — define o horário diário de execução (ex: 02:00).
+              - "Retenção": dropdown com "Manter todos" ou número de dias.
+              - "Criptografia": toggle — AES-256 com SHA-256.
+            - Seção "Informações do dispositivo": mostra ID do dispositivo e URL do servidor backend configurada no agente.
+            - Botões "Cancelar" e "Salvar alterações" no rodapé.
+            - A execução real do backup depende do Keeply Agente instalado no dispositivo.
+            - Use quando o usuário quiser revisar ou alterar o plano de backup, ativar CDP, mudar horário, adicionar pasta ou configurar retenção.
 
             Web - Explorar snapshot:
-            - Caminho: Dashboard > Máquinas > selecionar máquina > Snapshots > abrir snapshot, ou /dashboard/backups/{id}.
-            - Permite navegar em pastas do snapshot, ver histórico relacionado, selecionar arquivos/pastas e baixar ZIP do snapshot inteiro ou somente itens selecionados.
-            - Na web o usuário pode baixar o snapshot inteiro, baixar pastas ou baixar arquivos selecionados.
-            - A web pode acionar o fluxo de restauração, mas quem restaura no disco do dispositivo é o Keeply Agente registrado naquela máquina.
-            - Use quando o usuário quiser baixar, verificar arquivos dentro de um snapshot, comparar snapshots da mesma origem ou escolher o que será restaurado pelo agente.
+            - Caminho: Máquinas > selecionar máquina > aba Snapshots > botão Explorar, ou /dashboard/backups/{id}.
+            - Permite navegar pastas e arquivos dentro do snapshot com breadcrumb de navegação.
+            - Sidebar esquerda mostra snapshots relacionados (mesma origem) para comparar pontos de backup.
+            - Header mostra: nome da máquina, status, tipo, data, total de arquivos e tamanho comprimido.
+            - Ações disponíveis: "Download snapshot" (baixa o snapshot inteiro) e "Download selecionados" (baixa apenas itens marcados com checkbox).
+            - Use quando o usuário quiser navegar arquivos de um backup, baixar um arquivo ou pasta específica, ou comparar snapshots da mesma origem.
 
             Keeply Agente:
-            - O Keeply Agente é quem executa backups no dispositivo.
-            - O Keeply Agente é o único componente que restaura snapshots no dispositivo.
-            - O agente pode restaurar snapshots em pastas diferentes no dispositivo, conforme a escolha segura do usuário.
-            - O agente é registrado toda vez que o usuário faz login no dispositivo.
-            - O agente também pode aparecer no painel web dentro de Máquinas.
-            - Se o usuário pedir backup ou restauração real no disco, explique que a execução acontece pelo agente.
+            - O Keeply Agente é quem executa backups no dispositivo conforme o plano configurado em Proteção.
+            - O Keeply Agente é o único componente que restaura snapshots no disco do dispositivo.
+            - O agente conecta ao backend pela URL configurada (ex: http://servidor:8080) e se registra automaticamente no login.
+            - O agente aparece no painel web dentro de Máquinas como um dispositivo registrado.
+            - Se o usuário pedir backup ou restauração real no disco, explique que a execução acontece pelo agente instalado na máquina.
 
-            Mobile - Histórico:
-            - Aba: Histórico.
-            - Mostra snapshots/backups, permite buscar arquivos nos backups, faz busca profunda quando a consulta tem pelo menos 3 caracteres, abre detalhes do snapshot e permite baixar arquivos.
-            - No mobile não há Dashboard, execução de backup ou restauração de snapshots.
-            - O mobile é para consultar snapshots/backups e baixar arquivos.
-            - Use quando o usuário estiver no celular e quiser localizar um arquivo, abrir snapshot, consultar backups salvos, baixar arquivos ou operar em modo offline com últimos dados em cache.
+            Mobile - Splash e autenticação:
+            - Tela inicial do app: verifica sessão existente. Se há token válido, vai direto para o app. Se não, vai para login.
+            - Login/Pareamento: formulário com e-mail, senha e URL do backend. Salva token JWT e URL de forma segura.
+            - Tela de segurança: após login, pode solicitar resposta a uma pergunta de segurança para liberar acesso ao app.
+            - Se houver erro de sessão expirada, oriente fazer login novamente no app.
+
+            Mobile - Histórico (Tab 0):
+            - Aba: Histórico — primeira aba do app, ícone de arquivo.
+            - Lista todos os snapshots/backups disponíveis com paginação (50 por página, scroll infinito).
+            - Barra de busca no topo: busca por nome de arquivo. Com 3 ou mais caracteres, ativa busca profunda (deep search) que pesquisa dentro do conteúdo dos backups.
+            - Modo offline: se sem conexão, exibe os últimos dados em cache automaticamente.
+            - Toque em um snapshot abre a tela de detalhes do snapshot.
+            - Swipe ou ação de delete remove o snapshot com confirmação.
+            - Pull-to-refresh atualiza a lista.
+            - No mobile não há Dashboard, execução de backup nem restauração de snapshots.
+            - Use quando o usuário estiver no celular e quiser localizar um arquivo, consultar backups salvos, abrir um snapshot ou baixar arquivos.
 
             Mobile - Detalhes do snapshot:
-            - Tela aberta a partir da aba Histórico.
-            - Lista arquivos do snapshot, permite pesquisar dentro do snapshot e baixar arquivos.
-            - Não restaura snapshots pelo mobile.
-            - Use quando o usuário quiser recuperar um arquivo específico no celular por download.
+            - Tela aberta ao tocar em um snapshot na aba Histórico.
+            - Lista todos os arquivos do snapshot com tipo, tamanho e data.
+            - Botão de download por arquivo: solicita permissão de armazenamento e salva na pasta configurada.
+            - Cache por snapshot: arquivos já visualizados ficam em cache para acesso offline.
+            - Não restaura snapshots. Apenas permite baixar arquivos individuais.
+            - Use quando o usuário quiser recuperar ou baixar um arquivo específico pelo celular.
 
-            Mobile - I.A:
-            - Aba: I.A.
-            - Chat do Keeply I.A conectado ao backend por /api/ai/chat. Usa o token do usuário e a URL pareada do backend.
+            Mobile - I.A (Tab 1):
+            - Aba: I.A — segunda aba do app.
+            - Chat com o Keeply I.A conectado ao backend por /api/ai/chat.
+            - Mantém histórico das últimas 8 mensagens como contexto.
+            - Mostra 3 sugestões de perguntas rápidas na tela inicial do chat.
+            - Botão de limpar chat no canto superior.
+            - Painel de raciocínio expansível quando a I.A usa análise estendida.
             - Use quando o usuário perguntar como conversar com o assistente ou onde pedir orientação no app.
 
-            Mobile - Configurações:
-            - Aba: Configurações.
-            - Mostra conta, opção de desconectar conta, pasta para salvar downloads e sair do aplicativo.
-            - Use quando o usuário quiser trocar pasta de download, desconectar o dispositivo, encerrar sessão ou revisar conta.
-
-            Login e pareamento:
-            - Web usa login com e-mail e senha.
-            - Mobile usa pareamento/login para salvar token JWT e URL do backend.
-            - Se houver erro de sessão expirada, oriente entrar novamente ou repetir pareamento.
+            Mobile - Configurações (Tab 2):
+            - Aba: Configurações — terceira aba do app.
+            - Seção Conta: avatar com iniciais, nome, e-mail e badge de status ativo. Botão "Desconectar conta" encerra sessão e volta para login.
+            - Seção Armazenamento: exibe e permite trocar a pasta de destino dos downloads.
+            - Seção Sessão: botão "Sair do aplicativo" fecha o app.
+            - Rodapé mostra versão do app.
+            - Use quando o usuário quiser trocar pasta de download, desconectar conta, encerrar sessão ou revisar dados da conta.
 
             Regras de orientação:
             - Quando a pessoa disser "no celular", "mobile" ou "app", responda usando primeiro as abas Mobile.
             - Quando a pessoa disser "no painel", "web" ou "navegador", responda usando primeiro Web > Máquinas e Snapshots.
-            - Evite responder "Dashboard" por padrão. Só cite Dashboard se o usuário pedir resumo geral do painel.
-            - Para falhas de backup, explique que o backup é executado pelo agente e oriente conferir Web > Máquinas ou Web > Atividades.
-            - Para restauração de snapshot, direcione para Web > Máquinas > Snapshots e explique que a restauração é executada pelo Keeply Agente.
+            - Evite citar "Dashboard" por padrão. Só use se o usuário pedir resumo geral, saúde do ambiente ou atividade de backups.
+            - Para falhas de backup, oriente conferir Web > Atividades (filtro "Erros") ou Web > Máquinas > aba Resumo da máquina afetada.
+            - Para restauração de snapshot no disco, direcione para Web > Máquinas > Snapshots e explique que a restauração é executada pelo Keeply Agente.
             - Para baixar arquivos, use Web > Explorar snapshot ou Mobile > Detalhes do snapshot.
-            - Para alterar o que é protegido, direcione para Proteção no web; no mobile, explique que a configuração do plano fica no painel web.
+            - Para alterar o que é protegido, direcione para Web > Proteção; no mobile, explique que a configuração do plano fica no painel web.
+            - Keeply I.A no web fica no botão no canto superior direito da topbar, não na sidebar.
             - Não invente nomes de máquinas, IDs, snapshots, arquivos ou status. Se precisar desses dados, diga onde o usuário deve conferir.
             """;
 
