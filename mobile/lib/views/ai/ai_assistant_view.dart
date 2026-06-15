@@ -68,7 +68,11 @@ class _AiAssistantViewState extends State<AiAssistantView> {
       if (!mounted) return;
       setState(() {
         _messages.add(
-          AiChatMessage(role: 'assistant', content: response.answer),
+          AiChatMessage(
+            role: 'assistant',
+            content: response.answer,
+            reasoning: response.reasoning,
+          ),
         );
         _modelName = response.model.isEmpty ? _modelName : response.model;
         _isLoading = false;
@@ -124,6 +128,7 @@ class _AiAssistantViewState extends State<AiAssistantView> {
 
   Widget _buildMessage(AiChatMessage message) {
     final isUser = message.role == 'user';
+    final hasReasoning = !isUser && message.reasoning.trim().isNotEmpty;
     return Align(
       alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
       child: ConstrainedBox(
@@ -138,14 +143,66 @@ class _AiAssistantViewState extends State<AiAssistantView> {
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
           ),
-          child: Text(
-            message.content,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (hasReasoning) ...[
+                _buildReasoningPanel(message.reasoning),
+                const SizedBox(height: 10),
+              ],
+              Text(
+                message.content,
+                style: TextStyle(
+                  color: isUser ? Colors.white : const Color(0xFFCBD5E1),
+                  fontSize: 14,
+                  height: 1.45,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildReasoningPanel(String text) {
+    return Theme(
+      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+      child: Container(
+        decoration: BoxDecoration(
+          color: const Color(0xFF007FFF).withValues(alpha: 0.10),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: const Color(0xFF007FFF).withValues(alpha: 0.28),
+          ),
+        ),
+        child: ExpansionTile(
+          dense: true,
+          tilePadding: const EdgeInsets.symmetric(horizontal: 10),
+          childrenPadding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+          iconColor: const Color(0xFF007FFF),
+          collapsedIconColor: const Color(0xFF007FFF),
+          title: const Text(
+            'Análise',
             style: TextStyle(
-              color: isUser ? Colors.white : const Color(0xFFCBD5E1),
-              fontSize: 14,
-              height: 1.45,
+              color: Color(0xFFE2E8F0),
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
             ),
           ),
+          children: [
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                text,
+                style: const TextStyle(
+                  color: Color(0xFFCBD5E1),
+                  fontSize: 12,
+                  height: 1.35,
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
