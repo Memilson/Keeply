@@ -2,9 +2,11 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
+import '../models/ai_chat.dart';
 import '../models/remote_file.dart';
 import 'secure_storage_service.dart';
 import '../core/constants/app_constants.dart';
+
 class ApiClientService {
   static final ApiClientService _instance = ApiClientService._();
   factory ApiClientService() => _instance;
@@ -21,6 +23,7 @@ class ApiClientService {
       return '';
     }
   }
+
   Future<String> _getBaseUrl() async {
     try {
       final saved = await _secureStorage.getBackendUrl();
@@ -28,6 +31,7 @@ class ApiClientService {
     } catch (_) {}
     return AppConstants.backendBaseUrl;
   }
+
   Future<Map<String, String>> _getHeaders() async {
     final token = await _getToken();
     return {
@@ -36,11 +40,13 @@ class ApiClientService {
       'User-Agent': 'KeeplyMobile/1.0',
     };
   }
+
   void _handleError(int statusCode, String body, String endpoint) {
     String message;
     try {
       final json = jsonDecode(body) as Map<String, dynamic>?;
-      message = json?['message'] as String? ??
+      message =
+          json?['message'] as String? ??
           json?['error'] as String? ??
           'Erro desconhecido';
     } catch (_) {
@@ -69,9 +75,13 @@ class ApiClientService {
           statusCode: statusCode,
         );
       default:
-        throw ApiException('Erro na requisição: $message', statusCode: statusCode);
+        throw ApiException(
+          'Erro na requisição: $message',
+          statusCode: statusCode,
+        );
     }
   }
+
   Future<String> _getWithRetry(String url) async {
     int attempts = 0;
     while (attempts < _maxRetries) {
@@ -106,6 +116,7 @@ class ApiClientService {
       statusCode: 0,
     );
   }
+
   Future<void> login(String email, String password) async {
     try {
       final baseUrl = await _getBaseUrl();
@@ -124,11 +135,15 @@ class ApiClientService {
         _handleError(response.statusCode, response.body, uri);
       }
       final json = jsonDecode(response.body) as Map<String, dynamic>;
-      final accessToken = json['accessToken'] as String? ??
+      final accessToken =
+          json['accessToken'] as String? ??
           json['token'] as String? ??
           json['jwtToken'] as String?;
       if (accessToken == null || accessToken.isEmpty) {
-        throw ApiException('Token JWT não recebido do servidor', statusCode: 200);
+        throw ApiException(
+          'Token JWT não recebido do servidor',
+          statusCode: 200,
+        );
       }
       await _secureStorage.saveToken(accessToken);
       final respEmail = json['email'] as String? ?? '';
@@ -152,6 +167,7 @@ class ApiClientService {
       throw ApiException('Erro ao fazer login: $e', statusCode: 0);
     }
   }
+
   Future<List<RemoteFile>> listFiles({
     String? query,
     int page = 1,
@@ -175,6 +191,7 @@ class ApiClientService {
       throw ApiException('Erro ao listar snapshots: $e', statusCode: 0);
     }
   }
+
   Future<List<RemoteFile>> listSnapshotFiles({
     required String snapshotId,
     int page = 0,
@@ -190,33 +207,49 @@ class ApiClientService {
           '$baseUrl/api/snapshots/$snapshotId/files?page=$page&size=$size$searchParam';
       final body = await _getWithRetry(uri);
       final json = jsonDecode(body) as Map<String, dynamic>;
-      final items = (json['items'] as List<dynamic>?) ?? (json['files'] as List<dynamic>?) ?? [];
+      final items =
+          (json['items'] as List<dynamic>?) ??
+          (json['files'] as List<dynamic>?) ??
+          [];
       return items
-          .map((e) => RemoteFile.fromSnapshotFileJson(e as Map<String, dynamic>))
+          .map(
+            (e) => RemoteFile.fromSnapshotFileJson(e as Map<String, dynamic>),
+          )
           .toList();
     } on TokenExpiredException {
       rethrow;
     } on ApiException {
       rethrow;
     } catch (e) {
-      throw ApiException('Erro ao listar arquivos do snapshot: $e', statusCode: 0);
+      throw ApiException(
+        'Erro ao listar arquivos do snapshot: $e',
+        statusCode: 0,
+      );
     }
   }
+
   Future<void> deleteSnapshot(String snapshotId) async {
     final baseUrl = await _getBaseUrl();
     final uri = '$baseUrl/api/snapshots/$snapshotId';
     final headers = await _getHeaders();
-    final response = await http.delete(Uri.parse(uri), headers: headers)
+    final response = await http
+        .delete(Uri.parse(uri), headers: headers)
         .timeout(_defaultTimeout);
     if (response.statusCode != 200 && response.statusCode != 204) {
       _handleError(response.statusCode, response.body, uri);
     }
   }
-  Future<File> downloadFile(String snapshotId, String filePath, String destinationPath) async {
+
+  Future<File> downloadFile(
+    String snapshotId,
+    String filePath,
+    String destinationPath,
+  ) async {
     try {
       final baseUrl = await _getBaseUrl();
       final encodedPath = Uri.encodeQueryComponent(filePath);
-      final uri = '$baseUrl/api/snapshots/$snapshotId/files/download?path=$encodedPath';
+      final uri =
+          '$baseUrl/api/snapshots/$snapshotId/files/download?path=$encodedPath';
       final headers = await _getHeaders();
       final response = await http
           .get(Uri.parse(uri), headers: headers)
@@ -238,6 +271,58 @@ class ApiClientService {
       throw ApiException('Erro ao baixar arquivo: $e', statusCode: 0);
     }
   }
+
+  Future<AiChatResponse> chatWithAi({
+    required String message,
+    List<AiChatMessage> history = const [],
+  }) async {
+    final trimmed = message.trim();
+    if (trimmed.isEmpty) {
+      throw ApiException('Mensagem é obrigatória', statusCode: 0);
+    }
+    try {
+      final baseUrl = await _getBaseUrl();
+      final uri = '$baseUrl/api/ai/chat';
+      final headers = await _getHeaders();
+      final sanitizedHistory = history
+          .where((item) => item.content.trim().isNotEmpty)
+          .toList()
+          .reversed
+          .take(8)
+          .toList()
+          .reversed
+          .toList();
+      final response = await http
+          .post(
+            Uri.parse(uri),
+            headers: headers,
+            body: jsonEncode({
+              'message': trimmed,
+              'history': sanitizedHistory.map((item) => item.toJson()).toList(),
+            }),
+          )
+          .timeout(const Duration(seconds: 60));
+      if (response.statusCode != 200) {
+        _handleError(response.statusCode, response.body, uri);
+      }
+      final json = jsonDecode(response.body) as Map<String, dynamic>;
+      return AiChatResponse.fromJson(json);
+    } on SocketException {
+      throw NetworkException('Sem conexão de rede durante consulta à I.A.');
+    } on TimeoutException {
+      throw ApiException(
+        'A consulta à I.A expirou. Tente novamente.',
+        statusCode: 0,
+      );
+    } on TokenExpiredException {
+      rethrow;
+    } on ApiException {
+      rethrow;
+    } catch (e) {
+      throw ApiException('Erro ao consultar a I.A: $e', statusCode: 0);
+    }
+  }
+
   Future<String> exchangeQrToken({
     required String qrToken,
     required String host,
@@ -245,7 +330,8 @@ class ApiClientService {
     try {
       var baseUrl = host;
       if (!baseUrl.startsWith('http://') && !baseUrl.startsWith('https://')) {
-        final isLocal = baseUrl.contains('127.0.0.1') ||
+        final isLocal =
+            baseUrl.contains('127.0.0.1') ||
             baseUrl.contains('localhost') ||
             baseUrl.contains('192.168.') ||
             baseUrl.contains('10.') ||
@@ -261,18 +347,20 @@ class ApiClientService {
           .post(
             Uri.parse(uri),
             headers: headers,
-            body: jsonEncode({
-              'token': qrToken,
-            }),
+            body: jsonEncode({'token': qrToken}),
           )
           .timeout(_defaultTimeout);
       if (response.statusCode != 200 && response.statusCode != 201) {
         _handleError(response.statusCode, response.body, uri);
       }
       final json = jsonDecode(response.body) as Map<String, dynamic>;
-      final jwtToken = json['accessToken'] as String? ?? json['token'] as String?;
+      final jwtToken =
+          json['accessToken'] as String? ?? json['token'] as String?;
       if (jwtToken == null || jwtToken.isEmpty) {
-        throw ApiException('Token JWT não recebido do servidor', statusCode: 200);
+        throw ApiException(
+          'Token JWT não recebido do servidor',
+          statusCode: 200,
+        );
       }
       await _secureStorage.saveBackendUrl(baseUrl);
       return jwtToken;
@@ -286,6 +374,7 @@ class ApiClientService {
       throw ApiException('Erro ao trocar token QR: $e', statusCode: 0);
     }
   }
+
   Future<String> registerDevice({
     required String name,
     required String hostname,
@@ -318,12 +407,17 @@ class ApiClientService {
       final json = jsonDecode(response.body) as Map<String, dynamic>;
       final deviceId = json['id'] as String?;
       if (deviceId == null || deviceId.isEmpty) {
-        throw ApiException('ID do dispositivo não recebido do servidor', statusCode: response.statusCode);
+        throw ApiException(
+          'ID do dispositivo não recebido do servidor',
+          statusCode: response.statusCode,
+        );
       }
       await _secureStorage.saveDeviceId(deviceId);
       return deviceId;
     } on SocketException {
-      throw NetworkException('Sem conexão de rede durante registro de dispositivo.');
+      throw NetworkException(
+        'Sem conexão de rede durante registro de dispositivo.',
+      );
     } on TokenExpiredException {
       rethrow;
     } on ApiException {
@@ -333,6 +427,7 @@ class ApiClientService {
     }
   }
 }
+
 class ApiException implements Exception {
   final String message;
   final int statusCode;
@@ -340,28 +435,33 @@ class ApiException implements Exception {
   @override
   String toString() => 'ApiException: $message (HTTP $statusCode)';
 }
+
 class TokenExpiredException extends ApiException {
-  TokenExpiredException(String message) : super(message, statusCode: 401);
+  TokenExpiredException(super.message) : super(statusCode: 401);
   @override
   String toString() => 'TokenExpiredException: $message';
 }
+
 class ResourceNotFoundException extends ApiException {
-  ResourceNotFoundException(String message, {required int statusCode}) : super(message, statusCode: statusCode);
+  ResourceNotFoundException(super.message, {required super.statusCode});
   @override
   String toString() => 'ResourceNotFoundException: $message';
 }
+
 class RateLimitException extends ApiException {
-  RateLimitException(String message, {required int statusCode}) : super(message, statusCode: statusCode);
+  RateLimitException(super.message, {required super.statusCode});
   @override
   String toString() => 'RateLimitException: $message';
 }
+
 class ServerException extends ApiException {
-  ServerException(String message, {required int statusCode}) : super(message, statusCode: statusCode);
+  ServerException(super.message, {required super.statusCode});
   @override
   String toString() => 'ServerException: $message';
 }
+
 class NetworkException extends ApiException {
-  NetworkException(String message) : super(message, statusCode: 0);
+  NetworkException(super.message) : super(statusCode: 0);
   @override
   String toString() => 'NetworkException: $message';
 }
