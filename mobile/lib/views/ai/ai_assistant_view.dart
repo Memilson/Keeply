@@ -10,6 +10,10 @@ class AiAssistantView extends StatefulWidget {
 }
 
 class _AiAssistantViewState extends State<AiAssistantView> {
+  static const Color _azure = Color(0xFF007FFF);
+  static const Color _background = Color(0xFF050816);
+  static const Color _surface = Color(0xFF111827);
+  static const Color _border = Color(0xFF1F2937);
   static const List<String> _suggestions = [
     'Como verifico se meus backups estão saudáveis?',
     'O que fazer quando uma máquina fica offline?',
@@ -112,10 +116,8 @@ class _AiAssistantViewState extends State<AiAssistantView> {
       onPressed: _isLoading ? null : () => _sendMessage(text),
       style: OutlinedButton.styleFrom(
         foregroundColor: const Color(0xFFE2E8F0),
-        side: BorderSide(
-          color: const Color(0xFF7B61FF).withValues(alpha: 0.35),
-        ),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        side: BorderSide(color: _azure.withValues(alpha: 0.35)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       ),
       child: Text(
@@ -132,16 +134,16 @@ class _AiAssistantViewState extends State<AiAssistantView> {
     return Align(
       alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 320),
+        constraints: BoxConstraints(
+          maxWidth: MediaQuery.sizeOf(context).width * 0.88,
+        ),
         child: Container(
-          margin: const EdgeInsets.symmetric(vertical: 5),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+          margin: const EdgeInsets.symmetric(vertical: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           decoration: BoxDecoration(
-            color: isUser
-                ? const Color(0xFF7B61FF).withValues(alpha: 0.24)
-                : const Color(0xFF15142B),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
+            color: isUser ? _azure.withValues(alpha: 0.20) : _surface,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: isUser ? _azure : _border),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -170,18 +172,16 @@ class _AiAssistantViewState extends State<AiAssistantView> {
       data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
       child: Container(
         decoration: BoxDecoration(
-          color: const Color(0xFF007FFF).withValues(alpha: 0.10),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-            color: const Color(0xFF007FFF).withValues(alpha: 0.28),
-          ),
+          color: _background,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: _azure.withValues(alpha: 0.35)),
         ),
         child: ExpansionTile(
           dense: true,
           tilePadding: const EdgeInsets.symmetric(horizontal: 10),
           childrenPadding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
-          iconColor: const Color(0xFF007FFF),
-          collapsedIconColor: const Color(0xFF007FFF),
+          iconColor: _azure,
+          collapsedIconColor: _azure,
           title: const Text(
             'Análise',
             style: TextStyle(
@@ -216,9 +216,7 @@ class _AiAssistantViewState extends State<AiAssistantView> {
         decoration: BoxDecoration(
           color: const Color(0xFF08071A),
           border: Border(
-            top: BorderSide(
-              color: const Color(0xFF7B61FF).withValues(alpha: 0.18),
-            ),
+            top: BorderSide(color: _azure.withValues(alpha: 0.18)),
           ),
         ),
         child: Column(
@@ -276,20 +274,18 @@ class _AiAssistantViewState extends State<AiAssistantView> {
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
                         borderSide: BorderSide(
-                          color: const Color(0xFF7B61FF).withValues(alpha: 0.3),
+                          color: _azure.withValues(alpha: 0.3),
                         ),
                       ),
                       enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
                         borderSide: BorderSide(
-                          color: const Color(
-                            0xFF7B61FF,
-                          ).withValues(alpha: 0.25),
+                          color: _azure.withValues(alpha: 0.25),
                         ),
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
-                        borderSide: const BorderSide(color: Color(0xFF7B61FF)),
+                        borderSide: const BorderSide(color: _azure),
                       ),
                     ),
                     onSubmitted: _sendMessage,
@@ -304,10 +300,10 @@ class _AiAssistantViewState extends State<AiAssistantView> {
                         ? null
                         : () => _sendMessage(_messageController.text),
                     style: FilledButton.styleFrom(
-                      backgroundColor: const Color(0xFF7B61FF),
+                      backgroundColor: _azure,
                       foregroundColor: Colors.white,
                       disabledBackgroundColor: const Color(
-                        0xFF7B61FF,
+                        0xFF007FFF,
                       ).withValues(alpha: 0.35),
                       padding: EdgeInsets.zero,
                       shape: RoundedRectangleBorder(
