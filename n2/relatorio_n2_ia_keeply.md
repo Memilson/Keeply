@@ -32,15 +32,15 @@ Depois disso, ela interpreta a intenção da pergunta e retorna uma orientação
 
 Exemplos de respostas esperadas:
 
-1. Indicar onde consultar o Dashboard.
-2. Explicar que as máquinas ficam em Dashboard > Máquinas.
-3. Orientar que snapshots são acessados pela máquina selecionada.
-4. Explicar que a restauração de snapshots é feita pelo Keeply Agente.
-5. Explicar que o mobile permite consultar dashboards/snapshots e baixar arquivos, mas não restaurar snapshots.
+1. Indicar onde consultar o Dashboard (Visão geral) no painel web.
+2. Explicar que as máquinas ficam no menu Máquinas da sidebar do painel web.
+3. Orientar que snapshots são acessados clicando na máquina e abrindo o botão Snapshots.
+4. Explicar que a restauração de snapshots é feita pelo Keeply Agente instalado no dispositivo.
+5. Explicar que o mobile permite consultar snapshots na aba Histórico e baixar arquivos, mas não tem Dashboard e não restaura snapshots.
 
 ## 4. Modelo ou técnica de IA empregada
 
-A técnica utilizada foi um modelo de linguagem integrado por API de terceiros.
+A técnica utilizada foi um modelo de linguagem de grande escala (LLM) integrado por API de terceiros, com prompt engineering para delimitar o comportamento do assistente.
 
 Modelo configurado no backend:
 
@@ -52,10 +52,17 @@ OpenRouter API
 
 Justificativa da escolha:
 
-1. O modelo de linguagem permite conversar em linguagem natural.
-2. A integração por API facilita o uso dentro do backend sem treinar um modelo próprio do zero.
-3. O modelo consegue responder dúvidas operacionais do usuário usando o contexto do produto.
-4. A solução é adequada para um assistente textual de suporte, orientação e navegação dentro do sistema.
+O modelo foi escolhido por razões técnicas e práticas específicas ao contexto do projeto:
+
+1. Custo zero: o modelo está disponível gratuitamente via OpenRouter, viabilizando a integração sem custo de API em um projeto acadêmico com infraestrutura própria.
+
+2. Escala adequada para instrução: com 120 bilhões de parâmetros, o Nemotron-3-Super pertence à categoria de modelos de linguagem de grande porte, capazes de seguir instruções complexas, manter contexto e responder em idiomas não nativos como o português com qualidade aceitável.
+
+3. Otimizado para seguir instruções: o modelo da NVIDIA foi desenvolvido com foco em instruction-following, o que se alinha diretamente ao caso de uso do Keeply I.A, onde o assistente precisa obedecer regras específicas do produto (não inventar dados, direcionar para telas corretas, limitar o tamanho da resposta para mobile).
+
+4. Integração via API padrão: o OpenRouter expõe uma API compatível com o formato OpenAI, o que permitiu integrar o modelo ao backend Java com uma requisição HTTP simples, sem bibliotecas externas de IA. Isso também permite trocar de modelo no futuro apenas alterando uma variável de configuração.
+
+5. Sem necessidade de treinamento próprio: para um assistente de orientação baseado em contexto fixo do produto, um modelo pré-treinado com prompt de sistema é suficiente. Treinar ou ajustar um modelo próprio seria desproporcional para o escopo da funcionalidade.
 
 ## 5. Como a IA foi integrada ao aplicativo
 
@@ -81,14 +88,14 @@ A IA foi configurada para responder usando regras específicas do Keeply.
 
 Regras principais:
 
-1. No painel web, o usuário pode acessar Dashboard, Máquinas, Atividades, Proteção e Snapshots.
-2. Em Máquinas, o usuário visualiza os dispositivos registrados.
-3. Em Máquinas > Snapshots, o usuário seleciona snapshots de uma máquina.
-4. Na web, o usuário pode baixar snapshots, pastas ou arquivos.
-5. Somente o Keeply Agente pode restaurar snapshots no dispositivo.
+1. No painel web, o usuário acessa: Visão geral (Dashboard), Máquinas, Atividades, Proteção e o explorador de Snapshots.
+2. Em Máquinas, o usuário visualiza os dispositivos registrados com status, origem e último backup.
+3. Ao selecionar uma máquina, o painel exibe Resumo e botões para acessar Snapshots e Plano de backup.
+4. No explorador de snapshot, o usuário navega pastas, seleciona arquivos e faz download do snapshot inteiro ou de itens específicos.
+5. Somente o Keeply Agente pode restaurar snapshots no disco do dispositivo.
 6. O Keeply Agente pode restaurar snapshots em pastas diferentes no dispositivo.
 7. O agente é registrado quando o usuário faz login no dispositivo.
-8. No mobile, o usuário consulta dashboards/snapshots e baixa arquivos.
+8. No mobile, o usuário consulta snapshots na aba Histórico e baixa arquivos. O mobile não tem Dashboard.
 9. O mobile não executa restauração de snapshots.
 
 ## 7. Processamento da resposta

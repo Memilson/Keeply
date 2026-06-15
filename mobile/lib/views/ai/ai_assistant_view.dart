@@ -70,14 +70,9 @@ class _AiAssistantViewState extends State<AiAssistantView> {
         history: history,
       );
       if (!mounted) return;
+      final answer = _sanitizeAnswer(response.answer, question);
       setState(() {
-        _messages.add(
-          AiChatMessage(
-            role: 'assistant',
-            content: response.answer,
-            reasoning: response.reasoning,
-          ),
-        );
+        _messages.add(AiChatMessage(role: 'assistant', content: answer));
         _modelName = response.model.isEmpty ? _modelName : response.model;
         _isLoading = false;
       });
@@ -111,6 +106,36 @@ class _AiAssistantViewState extends State<AiAssistantView> {
     });
   }
 
+  String _sanitizeAnswer(String raw, String question) {
+    final answer = raw.trim();
+    final lower = answer.toLowerCase();
+    final leaked =
+        lower.startsWith('okay') ||
+        lower.startsWith('first') ||
+        lower.startsWith('the user') ||
+        lower.startsWith('i need') ||
+        lower.startsWith('i should') ||
+        lower.startsWith('let me') ||
+        lower.contains('according to the mapa') ||
+        lower.contains('the user is asking') ||
+        lower.contains('i should mention');
+    if (!leaked) {
+      return answer
+          .replaceAll('**', '')
+          .replaceAll('__', '')
+          .replaceAll('#', '')
+          .trim();
+    }
+    final q = question.toLowerCase();
+    if (q.contains('restaur')) {
+      return 'A restauração de snapshot é feita pelo Keeply Agente.\nNo web, abra Máquinas, selecione a máquina e escolha o snapshot.\nO agente executa a restauração no dispositivo, podendo salvar em uma pasta diferente.';
+    }
+    if (q.contains('backup')) {
+      return 'O backup é executado pelo Keeply Agente instalado no dispositivo.\nNo web, use Máquinas para ver dispositivos e Snapshots para consultar os pontos de backup.\nNo mobile, consulte snapshots e baixe arquivos.';
+    }
+    return 'No web você vê máquinas, snapshots, pontos de backup e baixa arquivos.\nNo mobile você consulta snapshots e baixa arquivos.\nBackup e restauração real são executados pelo Keeply Agente.';
+  }
+
   Widget _buildSuggestion(String text) {
     return OutlinedButton(
       onPressed: _isLoading ? null : () => _sendMessage(text),
@@ -130,7 +155,6 @@ class _AiAssistantViewState extends State<AiAssistantView> {
 
   Widget _buildMessage(AiChatMessage message) {
     final isUser = message.role == 'user';
-    final hasReasoning = !isUser && message.reasoning.trim().isNotEmpty;
     return Align(
       alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
       child: ConstrainedBox(
@@ -148,10 +172,6 @@ class _AiAssistantViewState extends State<AiAssistantView> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (hasReasoning) ...[
-                _buildReasoningPanel(message.reasoning),
-                const SizedBox(height: 10),
-              ],
               Text(
                 message.content,
                 style: TextStyle(
@@ -162,47 +182,6 @@ class _AiAssistantViewState extends State<AiAssistantView> {
               ),
             ],
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildReasoningPanel(String text) {
-    return Theme(
-      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-      child: Container(
-        decoration: BoxDecoration(
-          color: _background,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: _azure.withValues(alpha: 0.35)),
-        ),
-        child: ExpansionTile(
-          dense: true,
-          tilePadding: const EdgeInsets.symmetric(horizontal: 10),
-          childrenPadding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
-          iconColor: _azure,
-          collapsedIconColor: _azure,
-          title: const Text(
-            'Análise',
-            style: TextStyle(
-              color: Color(0xFFE2E8F0),
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          children: [
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                text,
-                style: const TextStyle(
-                  color: Color(0xFFCBD5E1),
-                  fontSize: 12,
-                  height: 1.35,
-                ),
-              ),
-            ),
-          ],
         ),
       ),
     );

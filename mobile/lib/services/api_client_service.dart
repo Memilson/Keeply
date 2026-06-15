@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
 import '../models/ai_chat.dart';
+import '../models/keeply_device.dart';
 import '../models/remote_file.dart';
 import '../models/snapshot_node.dart';
 import 'secure_storage_service.dart';
@@ -194,6 +195,24 @@ class ApiClientService {
       rethrow;
     } catch (e) {
       throw ApiException('Erro ao listar snapshots: $e', statusCode: 0);
+    }
+  }
+
+  Future<List<KeeplyDevice>> listDevices() async {
+    try {
+      final baseUrl = await _getBaseUrl();
+      final uri = ApiEndpoints.uri(baseUrl, ApiEndpoints.devices).toString();
+      final body = await _getWithRetry(uri);
+      final json = jsonDecode(body) as List<dynamic>;
+      return json
+          .map((e) => KeeplyDevice.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } on TokenExpiredException {
+      rethrow;
+    } on ApiException {
+      rethrow;
+    } catch (e) {
+      throw ApiException('Erro ao listar dispositivos: $e', statusCode: 0);
     }
   }
 
