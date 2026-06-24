@@ -1,8 +1,0 @@
-.git
-.gradle
-**/build
-**/.next
-**/node_modules
-**/.idea
-**/.vscode
-*.log

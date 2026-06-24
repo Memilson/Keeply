@@ -1,2 +1,0 @@
--- V13 intentionally left as a no-op.
--- The previous mobile-only test-user seed was removed from the backend.
