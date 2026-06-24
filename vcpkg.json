@@ -1,0 +1,1 @@
+{"name":"keeply-agent-cpp","version-string":"0.1.0","dependencies":["zstd","sqlite3","openssl","curl","nlohmann-json",{"name":"qtbase","default-features":false,"features":["widgets"]},"qtsvg"]}

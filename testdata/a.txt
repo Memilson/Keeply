@@ -1,0 +1,2 @@
+Hello Keeply C++ Agent!
+This is a simple text file to test snapshots.
