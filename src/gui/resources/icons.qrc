@@ -1,0 +1,21 @@
+<!DOCTYPE RCC>
+<RCC version="1.0">
+  <qresource prefix="/">
+    <file>icons/nav-backup.svg</file>
+    <file>icons/nav-restore.svg</file>
+    <file>icons/nav-snapshots.svg</file>
+    <file>icons/nav-jobs.svg</file>
+    <file>icons/nav-settings.svg</file>
+    <file>icons/act-play.svg</file>
+    <file>icons/act-download.svg</file>
+    <file>icons/act-check.svg</file>
+    <file>icons/act-trash.svg</file>
+    <file>icons/act-stop.svg</file>
+    <file>icons/act-save.svg</file>
+    <file>icons/act-folder.svg</file>
+    <file>icons/act-refresh.svg</file>
+    <file>icons/act-plus.svg</file>
+    <file>icons/act-shield.svg</file>
+    <file>icons/act-upload.svg</file>
+  </qresource>
+</RCC>
