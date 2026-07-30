@@ -38,15 +38,21 @@ Each application VM exposes both ports. Nginx uses the two application VMs as up
 
 ## PostgreSQL
 
-PostgreSQL is installed on `keeply-db`, enabled at boot, and listens on port `5432` for the private VPC network. Create application credentials separately and store them in a secret manager before deploying production code.
+PostgreSQL is installed on `keeply-db`, enabled at boot, and listens on port `5432` for the private VPC network. The database VM runs as `t3.micro` with one active vCPU and 1 GiB RAM to fit the current EC2 quota. Create application credentials separately and store them in a secret manager before deploying production code.
 
 ## Migration status
 
-The initial instances were started in the public subnet for bootstrap.
+The initial instances were started in the public subnet for bootstrap. Migration is complete:
 
-- `keeply-app-1` and `keeply-app-2` were replaced by instances in the private subnet, without public IPs.
-- `keeply-edge` remains the only public entry point.
-- The PostgreSQL AMI is ready, but the private database replacement is waiting for AWS quota request `54557d97934840219cb127dabe2f4b35Kqw4vWB7` to raise the on-demand standard vCPU limit from 8 to 16.
+- `keeply-app-1`, `keeply-app-2`, and `keeply-db` run in the private subnet without public IPs.
+- `keeply-edge` is the sole public entry point.
+- The prior AWS quota request `54557d97934840219cb127dabe2f4b35Kqw4vWB7` remains open, but the database was restored with one active vCPU and does not depend on its approval.
+
+## Validation
+
+- Nginx returns the frontend at `/` and the backend at `/api/`.
+- Private DNS resolves the application and database service names.
+- PostgreSQL is reachable only from the application Security Group; a connection attempt from the Nginx edge is correctly denied.
 
 ## Operations
 
