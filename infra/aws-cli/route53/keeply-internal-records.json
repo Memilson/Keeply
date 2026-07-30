@@ -1,0 +1,41 @@
+{
+  "Comment": "Keeply private service records",
+  "Changes": [
+    {
+      "Action": "UPSERT",
+      "ResourceRecordSet": {
+        "Name": "edge.keeply.internal.",
+        "Type": "A",
+        "TTL": 30,
+        "ResourceRecords": [{ "Value": "10.50.1.177" }]
+      }
+    },
+    {
+      "Action": "UPSERT",
+      "ResourceRecordSet": {
+        "Name": "app-1.keeply.internal.",
+        "Type": "A",
+        "TTL": 30,
+        "ResourceRecords": [{ "Value": "10.50.1.116" }]
+      }
+    },
+    {
+      "Action": "UPSERT",
+      "ResourceRecordSet": {
+        "Name": "app-2.keeply.internal.",
+        "Type": "A",
+        "TTL": 30,
+        "ResourceRecords": [{ "Value": "10.50.1.238" }]
+      }
+    },
+    {
+      "Action": "UPSERT",
+      "ResourceRecordSet": {
+        "Name": "db.keeply.internal.",
+        "Type": "A",
+        "TTL": 30,
+        "ResourceRecords": [{ "Value": "10.50.1.12" }]
+      }
+    }
+  ]
+}
